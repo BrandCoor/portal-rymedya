@@ -9,9 +9,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
+require_module_permission('proposals.manage');
 
 // Self-Healing DB: Teklif tablosunu otomatik oluştur
 $db->query("
@@ -56,8 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'change_status') {
         $prop_id    = (int)$_POST['proposal_id'];
         $new_status = $_POST['new_status'] ?? 'draft';
-        $db->prepare("UPDATE proposals SET status = ? WHERE id = ?")->execute([$new_status, $prop_id]);
-        set_flash('success', 'Teklif aşaması güncellendi.');
+        if (array_key_exists($new_status, PROPOSAL_STATUSES)) {
+            $db->prepare("UPDATE proposals SET status = ? WHERE id = ?")->execute([$new_status, $prop_id]);
+            set_flash('success', 'Teklif aşaması güncellendi.');
+        }
         redirect(BASE_URL . '/modules/proposals/index.php');
     }
 
@@ -66,15 +67,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prop_id = (int)$_POST['proposal_id'];
         $prop = $db->query("SELECT * FROM proposals WHERE id = {$prop_id}")->fetch();
 
+        if ($prop && !empty($prop['converted_project_id'])) {
+            set_flash('error', 'Bu teklif zaten projeye dönüştürülmüş.');
+            redirect(BASE_URL . '/modules/proposals/index.php');
+        }
+
         if ($prop && empty($prop['converted_project_id'])) {
+            require_permission('projects.create');
             $new_code = generate_project_code();
             $ins_p = $db->prepare("
                 INSERT INTO projects (client_id, project_code, project_name, project_type, workflow_model, status, agreed_budget, currency, start_date, deadline, description, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, 'pre_production', ?, ?, CURRENT_DATE(), ?, ?, ?, NOW())
+                VALUES (?, ?, ?, ?, ?, 'pre_production', ?, ?, CURRENT_DATE(), NULL, ?, ?, NOW())
             ");
             $ins_p->execute([
                 $prop['client_id'], $new_code, $prop['title'], $prop['project_type'], $prop['workflow_model'],
-                $prop['subtotal'], $prop['currency'], $prop['valid_until'],
+                $prop['subtotal'], $prop['currency'],
                 "Teklif No: {$prop['proposal_code']} kabul edilerek projeye dönüştürüldü.\n\nKapsam:\n{$prop['scope_items']}",
                 $user['id']
             ]);
@@ -190,9 +197,16 @@ require_once __DIR__ . '/../../includes/header.php';
                         <span class="font-mono text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                             <?= e($prop['proposal_code']) ?>
                         </span>
-                        <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= $prop['id'] ?>" target="_blank" class="p-1 text-slate-400 hover:text-slate-700" title="A4 Fiyat Teklifi Yazdır">
-                            <i data-lucide="printer" class="w-3.5 h-3.5"></i>
-                        </a>
+                        <span class="flex items-center gap-1">
+                            <?php if (empty($prop['converted_project_id'])): ?>
+                            <a href="<?= BASE_URL ?>/modules/proposals/create.php?id=<?= $prop['id'] ?>" class="p-1 text-slate-400 hover:text-indigo-600" title="Teklifi Düzenle">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                            </a>
+                            <?php endif; ?>
+                            <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= $prop['id'] ?>" target="_blank" class="p-1 text-slate-400 hover:text-slate-700" title="A4 Fiyat Teklifi Yazdır">
+                                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                            </a>
+                        </span>
                     </div>
 
                     <h4 class="font-bold text-slate-900 text-xs line-clamp-2"><?= e($prop['title']) ?></h4>
@@ -276,6 +290,11 @@ require_once __DIR__ . '/../../includes/header.php';
                             </td>
                             <td class="py-3.5 px-4 text-right">
                                 <div class="flex items-center justify-end gap-1.5">
+                                    <?php if (empty($prop['converted_project_id'])): ?>
+                                    <a href="<?= BASE_URL ?>/modules/proposals/create.php?id=<?= $prop['id'] ?>" class="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg" title="Teklifi Düzenle">
+                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                    </a>
+                                    <?php endif; ?>
                                     <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= $prop['id'] ?>" target="_blank" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg" title="A4 Teklif PDF Yazdır">
                                         <i data-lucide="printer" class="w-4 h-4"></i>
                                     </a>

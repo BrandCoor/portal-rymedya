@@ -9,7 +9,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
+if (!is_logged_in() || !has_permission('projects.view')) {
+    http_response_code(403);
     die("Yetkisiz erişim!");
 }
 
@@ -87,7 +88,7 @@ $crew_items = $cg_stmt->fetchAll();
                         <i data-lucide="clapperboard" class="w-6 h-6"></i>
                     </div>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight">RY MEDYA PRODÜKSİYON</h1>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
                         <p class="text-xs font-bold text-brand-600 tracking-wide uppercase">SET ÇAĞRI KAĞIDI / CALL SHEET</p>
                     </div>
                 </div>
@@ -174,12 +175,12 @@ $crew_items = $cg_stmt->fetchAll();
         <div class="pt-4 border-t border-slate-200 text-xs">
             <div class="grid grid-cols-2 gap-4 items-center">
                 <div>
-                    <p class="font-bold text-slate-800">RY MEDYA PRODÜKSİYON YÖNETİMİ</p>
-                    <p class="text-[11px] text-slate-500">Lütfen çağrı saatinden en geç 15 dakika önce sette hazır bulununuz.</p>
+                    <p class="font-bold text-slate-800"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?> YÖNETİMİ</p>
+                    <p class="text-[11px] text-slate-500 whitespace-pre-line"><?= e(get_setting('callsheet_default_notes', 'Lütfen çağrı saatinden en geç 15 dakika önce sette hazır bulununuz.')) ?></p>
                 </div>
                 <div class="text-right">
                     <p class="text-[10px] text-slate-400 uppercase font-bold">Prodüksiyon İletişim</p>
-                    <p class="font-mono text-slate-700 font-bold">+90 (555) 000 00 00</p>
+                    <p class="font-mono text-slate-700 font-bold"><?= e(get_setting('company_phone', '+90 (555) 000 00 00')) ?></p>
                 </div>
             </div>
         </div>

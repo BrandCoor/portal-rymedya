@@ -17,19 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $del_id = (int)$_POST['project_id'];
 
     if ($del_id > 0) {
-        // Projeye bağlı kesilmiş satış faturaları varsa cariden ters kayıtla düş
-        $inv_stmt = $db->prepare("SELECT id, contact_id, grand_total FROM invoices WHERE project_id = ? AND invoice_type = 'sales'");
-        $inv_stmt->execute([$del_id]);
-        $linked_invoices = $inv_stmt->fetchAll();
-
-        foreach ($linked_invoices as $linv) {
-            $db->prepare("UPDATE contacts SET balance = balance - ? WHERE id = ?")->execute([$linv['grand_total'], $linv['contact_id']]);
-            $db->prepare("DELETE FROM transactions WHERE invoice_id = ?")->execute([$linv['id']]);
-            $db->prepare("DELETE FROM invoices WHERE id = ?")->execute([$linv['id']]);
-        }
-
-        // Projeyi sil (Bağlı shoots, shoot_crew_gear ve project_revisions veritabanı CASCADE ile otomatik silinir)
-        $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$del_id]);
+        // Proje, bağlı faturalar/tahsilatlar, çekimler ve revizyonlar zincirleme silinir; bakiyeler eşitlenir
+        delete_project_cascade($del_id);
 
         set_flash('success', 'Proje ve bağlı tüm operasyon kayıtları başarıyla silindi.');
         redirect(BASE_URL . '/modules/projects/index.php');
@@ -234,7 +223,7 @@ $stats = [
 
                                 <!-- PROJEYİ SİLME BUTONU -->
                                 <?php if (has_permission('projects.delete')): ?>
-                                <form method="POST" action="" onsubmit="return confirm('DİKKAT: \'<?= e(addslashes($prj['project_name'])) ?>\' projesini ve bağlı tüm çekim/gider kayıtlarını kalıcı olarak silmek istediğinize emin misiniz?');" class="inline-block">
+                                <form method="POST" action="" onsubmit="return confirm(<?= js_val('DİKKAT: \'' . $prj['project_name'] . '\' projesini ve bağlı tüm çekim/gider kayıtlarını, faturalarını kalıcı olarak silmek istediğinize emin misiniz?') ?>);" class="inline-block">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="delete_project">
                                     <input type="hidden" name="project_id" value="<?= $prj['id'] ?>">

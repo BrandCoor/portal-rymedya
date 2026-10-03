@@ -24,6 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email) || empty($password)) {
         $error = 'Lütfen e-posta adresinizi ve şifrenizi giriniz.';
+    } elseif (is_login_locked($email)) {
+        $error = 'Çok fazla hatalı giriş denemesi yapıldı. Lütfen ' . LOGIN_LOCKOUT_MINUTES . ' dakika sonra tekrar deneyiniz.';
     } else {
         $stmt = $db->prepare("
             SELECT u.*, r.role_name, r.role_slug 
@@ -35,9 +37,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$email]);
         $user = $stmt->fetch();
 
-        if ($user && password_verify($password, $user['password'])) {
+        if ($user && password_verify($password, $user['password']) && is_portal_account($user)) {
+            // Müşteri hesapları yönetim paneline giremez, portala yönlendirilir
+            $error = 'Bu hesap bir müşteri portalı hesabıdır. Lütfen müşteri portalından giriş yapınız.';
+        } elseif ($user && password_verify($password, $user['password'])) {
+            clear_login_failures($email);
+
             // Oturumu Güvenli Şekilde Yenile (Session Fixation Koruması)
             session_regenerate_id(true);
+
+            // Şifre hash algoritması güncellendiyse hash'i yenile
+            if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
+                $db->prepare("UPDATE users SET password = ? WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
+            }
 
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['user'] = [
@@ -61,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('success', 'Hoş geldiniz, Sn. ' . $user['full_name']);
             redirect(BASE_URL . '/modules/dashboard/index.php');
         } else {
+            record_login_failure($email);
             $error = 'E-posta adresi veya şifre hatalı!';
         }
     }

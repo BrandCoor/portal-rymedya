@@ -9,11 +9,18 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    die("Yetkisiz erişim!");
-}
-
 $invoice_id = (int)($_GET['id'] ?? 0);
+
+// Yetki: Finans yetkili personel veya faturanın sahibi olan müşteri
+$is_staff_viewer = is_logged_in() && (has_permission('finance.view') || has_permission('finance.invoices'));
+$client_contact_scope = null;
+if (!$is_staff_viewer) {
+    if (!is_client_logged_in()) {
+        http_response_code(403);
+        die("Yetkisiz erişim!");
+    }
+    $client_contact_scope = (int)$_SESSION['client_contact_id'];
+}
 
 // Faturayı, Cariyi ve Projeyi Getir
 $stmt = $db->prepare("
@@ -30,12 +37,21 @@ $stmt = $db->prepare("
 $stmt->execute([$invoice_id]);
 $invoice = $stmt->fetch();
 
+// Müşteri yalnızca kendisine kesilmiş satış faturalarını görebilir
+if ($invoice && $client_contact_scope !== null && ((int)$invoice['contact_id'] !== $client_contact_scope || $invoice['invoice_type'] !== 'sales')) {
+    $invoice = false;
+}
+
 if (!$invoice) {
     die("Fatura belgesi bulunamadı!");
 }
 
 // Şirket Banka Bilgilerini Çek
-$bank = $db->query("SELECT * FROM accounts WHERE account_type = 'bank' AND iban IS NOT NULL AND iban != '' LIMIT 1")->fetch();
+// Ayarlarda birincil IBAN tanımlıysa o kullanılır, yoksa ilk banka hesabı
+$bank = false;
+if (get_setting('bank_primary_iban') === '') {
+    $bank = $db->query("SELECT * FROM accounts WHERE account_type = 'bank' AND iban IS NOT NULL AND iban != '' AND status = 'active' ORDER BY id ASC LIMIT 1")->fetch();
+}
 ?>
 <!DOCTYPE html>
 <html lang="tr">
@@ -95,7 +111,7 @@ $bank = $db->query("SELECT * FROM accounts WHERE account_type = 'bank' AND iban 
                         <i data-lucide="video" class="w-6 h-6"></i>
                     </div>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight">RY MEDYA PRODÜKSİYON</h1>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
                         <p class="text-[11px] text-slate-500 font-medium tracking-wide">Video Prodüksiyon & Reklam Hizmetleri</p>
                     </div>
                 </div>
@@ -209,8 +225,8 @@ $bank = $db->query("SELECT * FROM accounts WHERE account_type = 'bank' AND iban 
                         <p class="font-bold text-slate-800"><?= e($bank['account_name']) ?> (<?= e($bank['bank_name'] ?? 'Banka') ?>)</p>
                         <p class="font-mono text-slate-600 mt-0.5 font-medium"><?= e($bank['iban']) ?></p>
                     <?php else: ?>
-                        <p class="font-bold text-slate-800">RY Medya Prodüksiyon Ticari Hesap</p>
-                        <p class="font-mono text-slate-600 mt-0.5">TR00 0000 0000 0000 0000 0000 00</p>
+                        <p class="font-bold text-slate-800"><?= e(get_setting('bank_primary_receiver', get_setting('company_name', 'RY Medya Prodüksiyon'))) ?> (<?= e(get_setting('bank_primary_name', 'Banka')) ?>)</p>
+                        <p class="font-mono text-slate-600 mt-0.5"><?= e(get_setting('bank_primary_iban', 'TR00 0000 0000 0000 0000 0000 00')) ?></p>
                     <?php endif; ?>
                 </div>
 

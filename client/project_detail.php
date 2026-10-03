@@ -10,9 +10,7 @@ require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Müşteri Giriş Kontrolü
-if (!isset($_SESSION['client_user_id']) || !isset($_SESSION['client_contact_id'])) {
-    redirect(BASE_URL . '/client/login.php');
-}
+require_client_login();
 
 $contact_id = (int)$_SESSION['client_contact_id'];
 $project_id = (int)($_GET['id'] ?? 0);
@@ -37,60 +35,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'approve_cut') {
         $revision_id = (int)$_POST['revision_id'];
 
+        $rev_stmt = $db->prepare("SELECT * FROM project_revisions WHERE id = ? AND project_id = ?");
+        $rev_stmt->execute([$revision_id, $project_id]);
+        $rev = $rev_stmt->fetch();
+
+        if (!$rev || $rev['status'] === 'approved') {
+            set_flash('error', 'Bu kurgu versiyonu bulunamadı veya zaten onaylanmış.');
+            redirect(BASE_URL . "/client/project_detail.php?id={$project_id}");
+        }
+
         // 1. Revizyonu Onaylandı Yap
-        $up = $db->prepare("UPDATE project_revisions SET status = 'approved' WHERE id = ? AND project_id = ?");
-        $up->execute([$revision_id, $project_id]);
+        $db->prepare("UPDATE project_revisions SET status = 'approved' WHERE id = ? AND project_id = ?")->execute([$revision_id, $project_id]);
 
         // 2. Bu Projeye Daha Önce Satış Faturası Kesilmiş mi Kontrol Et
-        $chk_inv = $db->prepare("SELECT id FROM invoices WHERE project_id = ? AND invoice_type = 'sales' LIMIT 1");
-        $chk_inv->execute([$project_id]);
-        $existing_inv = $chk_inv->fetch();
+        // (Kurgu/edit hizmeti için ayrıca kesilen faturalar ana proje faturası sayılmaz)
+        $existing_inv = project_main_sales_invoice_id($project_id);
+        $base_budget = (float)$project['agreed_budget'];
 
-        if (!$existing_inv) {
-            // Taban Bütçe
-            $base_budget = (float)$project['agreed_budget'];
-
+        if (!$existing_inv && $base_budget > 0 && $project['status'] !== 'cancelled') {
             // Sette Müşteriye Yansıtılacak (Bütçeye Hariç) Ek Giderleri Topla
-            $rebillable_cost = (float)$db->query("
+            $reb_stmt = $db->prepare("
                 SELECT COALESCE(SUM(scg.agreed_fee), 0) 
                 FROM shoot_crew_gear scg 
                 JOIN shoots s ON scg.shoot_id = s.id 
-                WHERE s.project_id = {$project_id} AND scg.is_rebillable = 1
-            ")->fetchColumn();
-
-            // Faturalandırılacak Toplam Matrah
-            $final_subtotal = $base_budget + $rebillable_cost;
+                WHERE s.project_id = ? AND scg.is_rebillable = 1
+            ");
+            $reb_stmt->execute([$project_id]);
+            $final_subtotal = $base_budget + (float)$reb_stmt->fetchColumn();
 
             // KDV Oranı (Sistem Ayarlarından veya Varsayılan %20)
-            $settings_raw = $db->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_KEY_PAIR);
-            $vat_rate = (float)($settings_raw['default_vat_rate'] ?? 20);
-            $inv_prefix = $settings_raw['invoice_prefix'] ?? 'RYM-';
-
+            $vat_rate = (float)get_setting('default_vat_rate', '20');
             $tax = calculate_tax_breakdown($final_subtotal, $vat_rate, '0/10', 0);
-            $auto_inv_no = $inv_prefix . date('Y') . '-' . str_pad((string)$project['id'], 4, '0', STR_PAD_LEFT);
+            $auto_inv_no = generate_invoice_number('sales');
 
             // Resmi Satış Faturasını Oluştur
-            $ins_inv = $db->prepare("
+            $db->prepare("
                 INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
                 VALUES ('sales', ?, ?, ?, CURRENT_DATE(), ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())
-            ");
-            $ins_inv->execute([
+            ")->execute([
                 $auto_inv_no, $contact_id, $project_id,
                 $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'],
                 "{$project['project_name']} onaylanan prodüksiyon ve teslimat faturası"
             ]);
 
-            // Müşteri Carisine KDV Dahil Genel Toplamı Borç Yaz
-            $db->prepare("UPDATE contacts SET balance = balance + ? WHERE id = ?")->execute([$tax['grand_total'], $contact_id]);
+            // Cari bakiyesi hareketlerden yeniden hesaplanır
+            recalculate_contact_balance($contact_id);
 
             // Projeyi Faturalandırıldı Durumuna Getir
             $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
 
-            set_flash('success', 'Tebrikler! Kurgu versiyonunu onayladınız. Projeniz tamamlandı, resmi faturanız (' . format_money($tax['grand_total']) . ') oluşturularak hesabınıza işlendi.');
+            set_flash('success', 'Tebrikler! Kurgu versiyonunu onayladınız. Projeniz tamamlandı, faturanız (' . format_money($tax['grand_total']) . ') oluşturularak hesabınıza işlendi.');
         } else {
-            // Fatura zaten varsa projeyi tamamlandı yap
-            $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
-            set_flash('success', 'Kurgu versiyonu onaylandı.');
+            // Fatura zaten varsa (veya bütçe tanımsızsa) proje teslim edildi olarak işaretlenir
+            $new_status = $existing_inv ? 'invoiced' : 'completed';
+            if ($project['status'] !== 'cancelled') {
+                $db->prepare("UPDATE projects SET status = ? WHERE id = ?")->execute([$new_status, $project_id]);
+            }
+            set_flash('success', 'Kurgu versiyonu onaylandı. Teşekkür ederiz!');
         }
 
         redirect(BASE_URL . "/client/project_detail.php?id={$project_id}");
@@ -104,14 +105,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $feedback    = trim($_POST['feedback_notes'] ?? '');
 
         if (!empty($feedback)) {
-            $up = $db->prepare("UPDATE project_revisions SET status = 'revision_requested', feedback_notes = ? WHERE id = ? AND project_id = ?");
+            $up = $db->prepare("UPDATE project_revisions SET status = 'revision_requested', feedback_notes = ? WHERE id = ? AND project_id = ? AND status != 'approved'");
             $up->execute([$feedback, $revision_id, $project_id]);
 
-            $db->prepare("UPDATE projects SET status = 'revision' WHERE id = ?")->execute([$project_id]);
+            if ($up->rowCount() > 0 && !in_array($project['status'], ['invoiced', 'cancelled'], true)) {
+                $db->prepare("UPDATE projects SET status = 'revision' WHERE id = ?")->execute([$project_id]);
+            }
 
             set_flash('success', 'Revizyon talebiniz ve notlarınız prodüksiyon ekibimize iletildi.');
             redirect(BASE_URL . "/client/project_detail.php?id={$project_id}");
         }
+        set_flash('error', 'Lütfen revizyon notlarınızı yazınız.');
+        redirect(BASE_URL . "/client/project_detail.php?id={$project_id}");
     }
 }
 

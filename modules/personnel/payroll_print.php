@@ -9,7 +9,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
+if (!is_logged_in() || !has_permission('personnel.manage')) {
+    http_response_code(403);
     die("Yetkisiz erişim!");
 }
 

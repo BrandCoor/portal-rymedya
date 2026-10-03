@@ -9,15 +9,16 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-// Hem Admin hem de Giriş Yapmış Müşteri Erişebilsin
-if (!is_logged_in() && !isset($_SESSION['client_user_id'])) {
-    die("Yetkisiz erişim!");
-}
-
+// Hem yetkili personel hem de giriş yapmış müşteri erişebilsin
 $contact_id = (int)($_GET['id'] ?? 0);
+$is_staff_viewer = is_logged_in() && has_permission('contacts.view');
 
-// Müşteri oturumu açıksa sadece kendi ekstresini görebilsin (Güvenlik Kalkanı)
-if (isset($_SESSION['client_user_id'])) {
+if (!$is_staff_viewer) {
+    if (!is_client_logged_in()) {
+        http_response_code(403);
+        die("Yetkisiz erişim!");
+    }
+    // Müşteri sadece kendi ekstresini görebilir (Güvenlik Kalkanı)
     $contact_id = (int)$_SESSION['client_contact_id'];
 }
 
@@ -113,7 +114,7 @@ $total_credit = 0;
                         <i data-lucide="video" class="w-6 h-6"></i>
                     </div>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight">RY MEDYA PRODÜKSİYON</h1>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
                         <p class="text-[11px] text-slate-500 font-medium">Cari Hesap ve Bakiye Hareket Ekstresi</p>
                     </div>
                 </div>
@@ -221,7 +222,7 @@ $total_credit = 0;
         <div class="pt-6 border-t border-slate-200 text-xs">
             <div class="grid grid-cols-2 gap-8 pt-4">
                 <div class="border-t border-slate-300 pt-2 text-center">
-                    <p class="font-bold text-slate-800">RY MEDYA PRODÜKSİYON A.Ş.</p>
+                    <p class="font-bold text-slate-800"><?= e(get_setting('company_name', 'RY MEDYA PRODÜKSİYON A.Ş.')) ?></p>
                     <p class="text-[10px] text-slate-400">Yetkili İmza / Kaşe</p>
                 </div>
                 <div class="border-t border-slate-300 pt-2 text-center">

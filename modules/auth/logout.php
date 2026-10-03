@@ -8,18 +8,9 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-$_SESSION = [];
+// Sadece yönetim paneli oturumu kapatılır (aynı tarayıcıdaki müşteri portalı oturumu korunur)
+unset($_SESSION['user_id'], $_SESSION['user'], $_SESSION['user_permissions'], $_SESSION['csrf_token']);
+session_regenerate_id(true);
 
-if (ini_get("session.use_cookies")) {
-    $params = session_get_cookie_params();
-    setcookie(session_name(), '', time() - 42000,
-        $params["path"], $params["domain"],
-        $params["secure"], $params["httponly"]
-    );
-}
-
-session_destroy();
-
-session_start();
 set_flash('info', 'Başarıyla çıkış yaptınız.');
 redirect(BASE_URL . '/modules/auth/login.php');

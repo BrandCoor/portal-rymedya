@@ -9,10 +9,19 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('personnel.manage');
+
+// Bordro / avans ile kasa hareketini birebir eşleyen açıklama etiketleri.
+// (Önceki "LIKE '%Bordro #1%'" araması #10, #11... bordrolarını da yakalıyordu.)
+function payroll_tx_tag(int $id): string { return "(Bordro #{$id})"; }
+function advance_tx_tag(int $id): string { return "(Avans #{$id})"; }
+function find_tagged_tx(string $tag): array {
+    global $db;
+    $st = $db->prepare("SELECT * FROM transactions WHERE description LIKE ? AND contact_id IS NULL AND invoice_id IS NULL");
+    $st->execute(['%' . $tag]);
+    return $st->fetchAll();
+}
 
 // ====================================================================
 // 1. TÜM FORM İŞLEMLERİ (HEADER'DAN ÖNCE ÇALIŞIR)
@@ -28,17 +37,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $personnel_id       = (int)$_POST['personnel_id'];
         $period_month       = (int)($_POST['period_month'] ?? date('m'));
         $period_year        = (int)($_POST['period_year'] ?? date('Y'));
-        $base_salary        = (float)str_replace(['.', ','], ['', '.'], $_POST['base_salary'] ?? '0');
-        $advance_deductions = (float)str_replace(['.', ','], ['', '.'], $_POST['advance_deductions'] ?? '0');
-        $bonus              = (float)str_replace(['.', ','], ['', '.'], $_POST['bonus'] ?? '0');
-        $deductions         = (float)str_replace(['.', ','], ['', '.'], $_POST['deductions'] ?? '0');
+        $base_salary        = parse_money($_POST['base_salary'] ?? '0');
+        $advance_deductions = parse_money($_POST['advance_deductions'] ?? '0');
+        $bonus              = parse_money($_POST['bonus'] ?? '0');
+        $deductions         = parse_money($_POST['deductions'] ?? '0');
         $account_id         = (int)$_POST['account_id'];
-        $payment_date       = $_POST['payment_date'] ?? date('Y-m-d');
+        $payment_date       = valid_date($_POST['payment_date'] ?? '', date('Y-m-d'));
 
         $net_paid = ($base_salary + $bonus) - ($advance_deductions + $deductions);
 
-        if ($personnel_id > 0 && $net_paid > 0 && $account_id > 0) {
-            $p_info = $db->query("SELECT first_name, last_name FROM personnel WHERE id = {$personnel_id}")->fetch();
+        $dup = $db->prepare("SELECT COUNT(*) FROM payrolls WHERE personnel_id = ? AND period_month = ? AND period_year = ? AND status = 'paid'");
+        $dup->execute([$personnel_id, $period_month, $period_year]);
+        if ((int)$dup->fetchColumn() > 0) {
+            set_flash('error', "Bu personele {$period_month}/{$period_year} dönemi için zaten maaş ödemesi yapılmış.");
+            redirect(BASE_URL . '/modules/personnel/index.php');
+        }
+
+        if ($period_month < 1 || $period_month > 12) {
+            set_flash('error', 'Geçersiz dönem.');
+            redirect(BASE_URL . '/modules/personnel/index.php');
+        }
+
+        if ($net_paid <= 0 || $account_id <= 0) {
+            set_flash('error', 'Net ödenecek tutar sıfırdan büyük olmalı ve bir kasa/banka hesabı seçilmelidir.');
+            redirect(BASE_URL . '/modules/personnel/index.php');
+        }
+
+        $p_info = $db->query("SELECT first_name, last_name FROM personnel WHERE id = {$personnel_id}")->fetch();
+        if ($p_info) {
 
             $ins_pay = $db->prepare("
                 INSERT INTO payrolls (personnel_id, period_month, period_year, base_salary, bonus, deductions, advance_deductions, net_paid, status, payment_date, created_at)
@@ -55,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VALUES (?, NULL, NULL, NULL, 'expense', 'Personel Maaş Ödemesi', ?, ?, ?, ?, NOW())
             ")->execute([
                 $account_id, $net_paid, $payment_date,
-                "{$p_info['first_name']} {$p_info['last_name']} - {$period_month}/{$period_year} Net Maaş Ödemesi (Bordro #{$payroll_id})",
+                "{$p_info['first_name']} {$p_info['last_name']} - {$period_month}/{$period_year} Net Maaş Ödemesi " . payroll_tx_tag($payroll_id),
                 $user['id']
             ]);
 
@@ -82,16 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($pay) {
             // 1. Bu bordroya bağlı kasa hareketini bul ve sil, parayı kasaya iade et
-            $search_desc = "%Bordro #{$payroll_id}%";
-            $tx = $db->prepare("SELECT * FROM transactions WHERE description LIKE ?");
-            $tx->execute([$search_desc]);
-            $tx_row = $tx->fetch();
-
-            if ($tx_row) {
+            foreach (find_tagged_tx(payroll_tx_tag($payroll_id)) as $tx_row) {
                 $db->prepare("DELETE FROM transactions WHERE id = ?")->execute([$tx_row['id']]);
-                if (!empty($tx_row['account_id'])) {
-                    recalculate_account_balance((int)$tx_row['account_id']);
-                }
             }
 
             // 2. Kapatılmış avansları tekrar aktif (approved) durumuna getir
@@ -117,11 +135,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ==========================================
     if ($action === 'edit_payroll') {
         $payroll_id   = (int)$_POST['payroll_id'];
-        $bonus        = (float)str_replace(['.', ','], ['', '.'], $_POST['bonus'] ?? '0');
-        $deductions   = (float)str_replace(['.', ','], ['', '.'], $_POST['deductions'] ?? '0');
-        $payment_date = $_POST['payment_date'] ?? date('Y-m-d');
+        $bonus        = parse_money($_POST['bonus'] ?? '0');
+        $deductions   = parse_money($_POST['deductions'] ?? '0');
+        $payment_date = valid_date($_POST['payment_date'] ?? '', date('Y-m-d'));
 
         $pay = $db->query("SELECT * FROM payrolls WHERE id = {$payroll_id}")->fetch();
+        $new_net = $pay ? ($pay['base_salary'] + $bonus) - ($pay['advance_deductions'] + $deductions) : 0;
+        if ($pay && $new_net <= 0) {
+            set_flash('error', 'Net ödenecek tutar sıfırdan büyük olmalıdır.');
+            redirect(BASE_URL . '/modules/personnel/index.php');
+        }
         if ($pay) {
             $net_paid = ($pay['base_salary'] + $bonus) - ($pay['advance_deductions'] + $deductions);
 
@@ -129,9 +152,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ->execute([$bonus, $deductions, $net_paid, $payment_date, $payroll_id]);
 
             // Varsa kasa hareketini de güncelle
-            $search_desc = "%Bordro #{$payroll_id}%";
-            $db->prepare("UPDATE transactions SET amount = ?, transaction_date = ? WHERE description LIKE ?")
-               ->execute([$net_paid, $payment_date, $search_desc]);
+            foreach (find_tagged_tx(payroll_tx_tag($payroll_id)) as $tx_row) {
+                $db->prepare("UPDATE transactions SET amount = ?, transaction_date = ? WHERE id = ?")
+                   ->execute([$net_paid, $payment_date, $tx_row['id']]);
+            }
 
             recalculate_account_balance();
 
@@ -148,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $last_name   = trim($_POST['last_name'] ?? '');
         $department  = trim($_POST['department'] ?? 'Prodüksiyon');
         $job_title   = trim($_POST['job_title'] ?? '');
-        $base_salary = (float)str_replace(['.', ','], ['', '.'], $_POST['base_salary'] ?? '0');
+        $base_salary = parse_money($_POST['base_salary'] ?? '0');
         $start_date  = $_POST['start_date'] ?? date('Y-m-d');
         $iban        = trim($_POST['iban'] ?? '');
 
@@ -162,16 +186,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'edit_personnel') {
         $p_id        = (int)$_POST['personnel_id'];
-        $base_salary = (float)str_replace(['.', ','], ['', '.'], $_POST['base_salary'] ?? '0');
+        $base_salary = parse_money($_POST['base_salary'] ?? '0');
+        $first_name  = trim($_POST['first_name'] ?? '');
+        $last_name   = trim($_POST['last_name'] ?? '');
+
+        if ($first_name === '' || $last_name === '') {
+            set_flash('error', 'Ad ve soyad zorunludur.');
+            redirect(BASE_URL . '/modules/personnel/index.php');
+        }
 
         $db->prepare("UPDATE personnel SET first_name = ?, last_name = ?, department = ?, job_title = ?, base_salary = ?, start_date = ?, iban = ?, status = ? WHERE id = ?")
-           ->execute([trim($_POST['first_name']), trim($_POST['last_name']), $_POST['department'], trim($_POST['job_title']), $base_salary, $_POST['start_date'], trim($_POST['iban']), $_POST['status'], $p_id]);
+           ->execute([$first_name, $last_name, trim($_POST['department'] ?? ''), trim($_POST['job_title'] ?? ''), $base_salary, valid_date($_POST['start_date'] ?? ''), trim($_POST['iban'] ?? ''), ($_POST['status'] ?? 'active') === 'active' ? 'active' : ($_POST['status'] ?? 'inactive'), $p_id]);
         set_flash('success', 'Personel bilgileri güncellendi.');
         redirect(BASE_URL . '/modules/personnel/index.php');
     }
 
     if ($action === 'delete_personnel') {
         $p_id = (int)$_POST['personnel_id'];
+        // Ödenmiş maaş/avans kasa hareketleri muhasebe geçmişi olarak korunur
         $db->prepare("DELETE FROM advances WHERE personnel_id = ?")->execute([$p_id]);
         $db->prepare("DELETE FROM payrolls WHERE personnel_id = ?")->execute([$p_id]);
         $db->prepare("DELETE FROM personnel WHERE id = ?")->execute([$p_id]);
@@ -183,18 +215,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // E. AVANS İŞLEMLERİ
     // ==========================================
     if ($action === 'create_advance') {
-        $amount = (float)str_replace(['.', ','], ['', '.'], $_POST['amount'] ?? '0');
-        if ((int)$_POST['personnel_id'] > 0 && $amount > 0) {
+        $amount       = parse_money($_POST['amount'] ?? '0');
+        $personnel_id = (int)($_POST['personnel_id'] ?? 0);
+        $account_id   = (int)($_POST['account_id'] ?? 0);
+        $request_date = valid_date($_POST['request_date'] ?? '', date('Y-m-d'));
+        $p_info = $db->query("SELECT first_name, last_name FROM personnel WHERE id = {$personnel_id}")->fetch();
+
+        if ($p_info && $amount > 0) {
             $db->prepare("INSERT INTO advances (personnel_id, amount, request_date, status, reason, approved_by, created_at) VALUES (?, ?, ?, 'approved', ?, ?, NOW())")
-               ->execute([(int)$_POST['personnel_id'], $amount, $_POST['request_date']??date('Y-m-d'), trim($_POST['reason']??''), $user['id']]);
-            set_flash('success', 'Avans onaylandı.');
-            redirect(BASE_URL . '/modules/personnel/index.php');
+               ->execute([$personnel_id, $amount, $request_date, trim($_POST['reason'] ?? ''), $user['id']]);
+            $advance_id = (int)$db->lastInsertId();
+
+            // Avans nakit olarak ödendiği için kasadan çıkış yapılır.
+            // (Maaşta mahsup edildiğinde net maaş azalır; toplam kasa çıkışı brüt maaşa eşit olur.)
+            if ($account_id > 0) {
+                $db->prepare("
+                    INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at)
+                    VALUES (?, NULL, NULL, NULL, 'expense', 'Personel Avans Ödemesi', ?, ?, ?, ?, NOW())
+                ")->execute([$account_id, $amount, $request_date, "{$p_info['first_name']} {$p_info['last_name']} avans ödemesi " . advance_tx_tag($advance_id), $user['id']]);
+                recalculate_account_balance($account_id);
+            }
+            set_flash('success', 'Avans onaylandı' . ($account_id > 0 ? ' ve kasadan çıkış yapıldı.' : '.'));
+        } else {
+            set_flash('error', 'Lütfen personel ve geçerli bir tutar giriniz.');
         }
+        redirect(BASE_URL . '/modules/personnel/index.php');
     }
 
     if ($action === 'delete_advance') {
-        $db->prepare("DELETE FROM advances WHERE id = ?")->execute([(int)$_POST['advance_id']]);
-        set_flash('success', 'Avans silindi.');
+        $advance_id = (int)$_POST['advance_id'];
+        $adv = $db->query("SELECT * FROM advances WHERE id = {$advance_id}")->fetch();
+        if ($adv && $adv['status'] === 'deducted_from_salary') {
+            set_flash('error', 'Maaştan mahsup edilmiş bir avans silinemez. Önce ilgili bordroyu iptal ediniz.');
+        } elseif ($adv) {
+            foreach (find_tagged_tx(advance_tx_tag($advance_id)) as $tx_row) {
+                $db->prepare("DELETE FROM transactions WHERE id = ?")->execute([$tx_row['id']]);
+            }
+            $db->prepare("DELETE FROM advances WHERE id = ?")->execute([$advance_id]);
+            recalculate_account_balance();
+            set_flash('success', 'Avans ve varsa kasa çıkışı silindi.');
+        }
         redirect(BASE_URL . '/modules/personnel/index.php');
     }
 }
@@ -286,7 +346,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden mb-8">
         <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
             <div>
-                <h3 class="text-sm font-bold text-slate-900">Kadrolu Personel ve Maaş Hakediş Tablosu (<?= date('F Y') ?>)</h3>
+                <h3 class="text-sm font-bold text-slate-900">Kadrolu Personel ve Maaş Hakediş Tablosu (<?= turkish_month((int)date('n')) . ' ' . date('Y') ?>)</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Net Maaş = Taban Maaş - Alınan Avanslar</p>
             </div>
             <span class="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">
@@ -344,7 +404,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                         <!-- MAAŞ ÖDE BUTONU -->
                                         <button @click="paySalaryData = {
                                                     id: '<?= $p['id'] ?>',
-                                                    name: '<?= e(addslashes($p['first_name'] . ' ' . $p['last_name'])) ?>',
+                                                    name: <?= js_val($p['first_name'] . ' ' . $p['last_name']) ?>,
                                                     base_salary: <?= (float)$p['base_salary'] ?>,
                                                     advance: <?= (float)$p['this_month_advance'] ?>,
                                                     bonus: 0,
@@ -364,14 +424,14 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <!-- DÜZENLE -->
                                     <button @click="editPersonData = {
                                                 id: '<?= $p['id'] ?>',
-                                                first_name: '<?= e(addslashes($p['first_name'])) ?>',
-                                                last_name: '<?= e(addslashes($p['last_name'])) ?>',
-                                                department: '<?= e(addslashes($p['department'])) ?>',
-                                                job_title: '<?= e(addslashes($p['job_title'])) ?>',
+                                                first_name: <?= js_val($p['first_name']) ?>,
+                                                last_name: <?= js_val($p['last_name']) ?>,
+                                                department: <?= js_val($p['department']) ?>,
+                                                job_title: <?= js_val($p['job_title']) ?>,
                                                 base_salary: '<?= (float)$p['base_salary'] ?>',
                                                 start_date: '<?= $p['start_date'] ?>',
-                                                identity_number: '<?= e(addslashes($p['identity_number'] ?? '')) ?>',
-                                                iban: '<?= e(addslashes($p['iban'] ?? '')) ?>',
+                                                identity_number: <?= js_val($p['identity_number'] ?? '') ?>,
+                                                iban: <?= js_val($p['iban'] ?? '') ?>,
                                                 status: '<?= $p['status'] ?>'
                                             }; openEditPersonModal = true"
                                             class="p-1.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 rounded-lg transition" title="Personeli Düzenle">
@@ -456,7 +516,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <!-- BORDRO DÜZENLE BUTONU -->
                                     <button @click="editPayrollData = {
                                                 id: '<?= $pay['id'] ?>',
-                                                name: '<?= e(addslashes($pay['first_name'] . ' ' . $pay['last_name'])) ?>',
+                                                name: <?= js_val($pay['first_name'] . ' ' . $pay['last_name']) ?>,
                                                 bonus: <?= (float)$pay['bonus'] ?>,
                                                 deductions: <?= (float)$pay['deductions'] ?>,
                                                 payment_date: '<?= $pay['payment_date'] ?>'
@@ -798,6 +858,16 @@ require_once __DIR__ . '/../../includes/header.php';
                         <label class="block text-xs font-bold text-slate-600 mb-1">Tarih</label>
                         <input type="date" name="request_date" value="<?= date('Y-m-d') ?>" required class="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Ödendiği Kasa / Banka</label>
+                    <select name="account_id" class="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                        <?php foreach ($accounts as $acc): ?>
+                            <option value="<?= (int)$acc['id'] ?>"><?= e($acc['account_name']) ?> (<?= format_money($acc['balance'], $acc['currency']) ?>)</option>
+                        <?php endforeach; ?>
+                        <option value="0">Kasa hareketi oluşturma (sadece kayıt)</option>
+                    </select>
                 </div>
 
                 <div>

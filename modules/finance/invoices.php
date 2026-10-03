@@ -9,90 +9,104 @@ $page_title = 'Faturalar (Gelen / Giden)';
 require_once __DIR__ . '/../../includes/header.php';
 require_permission('finance.invoices');
 
-$auto_sales_number    = generate_invoice_number('sales');
-$auto_purchase_number = generate_invoice_number('purchase');
-
 // 1. FATURA İŞLEMLERİ (POST HANDLER)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    // Ortak form okuma & doğrulama
+    $read_invoice_form = function () {
+        return [
+            'invoice_type'     => ($_POST['invoice_type'] ?? 'sales') === 'purchase' ? 'purchase' : 'sales',
+            'invoice_number'   => trim($_POST['invoice_number'] ?? ''),
+            'contact_id'       => (int)($_POST['contact_id'] ?? 0),
+            'project_id'       => !empty($_POST['project_id']) ? (int)$_POST['project_id'] : null,
+            'issue_date'       => valid_date($_POST['issue_date'] ?? '', date('Y-m-d')),
+            'due_date'         => valid_date($_POST['due_date'] ?? ''),
+            'subtotal'         => parse_money($_POST['subtotal'] ?? '0'),
+            'vat_rate'         => (float)($_POST['vat_rate'] ?? 20),
+            'withholding_rate' => array_key_exists($_POST['withholding_rate'] ?? '', WITHHOLDING_RATES) ? $_POST['withholding_rate'] : '0/10',
+            'stoppage_rate'    => max(0, min(100, (float)($_POST['stoppage_rate'] ?? 0))),
+            'notes'            => trim($_POST['notes'] ?? ''),
+        ];
+    };
+
     // A. YENİ FATURA
     if ($action === 'create_invoice') {
-        $invoice_type     = $_POST['invoice_type'] ?? 'sales';
-        $invoice_number   = trim($_POST['invoice_number'] ?? '');
-        $contact_id       = (int)($_POST['contact_id'] ?? 0);
-        $project_id       = !empty($_POST['project_id']) ? (int)$_POST['project_id'] : null;
-        $issue_date       = $_POST['issue_date'] ?? date('Y-m-d');
-        $due_date         = !empty($_POST['due_date']) ? $_POST['due_date'] : null;
-        $subtotal         = (float)str_replace(['.', ','], ['', '.'], $_POST['subtotal'] ?? '0');
-        $vat_rate         = (float)($_POST['vat_rate'] ?? 20);
-        $withholding_rate = $_POST['withholding_rate'] ?? '0/10';
-        $stoppage_rate    = (float)($_POST['stoppage_rate'] ?? 0);
-        $notes            = trim($_POST['notes'] ?? '');
-
-        if (empty($invoice_number)) {
-            $invoice_number = generate_invoice_number($invoice_type);
+        $f = $read_invoice_form();
+        if ($f['invoice_number'] === '') {
+            $f['invoice_number'] = generate_invoice_number($f['invoice_type']);
         }
 
-        if ($contact_id > 0 && $subtotal > 0) {
-            $tax = calculate_tax_breakdown($subtotal, $vat_rate, $withholding_rate, $stoppage_rate);
+        if ($f['contact_id'] <= 0 || $f['subtotal'] <= 0) {
+            set_flash('error', 'Lütfen cari seçiniz ve geçerli bir tutar giriniz.');
+        } elseif (invoice_number_exists($f['invoice_number'], 0, $f['invoice_type'])) {
+            set_flash('error', "{$f['invoice_number']} numaralı fatura zaten kayıtlı.");
+        } else {
+            $tax = calculate_tax_breakdown($f['subtotal'], $f['vat_rate'], $f['withholding_rate'], $f['stoppage_rate']);
 
-            $stmt = $db->prepare("
+            $db->prepare("
                 INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, due_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, NOW())
-            ");
-            $stmt->execute([
-                $invoice_type, $invoice_number, $contact_id, $project_id, $issue_date, $due_date,
+            ")->execute([
+                $f['invoice_type'], $f['invoice_number'], $f['contact_id'], $f['project_id'], $f['issue_date'], $f['due_date'],
                 $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'],
                 $tax['withholding_rate'], $tax['withholding_amount'],
                 $tax['stoppage_rate'], $tax['stoppage_amount'],
-                $tax['grand_total'], $notes
+                $tax['grand_total'], $f['notes']
             ]);
 
-            recalculate_contact_balance($contact_id);
-            set_flash('success', "{$invoice_number} numaralı fatura başarıyla kaydedildi.");
-            redirect(BASE_URL . '/modules/finance/invoices.php');
+            recalculate_contact_balance($f['contact_id']);
+            set_flash('success', "{$f['invoice_number']} numaralı fatura başarıyla kaydedildi.");
         }
+        redirect(BASE_URL . '/modules/finance/invoices.php');
     }
 
     // B. FATURA DÜZENLEME
     if ($action === 'edit_invoice') {
-        $invoice_id       = (int)$_POST['invoice_id'];
-        $invoice_type     = $_POST['invoice_type'] ?? 'sales';
-        $invoice_number   = trim($_POST['invoice_number'] ?? '');
-        $contact_id       = (int)($_POST['contact_id'] ?? 0);
-        $project_id       = !empty($_POST['project_id']) ? (int)$_POST['project_id'] : null;
-        $issue_date       = $_POST['issue_date'] ?? date('Y-m-d');
-        $due_date         = !empty($_POST['due_date']) ? $_POST['due_date'] : null;
-        $subtotal         = (float)str_replace(['.', ','], ['', '.'], $_POST['subtotal'] ?? '0');
-        $vat_rate         = (float)($_POST['vat_rate'] ?? 20);
-        $withholding_rate = $_POST['withholding_rate'] ?? '0/10';
-        $stoppage_rate    = (float)($_POST['stoppage_rate'] ?? 0);
-        $notes            = trim($_POST['notes'] ?? '');
+        $invoice_id = (int)$_POST['invoice_id'];
+        $f = $read_invoice_form();
 
-        if (!empty($invoice_number) && $contact_id > 0 && $subtotal > 0) {
-            $tax = calculate_tax_breakdown($subtotal, $vat_rate, $withholding_rate, $stoppage_rate);
+        $old_stmt = $db->prepare("SELECT * FROM invoices WHERE id = ?");
+        $old_stmt->execute([$invoice_id]);
+        $old_inv = $old_stmt->fetch();
 
-            $up_stmt = $db->prepare("
+        if (!$old_inv) {
+            set_flash('error', 'Fatura bulunamadı.');
+        } elseif ($f['invoice_number'] === '' || $f['contact_id'] <= 0 || $f['subtotal'] <= 0) {
+            set_flash('error', 'Fatura no, cari ve tutar zorunludur.');
+        } elseif (invoice_number_exists($f['invoice_number'], $invoice_id, $f['invoice_type'])) {
+            set_flash('error', "{$f['invoice_number']} numaralı başka bir fatura zaten kayıtlı.");
+        } else {
+            $tax = calculate_tax_breakdown($f['subtotal'], $f['vat_rate'], $f['withholding_rate'], $f['stoppage_rate']);
+
+            $db->prepare("
                 UPDATE invoices 
                 SET invoice_type = ?, invoice_number = ?, contact_id = ?, project_id = ?, issue_date = ?, due_date = ?,
                     subtotal = ?, vat_rate = ?, vat_amount = ?, withholding_rate = ?, withholding_amount = ?,
                     stoppage_rate = ?, stoppage_amount = ?, grand_total = ?, notes = ?
                 WHERE id = ?
-            ");
-            $up_stmt->execute([
-                $invoice_type, $invoice_number, $contact_id, $project_id, $issue_date, $due_date,
+            ")->execute([
+                $f['invoice_type'], $f['invoice_number'], $f['contact_id'], $f['project_id'], $f['issue_date'], $f['due_date'],
                 $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'],
                 $tax['withholding_rate'], $tax['withholding_amount'],
                 $tax['stoppage_rate'], $tax['stoppage_amount'],
-                $tax['grand_total'], $notes, $invoice_id
+                $tax['grand_total'], $f['notes'], $invoice_id
             ]);
 
-            recalculate_contact_balance($contact_id);
-            set_flash('success', "{$invoice_number} numaralı fatura güncellendi.");
-            redirect(BASE_URL . '/modules/finance/invoices.php');
+            // Faturaya bağlı tahsilatlar yeni cari/tür ile uyumlu hale getirilir
+            $db->prepare("UPDATE transactions SET contact_id = ?, project_id = ?, type = ? WHERE invoice_id = ?")
+               ->execute([$f['contact_id'], $f['project_id'], $f['invoice_type'] === 'sales' ? 'income' : 'expense', $invoice_id]);
+
+            sync_invoice_payment($invoice_id);
+            recalculate_contact_balance($f['contact_id']);
+            if ((int)$old_inv['contact_id'] !== $f['contact_id'] && !empty($old_inv['contact_id'])) {
+                recalculate_contact_balance((int)$old_inv['contact_id']);
+            }
+            recalculate_account_balance();
+            set_flash('success', "{$f['invoice_number']} numaralı fatura güncellendi.");
         }
+        redirect(BASE_URL . '/modules/finance/invoices.php');
     }
 
     // C. ZİNCİRLEME FATURA SİLME (TAHSİLATLAR VE KASA DAHİL SİLİNİR)
@@ -103,45 +117,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/modules/finance/invoices.php');
     }
 
-    // D. TAHSİLAT ALMA
+    // D. TAHSİLAT / ÖDEME
     if ($action === 'pay_invoice') {
-        $invoice_id = (int)$_POST['invoice_id'];
-        $account_id = (int)$_POST['account_id'];
-        $pay_amount = (float)str_replace(['.', ','], ['', '.'], $_POST['pay_amount'] ?? '0');
-        $pay_date   = $_POST['pay_date'] ?? date('Y-m-d');
-
-        $inv = $db->query("SELECT * FROM invoices WHERE id = {$invoice_id}")->fetch();
-
-        if ($inv && $account_id > 0 && $pay_amount > 0) {
-            $new_paid = (float)$inv['paid_amount'] + $pay_amount;
-            $new_status = ($new_paid >= (float)$inv['grand_total']) ? 'paid' : 'partial';
-
-            $db->prepare("UPDATE invoices SET paid_amount = ?, payment_status = ? WHERE id = ?")
-               ->execute([$new_paid, $new_status, $invoice_id]);
-
-            $tx_type = ($inv['invoice_type'] === 'sales') ? 'income' : 'expense';
-            $acc_modifier = ($tx_type === 'income') ? $pay_amount : -$pay_amount;
-
-            $db->prepare("
-                INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, 'Fatura Tahsilatı', ?, ?, ?, ?, NOW())
-            ")->execute([
-                $account_id, $inv['contact_id'], $invoice_id, $inv['project_id'],
-                $tx_type, $pay_amount, $pay_date, "Fatura No: {$inv['invoice_number']} ödemesi", $user['id']
-            ]);
-
-            $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$acc_modifier, $account_id]);
-
-            recalculate_contact_balance((int)$inv['contact_id']);
-            set_flash('success', 'Ödeme başarıyla işlendi ve kasa güncellendi.');
-            redirect(BASE_URL . '/modules/finance/invoices.php');
-        }
+        $err = record_invoice_payment(
+            (int)$_POST['invoice_id'],
+            (int)($_POST['account_id'] ?? 0),
+            parse_money($_POST['pay_amount'] ?? '0'),
+            valid_date($_POST['pay_date'] ?? '', date('Y-m-d')),
+            (int)$user['id']
+        );
+        $err ? set_flash('error', $err) : set_flash('success', 'Ödeme başarıyla işlendi; kasa, cari ve fatura durumu güncellendi.');
+        redirect(BASE_URL . '/modules/finance/invoices.php');
     }
 }
 
+$auto_sales_number    = generate_invoice_number('sales');
+$auto_purchase_number = generate_invoice_number('purchase');
+
 // 2. SORGULAR
-$type_filter = $_GET['type'] ?? '';
+$type_filter   = $_GET['type'] ?? '';
 $status_filter = $_GET['status'] ?? '';
+$search        = trim($_GET['search'] ?? '');
+$date_from     = valid_date($_GET['from'] ?? '');
+$date_to       = valid_date($_GET['to'] ?? '');
 
 $sql = "
     SELECT i.*, c.company_title as contact_title, p.project_name, p.project_code
@@ -156,9 +154,24 @@ if (!empty($type_filter)) {
     $sql .= " AND i.invoice_type = ?";
     $params[] = $type_filter;
 }
-if (!empty($status_filter)) {
+if ($status_filter === 'overdue') {
+    $sql .= " AND i.payment_status != 'paid' AND i.due_date IS NOT NULL AND i.due_date < CURRENT_DATE()";
+} elseif (!empty($status_filter)) {
     $sql .= " AND i.payment_status = ?";
     $params[] = $status_filter;
+}
+if ($search !== '') {
+    $sql .= " AND (i.invoice_number LIKE ? OR c.company_title LIKE ? OR p.project_name LIKE ? OR i.notes LIKE ?)";
+    $term = "%{$search}%";
+    array_push($params, $term, $term, $term, $term);
+}
+if ($date_from) {
+    $sql .= " AND i.issue_date >= ?";
+    $params[] = $date_from;
+}
+if ($date_to) {
+    $sql .= " AND i.issue_date <= ?";
+    $params[] = $date_to;
 }
 
 $sql .= " ORDER BY i.issue_date DESC, i.id DESC";
@@ -232,6 +245,42 @@ $total_uncollected = $db->query("SELECT COALESCE(SUM(grand_total - paid_amount),
         </div>
     </div>
 
+    <!-- Filtreler -->
+    <form method="GET" action="" class="mb-4 flex flex-wrap items-end gap-2 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm text-xs">
+        <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ara</label>
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="Fatura no, cari, proje..." class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl w-52">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tür</label>
+            <select name="type" class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <option value="">Tümü</option>
+                <option value="sales" <?= $type_filter === 'sales' ? 'selected' : '' ?>>Satış</option>
+                <option value="purchase" <?= $type_filter === 'purchase' ? 'selected' : '' ?>>Alış / Gider</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ödeme Durumu</label>
+            <select name="status" class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <option value="">Tümü</option>
+                <option value="unpaid" <?= $status_filter === 'unpaid' ? 'selected' : '' ?>>Ödenmedi</option>
+                <option value="partial" <?= $status_filter === 'partial' ? 'selected' : '' ?>>Kısmi Ödendi</option>
+                <option value="paid" <?= $status_filter === 'paid' ? 'selected' : '' ?>>Ödendi</option>
+                <option value="overdue" <?= $status_filter === 'overdue' ? 'selected' : '' ?>>Vadesi Geçmiş</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Başlangıç</label>
+            <input type="date" name="from" value="<?= e($date_from) ?>" class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl">
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Bitiş</label>
+            <input type="date" name="to" value="<?= e($date_to) ?>" class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl">
+        </div>
+        <button type="submit" class="py-2 px-4 bg-slate-900 text-white font-bold rounded-xl">Filtrele</button>
+        <a href="<?= BASE_URL ?>/modules/finance/invoices.php" class="py-2 px-3 text-slate-500 font-semibold">Temizle</a>
+    </form>
+
     <!-- Faturalar Tablosu -->
     <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
@@ -274,9 +323,21 @@ $total_uncollected = $db->query("SELECT COALESCE(SUM(grand_total - paid_amount),
                             </td>
                             <td class="py-3.5 px-4 text-right font-black text-slate-900"><?= format_money($inv['grand_total']) ?></td>
                             <td class="py-3.5 px-4 text-center">
-                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold <?= $inv['payment_status'] === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' ?>">
-                                    <?= $inv['payment_status'] === 'paid' ? 'ÖDENDİ' : 'ÖDENMEDİ' ?>
-                                </span>
+                                <?php
+                                    $ps_map = [
+                                        'paid'    => ['ÖDENDİ', 'bg-emerald-100 text-emerald-800'],
+                                        'partial' => ['KISMİ', 'bg-amber-100 text-amber-800'],
+                                        'unpaid'  => ['ÖDENMEDİ', 'bg-rose-100 text-rose-800'],
+                                    ];
+                                    $ps = $ps_map[$inv['payment_status']] ?? $ps_map['unpaid'];
+                                    $is_overdue = $inv['payment_status'] !== 'paid' && !empty($inv['due_date']) && $inv['due_date'] < date('Y-m-d');
+                                ?>
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold <?= $ps[1] ?>"><?= $ps[0] ?></span>
+                                <?php if ($is_overdue): ?>
+                                    <span class="block mt-1 text-[9px] font-bold text-rose-600">VADE GEÇTİ (<?= format_date($inv['due_date']) ?>)</span>
+                                <?php elseif ($inv['payment_status'] === 'partial'): ?>
+                                    <span class="block mt-1 text-[9px] text-slate-500">Kalan: <?= format_money($rem) ?></span>
+                                <?php endif; ?>
                             </td>
                             <td class="py-3.5 px-4 text-right">
                                 <div class="flex items-center justify-end gap-1.5">
@@ -287,7 +348,7 @@ $total_uncollected = $db->query("SELECT COALESCE(SUM(grand_total - paid_amount),
                                     <button @click="editInvData = {
                                                 id: '<?= $inv['id'] ?>',
                                                 invoice_type: '<?= $inv['invoice_type'] ?>',
-                                                invoice_number: '<?= e(addslashes($inv['invoice_number'])) ?>',
+                                                invoice_number: <?= js_val($inv['invoice_number']) ?>,
                                                 contact_id: '<?= $inv['contact_id'] ?>',
                                                 project_id: '<?= $inv['project_id'] ?? '' ?>',
                                                 issue_date: '<?= $inv['issue_date'] ?>',
@@ -296,14 +357,14 @@ $total_uncollected = $db->query("SELECT COALESCE(SUM(grand_total - paid_amount),
                                                 vat_rate: '<?= (float)$inv['vat_rate'] ?>',
                                                 withholding_rate: '<?= $inv['withholding_rate'] ?? '0/10' ?>',
                                                 stoppage_rate: '<?= (float)$inv['stoppage_rate'] ?>',
-                                                notes: '<?= e(addslashes($inv['notes'] ?? '')) ?>'
+                                                notes: <?= js_val($inv['notes'] ?? '') ?>
                                             }; openEditInvoiceModal = true"
                                             class="p-1.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 rounded-lg transition" title="Düzenle">
                                         <i data-lucide="edit-3" class="w-4 h-4"></i>
                                     </button>
 
                                     <?php if ($inv['payment_status'] !== 'paid'): ?>
-                                    <button @click="selectedInvoice = { id: <?= $inv['id'] ?>, number: '<?= e($inv['invoice_number']) ?>', remaining: '<?= $rem ?>' }; openPayModal = true"
+                                    <button @click="selectedInvoice = { id: <?= $inv['id'] ?>, number: <?= js_val($inv['invoice_number']) ?>, remaining: '<?= $rem ?>' }; openPayModal = true"
                                             class="bg-brand-50 hover:bg-brand-600 hover:text-white text-brand-700 font-bold py-1 px-2.5 rounded-lg text-[11px] transition">
                                         Tahsilat
                                     </button>

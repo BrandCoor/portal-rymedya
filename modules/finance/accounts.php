@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('finance.view');
 
 // ====================================================================
@@ -24,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Yeni Hesap Açma
     if ($action === 'create_account') {
         $name     = trim($_POST['account_name'] ?? '');
-        $type     = $_POST['account_type'] ?? 'bank';
-        $currency = $_POST['currency'] ?? 'TRY';
+        $type     = ($_POST['account_type'] ?? 'bank') === 'cash' ? 'cash' : 'bank';
+        $currency = array_key_exists($_POST['currency'] ?? '', CURRENCIES) ? $_POST['currency'] : 'TRY';
         $bank     = trim($_POST['bank_name'] ?? '');
         $iban     = trim($_POST['iban'] ?? '');
 
@@ -37,13 +35,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Hesap Düzenleme
+    if ($action === 'edit_account') {
+        $acc_id = (int)($_POST['account_id'] ?? 0);
+        $name   = trim($_POST['account_name'] ?? '');
+        if ($acc_id > 0 && $name !== '') {
+            $db->prepare("UPDATE accounts SET account_name = ?, bank_name = ?, iban = ? WHERE id = ?")
+               ->execute([$name, trim($_POST['bank_name'] ?? ''), trim($_POST['iban'] ?? ''), $acc_id]);
+            set_flash('success', 'Hesap bilgileri güncellendi.');
+        }
+        redirect(BASE_URL . '/modules/finance/accounts.php');
+    }
+
+    // Hesabı Pasife Alma (hareketler korunur)
+    if ($action === 'deactivate_account') {
+        $acc_id = (int)($_POST['account_id'] ?? 0);
+        recalculate_account_balance($acc_id);
+        $bal = (float)$db->query("SELECT balance FROM accounts WHERE id = {$acc_id}")->fetchColumn();
+        if (abs($bal) > 0.009) {
+            set_flash('error', 'Bakiyesi sıfır olmayan bir hesap pasife alınamaz. Önce bakiyeyi virman ile aktarınız.');
+        } else {
+            $done = false;
+            foreach (['inactive', 'passive', 'closed'] as $st) {
+                try {
+                    $up = $db->prepare("UPDATE accounts SET status = ? WHERE id = ?");
+                    $up->execute([$st, $acc_id]);
+                    $done = $db->query("SELECT status FROM accounts WHERE id = {$acc_id}")->fetchColumn() === $st;
+                } catch (Throwable $e) {
+                    $done = false;
+                }
+                if ($done) {
+                    break;
+                }
+            }
+            $done ? set_flash('success', 'Hesap pasife alındı. Geçmiş hareketler korunmaktadır.')
+                  : set_flash('error', 'Hesap durumu güncellenemedi.');
+        }
+        redirect(BASE_URL . '/modules/finance/accounts.php');
+    }
+
+    // Hesaplar Arası Virman (Transfer)
+    if ($action === 'transfer') {
+        $from   = (int)($_POST['from_account_id'] ?? 0);
+        $to     = (int)($_POST['to_account_id'] ?? 0);
+        $amount = parse_money($_POST['amount'] ?? '0');
+        $date   = valid_date($_POST['transaction_date'] ?? '', date('Y-m-d'));
+        $desc   = trim($_POST['description'] ?? '');
+
+        $acc_stmt = $db->prepare("SELECT id, account_name, currency FROM accounts WHERE id = ? AND status = 'active'");
+        $acc_stmt->execute([$from]);
+        $from_acc = $acc_stmt->fetch();
+        $acc_stmt->execute([$to]);
+        $to_acc = $acc_stmt->fetch();
+
+        if (!$from_acc || !$to_acc || $from === $to || $amount <= 0) {
+            set_flash('error', 'Lütfen iki farklı aktif hesap ve geçerli bir tutar seçiniz.');
+        } elseif ($from_acc['currency'] !== $to_acc['currency']) {
+            set_flash('error', 'Farklı para birimindeki hesaplar arasında virman yapılamaz.');
+        } else {
+            $ins = $db->prepare("INSERT INTO transactions (account_id, type, category, amount, transaction_date, description, created_by, created_at) VALUES (?, ?, 'Virman / Hesaplar Arası Transfer', ?, ?, ?, ?, NOW())");
+            $ins->execute([$from, 'expense', $amount, $date, ($desc ?: "{$to_acc['account_name']} hesabına virman"), $user['id']]);
+            $ins->execute([$to, 'income', $amount, $date, ($desc ?: "{$from_acc['account_name']} hesabından virman"), $user['id']]);
+            recalculate_account_balance($from);
+            recalculate_account_balance($to);
+            set_flash('success', 'Virman işlemi tamamlandı.');
+        }
+        redirect(BASE_URL . '/modules/finance/accounts.php');
+    }
+
     // Manuel Para Girişi / Çıkışı
     if ($action === 'create_transaction') {
         $acc_id   = (int)$_POST['account_id'];
-        $type     = $_POST['type']; // income, expense
-        $category = trim($_POST['category'] ?? 'Genel');
-        $amount   = (float)str_replace(['.', ','], ['', '.'], $_POST['amount'] ?? '0');
-        $date     = $_POST['transaction_date'] ?? date('Y-m-d');
+        $type     = ($_POST['type'] ?? '') === 'income' ? 'income' : 'expense';
+        $category = trim($_POST['category'] ?? '') ?: 'Genel';
+        $amount   = parse_money($_POST['amount'] ?? '0');
+        $date     = valid_date($_POST['transaction_date'] ?? '', date('Y-m-d'));
         $desc     = trim($_POST['description'] ?? '');
 
         if ($acc_id > 0 && $amount > 0) {
@@ -68,7 +134,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!empty($tx['contact_id'])) {
                 recalculate_contact_balance((int)$tx['contact_id']);
             }
-            set_flash('success', 'Hareket silindi ve kasa bakiyesi eşitlendi.');
+            if (!empty($tx['invoice_id'])) {
+                // Faturaya bağlı tahsilat silindiyse fatura ödeme durumu da geri alınır
+                sync_invoice_payment((int)$tx['invoice_id']);
+            }
+            set_flash('success', 'Hareket silindi; kasa, cari ve fatura durumları eşitlendi.');
             redirect(BASE_URL . '/modules/finance/accounts.php');
         }
     }
@@ -79,20 +149,31 @@ recalculate_account_balance();
 
 // 2. VERİLERİ ÇEKME
 $accounts = $db->query("SELECT * FROM accounts WHERE status = 'active' ORDER BY id ASC")->fetchAll();
-$transactions = $db->query("
+$account_filter = (int)($_GET['account'] ?? 0);
+$tx_limit = min(500, max(30, (int)($_GET['limit'] ?? 30)));
+
+$tx_sql = "
     SELECT t.*, a.account_name, u.full_name as user_name
     FROM transactions t
     LEFT JOIN accounts a ON t.account_id = a.id
     LEFT JOIN users u ON t.created_by = u.id
-    ORDER BY t.transaction_date DESC, t.id DESC
-    LIMIT 30
-")->fetchAll();
+    WHERE t.account_id IS NOT NULL
+";
+$tx_params = [];
+if ($account_filter > 0) {
+    $tx_sql .= " AND t.account_id = ?";
+    $tx_params[] = $account_filter;
+}
+$tx_sql .= " ORDER BY t.transaction_date DESC, t.id DESC LIMIT {$tx_limit}";
+$tx_stmt = $db->prepare($tx_sql);
+$tx_stmt->execute($tx_params);
+$transactions = $tx_stmt->fetchAll();
 
 $page_title = 'Kasa & Banka Hesapları';
 require_once __DIR__ . '/../../includes/header.php';
 ?>
 
-<div x-data="{ openAccountModal: false, openTxModal: false }">
+<div x-data="{ openAccountModal: false, openTxModal: false, openTransferModal: false, openEditAccModal: false, editAcc: {} }">
     <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="text-2xl font-black text-slate-900 tracking-tight">Kasa & Banka Yönetimi</h1>
@@ -103,6 +184,12 @@ require_once __DIR__ . '/../../includes/header.php';
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 <span>Yeni Hesap Tanımla</span>
             </button>
+            <?php if (count($accounts) > 1): ?>
+            <button @click="openTransferModal = true" class="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl shadow-xs transition">
+                <i data-lucide="repeat" class="w-4 h-4"></i>
+                <span>Virman</span>
+            </button>
+            <?php endif; ?>
             <button @click="openTxModal = true" class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-md transition">
                 <i data-lucide="arrow-left-right" class="w-4 h-4"></i>
                 <span>Manuel Hareket Girişi</span>
@@ -120,8 +207,24 @@ require_once __DIR__ . '/../../includes/header.php';
                 </div>
                 <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600"><?= $acc['currency'] ?></span>
             </div>
-            <h3 class="text-sm font-bold text-slate-900"><?= e($acc['account_name']) ?></h3>
-            <p class="text-xs text-slate-400 mt-0.5"><?= !empty($acc['bank_name']) ? e($acc['bank_name']) : 'Nakit Kasa' ?></p>
+            <div class="flex items-start justify-between gap-2">
+                <div>
+                    <a href="?account=<?= (int)$acc['id'] ?>" class="text-sm font-bold text-slate-900 hover:text-brand-600"><?= e($acc['account_name']) ?></a>
+                    <p class="text-xs text-slate-400 mt-0.5"><?= !empty($acc['bank_name']) ? e($acc['bank_name']) : 'Nakit Kasa' ?></p>
+                    <?php if (!empty($acc['iban'])): ?><p class="text-[10px] font-mono text-slate-400 mt-0.5"><?= e($acc['iban']) ?></p><?php endif; ?>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button @click="editAcc = { id: <?= (int)$acc['id'] ?>, account_name: <?= js_val($acc['account_name']) ?>, bank_name: <?= js_val($acc['bank_name'] ?? '') ?>, iban: <?= js_val($acc['iban'] ?? '') ?> }; openEditAccModal = true" class="p-1.5 text-slate-400 hover:text-brand-600" title="Düzenle">
+                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <form method="POST" action="" onsubmit="return confirm('Hesap pasife alınsın mı? (Bakiyesi sıfır olmalıdır)');">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="deactivate_account">
+                        <input type="hidden" name="account_id" value="<?= (int)$acc['id'] ?>">
+                        <button type="submit" class="p-1.5 text-slate-300 hover:text-rose-600" title="Pasife Al"><i data-lucide="archive" class="w-3.5 h-3.5"></i></button>
+                    </form>
+                </div>
+            </div>
             <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
                 <span class="text-xs text-slate-500 font-medium">Bakiye:</span>
                 <span class="text-xl font-black <?= (float)$acc['balance'] >= 0 ? 'text-slate-900' : 'text-rose-600' ?>">
@@ -136,7 +239,19 @@ require_once __DIR__ . '/../../includes/header.php';
     <div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         <div class="p-5 border-b border-slate-200 flex items-center justify-between">
             <h3 class="text-sm font-bold text-slate-900">Son Kasa & Banka Hareketleri</h3>
-            <span class="text-xs text-slate-400">Son 30 İşlem</span>
+            <form method="GET" action="" class="flex items-center gap-2 text-xs">
+                <select name="account" onchange="this.form.submit()" class="py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                    <option value="0">Tüm Hesaplar</option>
+                    <?php foreach ($accounts as $a): ?>
+                        <option value="<?= (int)$a['id'] ?>" <?= $account_filter === (int)$a['id'] ? 'selected' : '' ?>><?= e($a['account_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="limit" onchange="this.form.submit()" class="py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                    <?php foreach ([30, 100, 250, 500] as $lim): ?>
+                        <option value="<?= $lim ?>" <?= $tx_limit === $lim ? 'selected' : '' ?>>Son <?= $lim ?> işlem</option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
@@ -213,6 +328,10 @@ require_once __DIR__ . '/../../includes/header.php';
                     </div>
                 </div>
                 <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Banka Adı</label>
+                    <input type="text" name="bank_name" placeholder="Örn: Garanti BBVA" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">IBAN Numarası</label>
                     <input type="text" name="iban" placeholder="TR..." class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
                 </div>
@@ -265,6 +384,79 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-2 flex justify-end gap-2">
                     <button type="button" @click="openTxModal = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
                     <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-bold rounded-xl text-xs shadow-md">İşlemi Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- VİRMAN MODALI -->
+    <div x-show="openTransferModal" x-cloak class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl" @click.away="openTransferModal = false">
+            <h3 class="text-base font-bold text-slate-900 mb-4">Hesaplar Arası Virman</h3>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="transfer">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Çıkış Hesabı *</label>
+                        <select name="from_account_id" required class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <?php foreach ($accounts as $a): ?>
+                                <option value="<?= (int)$a['id'] ?>"><?= e($a['account_name']) ?> (<?= format_money($a['balance'], $a['currency']) ?>)</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Giriş Hesabı *</label>
+                        <select name="to_account_id" required class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <?php foreach (array_reverse($accounts) as $a): ?>
+                                <option value="<?= (int)$a['id'] ?>"><?= e($a['account_name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tutar *</label>
+                        <input type="number" step="0.01" min="0.01" name="amount" required class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tarih</label>
+                        <input type="date" name="transaction_date" value="<?= date('Y-m-d') ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Açıklama</label>
+                    <input type="text" name="description" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" @click="openTransferModal = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-bold rounded-xl text-xs">Virman Yap</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- HESAP DÜZENLEME MODALI -->
+    <div x-show="openEditAccModal" x-cloak class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl" @click.away="openEditAccModal = false">
+            <h3 class="text-base font-bold text-slate-900 mb-4">Hesabı Düzenle</h3>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="edit_account">
+                <input type="hidden" name="account_id" :value="editAcc.id">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Hesap Adı *</label>
+                    <input type="text" name="account_name" required x-model="editAcc.account_name" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Banka Adı</label>
+                    <input type="text" name="bank_name" x-model="editAcc.bank_name" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">IBAN</label>
+                    <input type="text" name="iban" x-model="editAcc.iban" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" @click="openEditAccModal = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-bold rounded-xl text-xs">Kaydet</button>
                 </div>
             </form>
         </div>

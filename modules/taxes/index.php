@@ -48,64 +48,72 @@ $total_stoppage  = (float)$purchase_tax['stopaj'];
 $monthly_gross_profit = (float)$sales_tax['matrah'] - (float)$purchase_tax['matrah'];
 
 // ====================================================================
-// 3. GELİR VERGİSİ DİLİMLERİ MOTORU (GVK 103)
+// 3. GELİR VERGİSİ DİLİMLERİ MOTORU (GVK 103 - YILA GÖRE TARİFE)
 // ====================================================================
-function calculate_income_tax_brackets(float $profit): array {
+function income_tax_brackets_for_year(int $year): array {
+    $years = array_keys(INCOME_TAX_BRACKETS);
+    // Tarifesi tanımlı olmayan yıllar için en yakın önceki (yoksa en eski) yılın tarifesi kullanılır
+    $usable = array_filter($years, fn($y) => $y <= $year);
+    $key = $usable ? max($usable) : min($years);
+    return INCOME_TAX_BRACKETS[$key];
+}
+
+function calculate_income_tax_brackets(float $profit, int $year): array {
+    $brackets = income_tax_brackets_for_year($year);
     if ($profit <= 0) {
-        return ['tax' => 0.00, 'effective_rate' => 0.0, 'bracket_info' => '%15 (Kâr Yok / Zarar)'];
+        return ['tax' => 0.00, 'effective_rate' => 0.0, 'bracket_info' => '%' . $brackets[0][1] . ' (Kâr Yok / Zarar)', 'bracket_index' => 0];
     }
 
     $tax = 0.00;
-    $remaining = $profit;
-
-    // Dilim 1: 0 - 158.000 TL (%15)
-    $b1 = min($remaining, 158000);
-    $tax += $b1 * 0.15;
-    $remaining -= $b1;
-
-    // Dilim 2: 158.000 - 380.000 TL (%20)
-    if ($remaining > 0) {
-        $b2 = min($remaining, 222000);
-        $tax += $b2 * 0.20;
-        $remaining -= $b2;
+    $lower = 0.0;
+    $bracket_index = 0;
+    foreach ($brackets as $i => [$upper, $rate]) {
+        $cap = $upper === null ? $profit : min($profit, (float)$upper);
+        if ($cap > $lower) {
+            $tax += ($cap - $lower) * ($rate / 100);
+            $bracket_index = $i;
+        }
+        if ($upper === null || $profit <= $upper) {
+            break;
+        }
+        $lower = (float)$upper;
     }
-
-    // Dilim 3: 380.000 - 900.000 TL (%27)
-    if ($remaining > 0) {
-        $b3 = min($remaining, 520000);
-        $tax += $b3 * 0.27;
-        $remaining -= $b3;
-    }
-
-    // Dilim 4: 900.000 - 4.300.000 TL (%35)
-    if ($remaining > 0) {
-        $b4 = min($remaining, 3400000);
-        $tax += $b4 * 0.35;
-        $remaining -= $b4;
-    }
-
-    // Dilim 5: 4.300.000 TL Üzeri (%40)
-    if ($remaining > 0) {
-        $tax += $remaining * 0.40;
-    }
-
-    $effective_rate = ($profit > 0) ? ($tax / $profit) * 100 : 0.0;
-
-    $bracket_label = '%15 Dilimi';
-    if ($profit > 4300000) $bracket_label = '%40 Dilimi';
-    elseif ($profit > 900000) $bracket_label = '%35 Dilimi';
-    elseif ($profit > 380000) $bracket_label = '%27 Dilimi';
-    elseif ($profit > 158000) $bracket_label = '%20 Dilimi';
 
     return [
         'tax'            => round($tax, 2),
-        'effective_rate' => round($effective_rate, 1),
-        'bracket_info'   => $bracket_label
+        'effective_rate' => round(($tax / $profit) * 100, 1),
+        'bracket_info'   => '%' . $brackets[$bracket_index][1] . ' Dilimi',
+        'bracket_index'  => $bracket_index
     ];
 }
 
-$monthly_income_tax_data = calculate_income_tax_brackets($monthly_gross_profit);
-$monthly_corporate_tax   = $monthly_gross_profit > 0 ? round($monthly_gross_profit * 0.25, 2) : 0.00;
+// Gelir vergisi YILLIK kümülatif kâr üzerinden hesaplanır. Seçili aya düşen pay,
+// "Ocak–seçili ay" vergisi ile "Ocak–önceki ay" vergisi arasındaki farktır.
+$ytd_stmt = $db->prepare("
+    SELECT
+        COALESCE(SUM(CASE WHEN invoice_type = 'sales' THEN subtotal ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN invoice_type = 'purchase' THEN subtotal ELSE 0 END), 0)
+    FROM invoices
+    WHERE YEAR(issue_date) = ? AND MONTH(issue_date) <= ?
+");
+$ytd_stmt->execute([$selected_year, $selected_month]);
+$ytd_profit = (float)$ytd_stmt->fetchColumn();
+$ytd_stmt->execute([$selected_year, $selected_month - 1]);
+$ytd_profit_prev = (float)$ytd_stmt->fetchColumn();
+
+$ytd_tax_data      = calculate_income_tax_brackets($ytd_profit, $selected_year);
+$ytd_tax_prev_data = calculate_income_tax_brackets($ytd_profit_prev, $selected_year);
+$active_brackets   = income_tax_brackets_for_year($selected_year);
+
+$monthly_income_tax_data = [
+    'tax'            => max(0, round($ytd_tax_data['tax'] - $ytd_tax_prev_data['tax'], 2)),
+    'effective_rate' => $ytd_tax_data['effective_rate'],
+    'bracket_info'   => $ytd_tax_data['bracket_info'],
+    'bracket_index'  => $ytd_tax_data['bracket_index'],
+];
+
+$corporate_rate          = (float)get_setting('corporate_tax_rate', '25');
+$monthly_corporate_tax   = $monthly_gross_profit > 0 ? round($monthly_gross_profit * ($corporate_rate / 100), 2) : 0.00;
 $custom_calculated_tax   = $monthly_gross_profit > 0 ? round($monthly_gross_profit * ($custom_tax_rate / 100), 2) : 0.00;
 
 // Seçili Yönteme Göre Vergi Tutarını Belirle
@@ -115,8 +123,8 @@ if ($company_type === 'custom') {
     $active_badge      = "%{$custom_tax_rate} Sabit Dilim";
 } elseif ($company_type === 'corporate') {
     $active_tax_amount = $monthly_corporate_tax;
-    $active_tax_label  = "Kurumlar Vergisi (%25)";
-    $active_badge      = "%25 Sabit";
+    $active_tax_label  = "Kurumlar Vergisi (%{$corporate_rate})";
+    $active_badge      = "%{$corporate_rate} Sabit";
 } else {
     $active_tax_amount = $monthly_income_tax_data['tax'];
     $active_tax_label  = "Kademeli Gelir Vergisi (GVK)";
@@ -140,7 +148,7 @@ $actual_net_take_home = $monthly_gross_profit - ($net_payable_vat > 0 ? $net_pay
         <!-- Vergi Hesaplama Modu -->
         <select name="company_type" x-model="cType" onchange="this.form.submit()" class="py-2 px-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-950 cursor-pointer">
             <option value="personal">👤 Şahıs Şirketi (Otomatik Kademeli %15-%40)</option>
-            <option value="corporate">🏢 Ltd. Şti. / A.Ş. (Sabit Kurumlar %25)</option>
+            <option value="corporate">🏢 Ltd. Şti. / A.Ş. (Sabit Kurumlar %<?= e((string)$corporate_rate) ?>)</option>
             <option value="custom">⚡ Özel / Manuel Vergi Oranı Seçimi (%...)</option>
         </select>
 
@@ -159,7 +167,7 @@ $actual_net_take_home = $monthly_gross_profit - ($net_payable_vat > 0 ? $net_pay
         <select name="month" onchange="this.form.submit()" class="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-pointer">
             <?php for ($m = 1; $m <= 12; $m++): ?>
                 <option value="<?= $m ?>" <?= $selected_month === $m ? 'selected' : '' ?>>
-                    <?= date('F', mktime(0, 0, 0, $m, 1)) ?> (<?= $m ?>. Ay)
+                    <?= turkish_month($m) ?> (<?= $m ?>. Ay)
                 </option>
             <?php endfor; ?>
         </select>
@@ -267,7 +275,7 @@ $actual_net_take_home = $monthly_gross_profit - ($net_payable_vat > 0 ? $net_pay
     <div class="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
             <h3 class="text-sm font-bold text-slate-900">Gelir Vergisi Dilim Baremleri (GVK Madde 103)</h3>
-            <p class="text-xs text-slate-400">Şahıs şirketlerinin yıllık kâr matrahına göre uygulanan resmi kademeli oranlar</p>
+            <p class="text-xs text-slate-400">Şahıs şirketlerinin yıllık kâr matrahına göre uygulanan <?= (int)$selected_year ?> yılı kademeli oranları (Ocak–<?= turkish_month($selected_month) ?> kümülatif kâr: <?= format_money($ytd_profit) ?>)</p>
         </div>
         <span class="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl">
             <?= $company_type === 'custom' ? "Uygulanan Özel Dilim: %{$custom_tax_rate}" : "Efektif Oran: %{$monthly_income_tax_data['effective_rate']}" ?>
@@ -275,35 +283,18 @@ $actual_net_take_home = $monthly_gross_profit - ($net_payable_vat > 0 ? $net_pay
     </div>
 
     <div class="p-6 grid grid-cols-1 sm:grid-cols-5 gap-3 text-xs text-center">
-        <div class="p-3.5 rounded-2xl border <?= ($company_type === 'custom' && (int)$custom_tax_rate === 15) || ($company_type === 'personal' && $monthly_gross_profit <= 158000) ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
-            <span class="font-bold text-slate-400 block text-[10px]">1. DİLİM</span>
-            <strong class="text-slate-900 text-sm block mt-1">%15</strong>
-            <span class="text-[11px] text-slate-500 block mt-1">0 - 158.000 ₺</span>
+        <?php $lower_b = 0; foreach ($active_brackets as $bi => [$upper_b, $rate_b]):
+            $is_active_b = ($company_type === 'custom' && (int)$custom_tax_rate === (int)$rate_b)
+                        || ($company_type === 'personal' && $monthly_income_tax_data['bracket_index'] === $bi);
+        ?>
+        <div class="p-3.5 rounded-2xl border <?= $is_active_b ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
+            <span class="font-bold text-slate-400 block text-[10px]"><?= $bi + 1 ?>. DİLİM</span>
+            <strong class="text-slate-900 text-sm block mt-1">%<?= $rate_b ?></strong>
+            <span class="text-[11px] text-slate-500 block mt-1">
+                <?= $upper_b === null ? number_format($lower_b, 0, ',', '.') . ' ₺ ve Üzeri' : number_format($lower_b, 0, ',', '.') . ' - ' . number_format($upper_b, 0, ',', '.') . ' ₺' ?>
+            </span>
         </div>
-
-        <div class="p-3.5 rounded-2xl border <?= ($company_type === 'custom' && (int)$custom_tax_rate === 20) || ($company_type === 'personal' && $monthly_gross_profit > 158000 && $monthly_gross_profit <= 380000) ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
-            <span class="font-bold text-slate-400 block text-[10px]">2. DİLİM</span>
-            <strong class="text-slate-900 text-sm block mt-1">%20</strong>
-            <span class="text-[11px] text-slate-500 block mt-1">158.000 - 380.000 ₺</span>
-        </div>
-
-        <div class="p-3.5 rounded-2xl border <?= ($company_type === 'custom' && (int)$custom_tax_rate === 27) || ($company_type === 'personal' && $monthly_gross_profit > 380000 && $monthly_gross_profit <= 900000) ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
-            <span class="font-bold text-slate-400 block text-[10px]">3. DİLİM</span>
-            <strong class="text-slate-900 text-sm block mt-1">%27</strong>
-            <span class="text-[11px] text-slate-500 block mt-1">380.000 - 900.000 ₺</span>
-        </div>
-
-        <div class="p-3.5 rounded-2xl border <?= ($company_type === 'custom' && (int)$custom_tax_rate === 35) || ($company_type === 'personal' && $monthly_gross_profit > 900000 && $monthly_gross_profit <= 4300000) ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
-            <span class="font-bold text-slate-400 block text-[10px]">4. DİLİM</span>
-            <strong class="text-slate-900 text-sm block mt-1">%35</strong>
-            <span class="text-[11px] text-slate-500 block mt-1">900.000 - 4.300.000 ₺</span>
-        </div>
-
-        <div class="p-3.5 rounded-2xl border <?= ($company_type === 'custom' && (int)$custom_tax_rate === 40) || ($company_type === 'personal' && $monthly_gross_profit > 4300000) ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500' : 'bg-slate-50 border-slate-200' ?>">
-            <span class="font-bold text-slate-400 block text-[10px]">5. DİLİM</span>
-            <strong class="text-slate-900 text-sm block mt-1">%40</strong>
-            <span class="text-[11px] text-slate-500 block mt-1">4.300.000 ₺ ve Üzeri</span>
-        </div>
+        <?php $lower_b = $upper_b ?? $lower_b; endforeach; ?>
     </div>
 </div>
 

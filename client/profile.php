@@ -10,30 +10,14 @@ require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Müşteri Giriş Kontrolü
-if (!isset($_SESSION['client_user_id']) || !isset($_SESSION['client_contact_id'])) {
-    redirect(BASE_URL . '/client/login.php');
-}
+require_client_login();
 
 $contact_id  = (int)$_SESSION['client_contact_id'];
 $client_id   = (int)$_SESSION['client_user_id'];
 $client_user = $_SESSION['client_user'];
 
 // Otomatik Tablo Kontrolü
-$db->query("
-    CREATE TABLE IF NOT EXISTS `contact_change_logs` (
-      `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      `contact_id` INT UNSIGNED NOT NULL,
-      `user_id` INT UNSIGNED NOT NULL,
-      `user_name` VARCHAR(150) NOT NULL,
-      `field_key` VARCHAR(50) NOT NULL,
-      `field_label` VARCHAR(100) NOT NULL,
-      `old_value` TEXT NULL,
-      `new_value` TEXT NULL,
-      `ip_address` VARCHAR(50) NULL,
-      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (`contact_id`) REFERENCES `contacts`(`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-");
+ensure_contact_change_logs_table();
 
 // Cari Bilgilerini Getir
 $c_stmt = $db->prepare("SELECT * FROM contacts WHERE id = ?");
@@ -56,6 +40,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $current_password      = $_POST['current_password'] ?? '';
 
         $client_ip = $_SERVER['REMOTE_ADDR'] ?? 'Bilinmiyor';
+
+        // E-posta aynı zamanda portal giriş adresidir: geçerli ve benzersiz olmalı
+        if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
+            redirect(BASE_URL . '/client/profile.php');
+        }
+        $em_chk = $db->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND id != ?");
+        $em_chk->execute([$new_email, $client_id]);
+        if ((int)$em_chk->fetchColumn() > 0) {
+            set_flash('error', 'Bu e-posta adresi başka bir hesap tarafından kullanılıyor.');
+            redirect(BASE_URL . '/client/profile.php');
+        }
+        if (!empty($new_password) && strlen($new_password) < 8) {
+            set_flash('error', 'Yeni şifre en az 8 karakter olmalıdır.');
+            redirect(BASE_URL . '/client/profile.php');
+        }
         $changes_count = 0;
 
         // Kontrol edilecek ve loglanacak alanlar

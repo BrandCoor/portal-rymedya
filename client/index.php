@@ -10,9 +10,7 @@ require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Müşteri Giriş Kontrolü
-if (!isset($_SESSION['client_user_id']) || !isset($_SESSION['client_contact_id'])) {
-    redirect(BASE_URL . '/client/login.php');
-}
+require_client_login();
 
 $contact_id  = (int)$_SESSION['client_contact_id'];
 $client_user = $_SESSION['client_user'];
@@ -63,7 +61,7 @@ foreach ($invoices as $inv) {
         'amount'      => (float)$inv['grand_total'],
         'status'      => $inv['payment_status'],
         'description' => $inv['notes'] ?: ($is_sales ? 'Prodüksiyon Fatura Bedeli' : 'Gider Kaydı'),
-        'pdf_link'    => BASE_URL . "/modules/finance/invoice_print.php?id={$inv['id']}"
+        'pdf_link'    => $is_sales ? BASE_URL . "/modules/finance/invoice_print.php?id={$inv['id']}" : null
     ];
 }
 
@@ -89,6 +87,22 @@ foreach ($transactions as $tx) {
 usort($ledger, function($a, $b) {
     return strtotime($b['date']) <=> strtotime($a['date']);
 });
+
+// 3. Müşteriye iletilmiş fiyat teklifleri (taslaklar gösterilmez)
+$proposals = [];
+try {
+    $pr_stmt = $db->prepare("SELECT * FROM proposals WHERE client_id = ? AND status != 'draft' ORDER BY id DESC");
+    $pr_stmt->execute([$contact_id]);
+    $proposals = $pr_stmt->fetchAll();
+} catch (Throwable $e) {
+    $proposals = [];
+}
+$proposal_labels = [
+    'sent'        => ['Değerlendirmenizde', 'bg-blue-100 text-blue-800'],
+    'negotiating' => ['Görüşülüyor', 'bg-amber-100 text-amber-800'],
+    'approved'    => ['Kabul Edildi', 'bg-emerald-100 text-emerald-800'],
+    'rejected'    => ['Reddedildi', 'bg-rose-100 text-rose-800'],
+];
 ?>
 <!DOCTYPE html>
 <html lang="tr" class="h-full bg-slate-50">
@@ -211,6 +225,36 @@ usort($ledger, function($a, $b) {
                 </div>
             <?php endif; ?>
         </div>
+
+        <?php if (!empty($proposals)): ?>
+        <!-- FİYAT TEKLİFLERİ -->
+        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+            <div class="mb-4 pb-3 border-b border-slate-100">
+                <h3 class="text-base font-bold text-slate-900">Fiyat Teklifleriniz (<?= count($proposals) ?>)</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Size iletilen teklifleri görüntüleyip PDF olarak indirebilirsiniz.</p>
+            </div>
+            <div class="divide-y divide-slate-100 text-xs">
+                <?php foreach ($proposals as $pr):
+                    $pl = $proposal_labels[$pr['status']] ?? [$pr['status'], 'bg-slate-100 text-slate-700'];
+                ?>
+                <div class="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <span class="font-mono font-bold text-indigo-600"><?= e($pr['proposal_code']) ?></span>
+                        <span class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold <?= $pl[1] ?>"><?= e($pl[0]) ?></span>
+                        <p class="font-bold text-slate-900 mt-1"><?= e($pr['title']) ?></p>
+                        <p class="text-[11px] text-slate-500">Geçerlilik: <?= format_date($pr['valid_until']) ?></p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="font-black text-slate-900"><?= format_money($pr['grand_total'], $pr['currency']) ?></span>
+                        <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= (int)$pr['id'] ?>" target="_blank" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-indigo-600 text-white rounded-lg font-bold">
+                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i> PDF
+                        </a>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- 2. TÜM HESAP HAREKETLERİ, BORÇLANDIRMALAR & FATURALAR DÖKÜMÜ -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">

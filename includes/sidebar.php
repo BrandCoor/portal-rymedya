@@ -5,7 +5,7 @@
  * ====================================================================
  */
 
-$current_page = $_SERVER['REQUEST_URI'];
+$current_page = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
 
 function is_active(string $path): string {
     global $current_page;
@@ -50,10 +50,12 @@ function is_active(string $path): string {
             <p class="px-3.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Satış & Teklifler</p>
         </div>
 
+        <?php if (can_access_module('proposals.manage')): ?>
         <a href="<?= BASE_URL ?>/modules/proposals/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/proposals') ?>">
             <i data-lucide="kanban" class="w-4 h-4 mr-3 text-indigo-400"></i>
             <span>Teklifler & Pipeline</span>
         </a>
+        <?php endif; ?>
 
         <!-- PRODÜKSİYON BÖLÜMÜ -->
         <div class="pt-4 pb-1">
@@ -68,10 +70,12 @@ function is_active(string $path): string {
         <?php endif; ?>
 
         <!-- EKİPMAN & ENVANTER -->
+        <?php if (can_access_module('inventory.manage')): ?>
         <a href="<?= BASE_URL ?>/modules/inventory/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/inventory') ?>">
             <i data-lucide="camera" class="w-4 h-4 mr-3 text-amber-400"></i>
             <span>Ekipman & Demirbaş</span>
         </a>
+        <?php endif; ?>
 
         <!-- CARİ HESAPLAR -->
         <div class="pt-4 pb-1">
@@ -90,11 +94,14 @@ function is_active(string $path): string {
             <p class="px-3.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Finans & Muhasebe</p>
         </div>
 
-        <?php if (has_permission('finance.view')): ?>
+        <?php if (has_permission('finance.invoices')): ?>
         <a href="<?= BASE_URL ?>/modules/finance/invoices.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/finance/invoices') ?>">
             <i data-lucide="receipt" class="w-4 h-4 mr-3"></i>
             <span>Faturalar (Giren/Çıkan)</span>
         </a>
+        <?php endif; ?>
+
+        <?php if (has_permission('finance.view')): ?>
 
         <a href="<?= BASE_URL ?>/modules/finance/accounts.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/finance/accounts') ?>">
             <i data-lucide="wallet" class="w-4 h-4 mr-3"></i>

@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('projects.create');
 
 // Self-Healing DB
@@ -68,16 +66,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $client_id            = (int)($_POST['client_id'] ?? 0);
         $new_client           = trim($_POST['new_client_title'] ?? '');
         $project_name         = trim($_POST['project_name'] ?? '');
-        $project_code         = trim($_POST['project_code'] ?? generate_project_code());
+        $project_code         = trim($_POST['project_code'] ?? '');
         $project_type         = $_POST['project_type'] ?? 'commercial';
-        $workflow_model       = $_POST['workflow_model'] ?? 'internal_full';
-        $outsource_contact_id = !empty($_POST['outsource_contact_id']) ? (int)$_POST['outsource_contact_id'] : null;
-        $status               = $_POST['status'] ?? 'pre_production';
-        $agreed_budget        = (float)str_replace(['.', ','], ['', '.'], $_POST['agreed_budget'] ?? '0');
-        $currency             = $_POST['currency'] ?? 'TRY';
-        $start_date           = !empty($_POST['start_date']) ? $_POST['start_date'] : null;
-        $deadline             = !empty($_POST['deadline']) ? $_POST['deadline'] : null;
+        $workflow_model       = array_key_exists($_POST['workflow_model'] ?? '', WORKFLOW_MODELS) ? $_POST['workflow_model'] : 'internal_full';
+        $outsource_contact_id = (!empty($_POST['outsource_contact_id']) && str_contains($workflow_model, 'outsource')) ? (int)$_POST['outsource_contact_id'] : null;
+        $status               = array_key_exists($_POST['status'] ?? '', PROJECT_STATUSES) ? $_POST['status'] : 'pre_production';
+        $agreed_budget        = parse_money($_POST['agreed_budget'] ?? '0');
+        $currency             = array_key_exists($_POST['currency'] ?? '', CURRENCIES) ? $_POST['currency'] : 'TRY';
+        $start_date           = valid_date($_POST['start_date'] ?? '');
+        $deadline             = valid_date($_POST['deadline'] ?? '');
         $description          = trim($_POST['description'] ?? '');
+
+        // Proje kodu boşsa veya başka projede kullanılıyorsa otomatik yeni kod üret
+        $code_chk = $db->prepare("SELECT COUNT(*) FROM projects WHERE project_code = ?");
+        $code_chk->execute([$project_code]);
+        if ($project_code === '' || (int)$code_chk->fetchColumn() > 0) {
+            $project_code = generate_project_code();
+        }
+
+        if ($start_date && $deadline && $deadline < $start_date) {
+            set_flash('error', 'Teslim tarihi başlangıç tarihinden önce olamaz.');
+            redirect(BASE_URL . '/modules/projects/create.php');
+        }
+
+        if ($client_id > 0) {
+            $c_chk = $db->prepare("SELECT id FROM contacts WHERE id = ?");
+            $c_chk->execute([$client_id]);
+            if (!$c_chk->fetch()) {
+                $client_id = 0;
+            }
+        }
 
         if ($client_id === 0 && !empty($new_client)) {
             $c_stmt = $db->prepare("INSERT INTO contacts (type, company_title, created_at) VALUES ('client', ?, NOW())");
@@ -96,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $new_project_id = $db->lastInsertId();
-            set_flash('success', "{$project_name} projesi başarıyla başlatıldı!");
+            set_flash('success', "{$project_name} projesi ({$project_code}) başarıyla başlatıldı!");
             redirect(BASE_URL . "/modules/projects/detail.php?id={$new_project_id}");
         } else {
             set_flash('error', 'Lütfen geçerli bir müşteri ve proje adı giriniz.');

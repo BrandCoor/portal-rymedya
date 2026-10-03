@@ -78,3 +78,12 @@ const CURRENCIES = [
     'EUR' => '€ Euro',
     'GBP' => '£ İngiliz Sterlini'
 ];
+
+// Gelir Vergisi Tarifesi (GVK 103 - Ücret Dışı Gelirler)
+// Her dilim: [üst sınır (TL, null = sınırsız), oran]
+// Yeni yıl tarifesi açıklandığında buraya eklenmesi yeterlidir.
+const INCOME_TAX_BRACKETS = [
+    2025 => [[158000, 15], [330000, 20], [800000, 27], [4300000, 35], [null, 40]],
+    2026 => [[190000, 15], [400000, 20], [1000000, 27], [5300000, 35], [null, 40]],
+];
+

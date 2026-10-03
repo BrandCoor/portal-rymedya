@@ -9,9 +9,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
+require_module_permission('inventory.manage');
 
 // Self-Healing DB: Kiralama kolonlarını kontrol et / ekle
 try {
@@ -61,13 +60,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'rent_out_equipment') {
         $eq_id        = (int)$_POST['equipment_id'];
         $contact_id   = (int)$_POST['contact_id'];
-        $start_date   = $_POST['start_date'] ?? date('Y-m-d');
-        $end_date     = !empty($_POST['end_date']) ? $_POST['end_date'] : null;
-        $rental_fee   = (float)str_replace(['.', ','], ['', '.'], $_POST['rental_fee'] ?? '0');
-        $billing_type = $_POST['billing_type'] ?? 'invoice'; // 'invoice' = KDV'li Fatura, 'debit' = Faturasız Borç Dekontu, 'none' = Faturasız
+        $start_date   = valid_date($_POST['start_date'] ?? '', date('Y-m-d'));
+        $end_date     = valid_date($_POST['end_date'] ?? '');
+        $rental_fee   = parse_money($_POST['rental_fee'] ?? '0');
+        $billing_type = in_array($_POST['billing_type'] ?? '', ['invoice', 'debit', 'none'], true) ? $_POST['billing_type'] : 'invoice'; // 'invoice' = KDV'li Fatura, 'debit' = Faturasız Borç Dekontu, 'none' = Faturasız
         $vat_rate     = (float)($_POST['vat_rate'] ?? 20);
 
         $eq = $db->query("SELECT * FROM equipment WHERE id = {$eq_id}")->fetch();
+
+        if ($eq && in_array($eq['status'], ['rented_out', 'retired'], true)) {
+            set_flash('error', 'Bu ekipman zaten kirada veya hurdaya ayrılmış.');
+            redirect(BASE_URL . '/modules/inventory/index.php');
+        }
+        if ($end_date && $end_date < $start_date) {
+            set_flash('error', 'Kira bitiş tarihi başlangıç tarihinden önce olamaz.');
+            redirect(BASE_URL . '/modules/inventory/index.php');
+        }
 
         if ($eq && $contact_id > 0 && $rental_fee >= 0) {
             
@@ -76,9 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tax = calculate_tax_breakdown($rental_fee, $vat_rate, '0/10', 0);
                 $inv_no = generate_invoice_number('sales');
 
+                // NOT: Eski sorguda 13 kolona 11 değer veriliyordu (contact_id NULL yazılıyor,
+                // parametre sayısı uyuşmadığı için fatura hiç oluşmuyordu).
                 $ins_inv = $db->prepare("
-                    INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, due_date, subtotal, vat_rate, vat_amount, grand_total, payment_status, notes, created_at)
-                    VALUES ('sales', ?, NULL, ?, ?, ?, ?, ?, 'unpaid', ?, NOW())
+                    INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, due_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
+                    VALUES ('sales', ?, ?, NULL, ?, ?, ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())
                 ");
                 $ins_inv->execute([
                     $inv_no, $contact_id, $start_date, $end_date,
@@ -133,10 +143,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $item_name        = trim($_POST['item_name'] ?? '');
         $category         = $_POST['category'] ?? 'camera';
         $serial_number    = trim($_POST['serial_number'] ?? '');
-        $purchase_price   = (float)str_replace(['.', ','], ['', '.'], $_POST['purchase_price'] ?? '0');
-        $purchase_date    = !empty($_POST['purchase_date']) ? $_POST['purchase_date'] : null;
+        $purchase_price   = parse_money($_POST['purchase_price'] ?? '0');
+        $purchase_date    = valid_date($_POST['purchase_date'] ?? '');
         $storage_location = trim($_POST['storage_location'] ?? '');
-        $status           = $_POST['status'] ?? 'in_office';
+        $status           = array_key_exists($_POST['status'] ?? '', GEAR_STATUSES) ? $_POST['status'] : 'in_office';
         $assigned_user_id = !empty($_POST['assigned_user_id']) ? (int)$_POST['assigned_user_id'] : null;
         $notes            = trim($_POST['notes'] ?? '');
 
@@ -157,9 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $item_name        = trim($_POST['item_name'] ?? '');
         $category         = $_POST['category'] ?? 'camera';
         $serial_number    = trim($_POST['serial_number'] ?? '');
-        $purchase_price   = (float)str_replace(['.', ','], ['', '.'], $_POST['purchase_price'] ?? '0');
+        $purchase_price   = parse_money($_POST['purchase_price'] ?? '0');
         $storage_location = trim($_POST['storage_location'] ?? '');
-        $status           = $_POST['status'] ?? 'in_office';
+        $status           = array_key_exists($_POST['status'] ?? '', GEAR_STATUSES) ? $_POST['status'] : 'in_office';
         $assigned_user_id = !empty($_POST['assigned_user_id']) ? (int)$_POST['assigned_user_id'] : null;
         $notes            = trim($_POST['notes'] ?? '');
 
@@ -181,6 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_status = $_POST['new_status'] ?? 'in_office';
 
         if ($eq_id > 0) {
+            if (!array_key_exists($new_status, GEAR_STATUSES)) {
+                redirect(BASE_URL . '/modules/inventory/index.php');
+            }
             $proj_update = ($new_status === 'on_set') ? "current_project_id = current_project_id" : "current_project_id = NULL";
             $rent_update = ($new_status === 'rented_out') ? "rental_contact_id = rental_contact_id" : "rental_contact_id = NULL";
             $db->prepare("UPDATE equipment SET status = ?, {$proj_update}, {$rent_update} WHERE id = ?")->execute([$new_status, $eq_id]);
@@ -443,13 +456,13 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <!-- DURUMA GÖRE KİRALAMA & SET BUTONLARI -->
                                     <?php if ($eq['status'] === 'in_office'): ?>
                                         <!-- Sete Çıkar -->
-                                        <button @click="assignData = { id: '<?= $eq['id'] ?>', name: '<?= e(addslashes($eq['item_name'])) ?>' }; openAssignModal = true"
+                                        <button @click="assignData = { id: '<?= $eq['id'] ?>', name: <?= js_val($eq['item_name']) ?> }; openAssignModal = true"
                                                 class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 font-bold rounded-lg border border-indigo-200 transition text-[11px]">
                                             Sete Çıkar
                                         </button>
 
                                         <!-- Müşteriye Kirala Butonu -->
-                                        <button @click="rentData = { id: '<?= $eq['id'] ?>', name: '<?= e(addslashes($eq['item_name'])) ?>', fee: 0, billing_type: 'invoice', vat_rate: 20 }; openRentModal = true"
+                                        <button @click="rentData = { id: '<?= $eq['id'] ?>', name: <?= js_val($eq['item_name']) ?>, fee: 0, billing_type: 'invoice', vat_rate: 20 }; openRentModal = true"
                                                 class="px-2.5 py-1 bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 font-bold rounded-lg border border-purple-200 transition text-[11px]">
                                             Kiraya Ver
                                         </button>
@@ -476,14 +489,14 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <!-- DÜZENLE -->
                                     <button @click="editData = {
                                                 id: '<?= $eq['id'] ?>',
-                                                item_name: '<?= e(addslashes($eq['item_name'])) ?>',
+                                                item_name: <?= js_val($eq['item_name']) ?>,
                                                 category: '<?= $eq['category'] ?>',
-                                                serial_number: '<?= e(addslashes($eq['serial_number'] ?? '')) ?>',
+                                                serial_number: <?= js_val($eq['serial_number'] ?? '') ?>,
                                                 purchase_price: '<?= (float)$eq['purchase_price'] ?>',
-                                                storage_location: '<?= e(addslashes($eq['storage_location'] ?? '')) ?>',
+                                                storage_location: <?= js_val($eq['storage_location'] ?? '') ?>,
                                                 status: '<?= $eq['status'] ?>',
                                                 assigned_user_id: '<?= $eq['assigned_user_id'] ?? '' ?>',
-                                                notes: '<?= e(addslashes($eq['notes'] ?? '')) ?>'
+                                                notes: <?= js_val($eq['notes'] ?? '') ?>
                                             }; openEditModal = true"
                                             class="p-1.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 rounded-lg transition" title="Düzenle">
                                         <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>

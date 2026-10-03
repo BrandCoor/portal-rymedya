@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('settings.manage');
 
 // ====================================================================
@@ -25,7 +23,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create_role') {
         $role_name   = trim($_POST['role_name'] ?? '');
         $description = trim($_POST['description'] ?? '');
-        $role_slug   = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', str_replace(' ', '_', $role_name)));
+        $tr_map      = ['ı' => 'i', 'ğ' => 'g', 'ü' => 'u', 'ş' => 's', 'ö' => 'o', 'ç' => 'c', 'İ' => 'i', 'Ğ' => 'g', 'Ü' => 'u', 'Ş' => 's', 'Ö' => 'o', 'Ç' => 'c', ' ' => '_'];
+        $role_slug   = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', strtr($role_name, $tr_map)));
+        if ($role_slug === '') {
+            $role_slug = 'rol_' . time();
+        }
+        $slug_chk = $db->prepare("SELECT COUNT(*) FROM roles WHERE role_slug = ?");
+        $slug_chk->execute([$role_slug]);
+        if ((int)$slug_chk->fetchColumn() > 0) {
+            $role_slug .= '_' . substr((string)time(), -4);
+        }
 
         if (!empty($role_name)) {
             $stmt = $db->prepare("INSERT INTO roles (role_name, role_slug, description) VALUES (?, ?, ?)");
@@ -61,6 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role_id   = (int)($_POST['role_id'] ?? 2);
         $phone     = trim($_POST['phone'] ?? '');
 
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
+            redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
+        }
+        if (strlen($password) < 8) {
+            set_flash('error', 'Şifre en az 8 karakter olmalıdır.');
+            redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
+        }
+        $dup = $db->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
+        $dup->execute([$email]);
+        if ((int)$dup->fetchColumn() > 0) {
+            set_flash('error', 'Bu e-posta adresi zaten kullanımda.');
+            redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
+        }
+
         if (!empty($full_name) && !empty($email) && !empty($password)) {
             $hashed = password_hash($password, PASSWORD_DEFAULT);
             try {
@@ -69,7 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 set_flash('success', "{$full_name} kullanıcısı oluşturuldu.");
                 redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
             } catch (PDOException $e) {
-                set_flash('error', 'Bu e-posta adresi zaten kullanımda.');
+                set_flash('error', 'Kullanıcı oluşturulamadı.');
+                redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
             }
         }
     }
@@ -81,8 +104,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email     = trim($_POST['email'] ?? '');
         $phone     = trim($_POST['phone'] ?? '');
         $role_id   = (int)$_POST['role_id'];
-        $status    = $_POST['status'] ?? 'active';
+        $status    = ($_POST['status'] ?? 'active') === 'active' ? 'active' : 'inactive';
         $password  = $_POST['password'] ?? '';
+
+        // Kendi hesabını pasife alma / rolünü düşürme ve ana yöneticinin rolünü değiştirme engellenir
+        if ($user_id === (int)$_SESSION['user_id']) {
+            $status  = 'active';
+            $role_id = (int)$_SESSION['user']['role_id'];
+        }
+        if ($user_id === 1) {
+            $role_id = 1;
+            $status  = 'active';
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
+            redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
+        }
+        if ($password !== '' && strlen($password) < 8) {
+            set_flash('error', 'Yeni şifre en az 8 karakter olmalıdır.');
+            redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
+        }
 
         if ($user_id > 0 && !empty($full_name) && !empty($email)) {
             $chk = $db->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
@@ -314,9 +356,9 @@ require_once __DIR__ . '/../../includes/header.php';
                             <div class="flex items-center justify-end gap-2">
                                 <button @click="editUser = { 
                                             id: '<?= $u['id'] ?>', 
-                                            full_name: '<?= e(addslashes($u['full_name'])) ?>', 
-                                            email: '<?= e(addslashes($u['email'])) ?>', 
-                                            phone: '<?= e(addslashes($u['phone'] ?? '')) ?>', 
+                                            full_name: <?= js_val($u['full_name']) ?>, 
+                                            email: <?= js_val($u['email']) ?>, 
+                                            phone: <?= js_val($u['phone'] ?? '') ?>, 
                                             role_id: '<?= $u['role_id'] ?>', 
                                             status: '<?= $u['status'] ?>' 
                                         }; openEditUserModal = true"

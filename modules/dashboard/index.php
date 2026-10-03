@@ -10,8 +10,18 @@
 $page_title = 'Genel Bakış & Kontrol Paneli';
 require_once __DIR__ . '/../../includes/header.php';
 
-$role_slug = $user['role_slug'] ?? 'super_admin';
 $user_id   = (int)$user['id'];
+$role_slug = $user['role_slug'] ?? '';
+
+// Tanımlı masası olmayan roller (muhasebe, özel roller vb.) için yetkilere göre görünüm seçilir:
+// finans yetkisi olanlar yönetici özetini, diğerleri yönetmen/set görünümünü görür.
+if (!in_array($role_slug, ['super_admin', 'producer', 'editor', 'director'], true)) {
+    if ((int)$user['role_id'] === 1 || has_permission('finance.view') || has_permission('finance.invoices')) {
+        $role_slug = 'producer';
+    } else {
+        $role_slug = 'director';
+    }
+}
 
 // ====================================================================
 // A. YÖNETİCİ / SÜPER ADMİN / YAPIMCI VERİLERİ
@@ -36,9 +46,10 @@ if ($role_slug === 'super_admin' || $role_slug === 'producer') {
     // Son 6 Aylık Grafik Verisi
     $chart_months = []; $chart_incomes = []; $chart_expenses = [];
     for ($i = 5; $i >= 0; $i--) {
-        $time = strtotime("-{$i} month");
-        $m = date('m', $time); $y = date('Y', $time);
-        $chart_months[] = date('M Y', $time);
+        // Ayın 1'i baz alınır (ör. 31 Ekim - 1 ay = 1 Ekim hatası önlenir)
+        $time = strtotime("first day of -{$i} month");
+        $m = (int)date('n', $time); $y = (int)date('Y', $time);
+        $chart_months[] = turkish_month($m, true) . ' ' . $y;
         $chart_incomes[] = (float)$db->query("SELECT COALESCE(SUM(grand_total), 0) FROM invoices WHERE invoice_type = 'sales' AND MONTH(issue_date) = {$m} AND YEAR(issue_date) = {$y}")->fetchColumn();
         $chart_expenses[] = (float)$db->query("SELECT COALESCE(SUM(grand_total), 0) FROM invoices WHERE invoice_type = 'purchase' AND MONTH(issue_date) = {$m} AND YEAR(issue_date) = {$y}")->fetchColumn();
     }
@@ -157,7 +168,7 @@ if ($role_slug === 'director') {
             <div>
                 <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Bu Ayki Fatura Cirosu</p>
                 <p class="text-2xl font-black text-brand-600 mt-1"><?= format_money($this_month_sales) ?></p>
-                <span class="text-[10px] text-slate-400 block mt-1"><?= date('F Y') ?> Satışları</span>
+                <span class="text-[10px] text-slate-400 block mt-1"><?= turkish_month((int)date('n')) . ' ' . date('Y') ?> Satışları</span>
             </div>
             <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
                 <i data-lucide="trending-up" class="w-6 h-6"></i>

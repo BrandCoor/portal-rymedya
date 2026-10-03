@@ -11,6 +11,9 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
+require_staff_login();
+require_permission('projects.view');
+
 // Self-Healing DB
 try {
     $db->query("SELECT workflow_model FROM projects LIMIT 1");
@@ -63,248 +66,372 @@ if (!$project) {
 // ====================================================================
 // 1. TÜM FORM İŞLEMLERİ (HEADER'DAN ÖNCE ÇALIŞIR)
 // ====================================================================
+$detail_url = BASE_URL . "/modules/projects/detail.php?id={$project_id}";
+$client_contact_id = (int)($project['client_contact_id'] ?? 0);
+
+// Bu projeye ait çekim mi?
+$find_shoot = function (int $shoot_id) use ($db, $project_id) {
+    $st = $db->prepare("SELECT * FROM shoots WHERE id = ? AND project_id = ?");
+    $st->execute([$shoot_id, $project_id]);
+    return $st->fetch();
+};
+// Bu projeye ait set gideri mi?
+$find_crew_item = function (int $item_id) use ($db, $project_id) {
+    $st = $db->prepare("SELECT scg.* FROM shoot_crew_gear scg JOIN shoots s ON scg.shoot_id = s.id WHERE scg.id = ? AND s.project_id = ?");
+    $st->execute([$item_id, $project_id]);
+    return $st->fetch();
+};
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    // Proje üzerinde değişiklik yapan tüm işlemler düzenleme yetkisi ister (silme hariç)
+    if (!in_array($action, ['delete_project_permanent'], true)) {
+        require_permission('projects.edit');
+    }
+
     // ==========================================
-    // A. KURGU / EDİT HİZMETİNİ FATURALANDIRMA & BORÇLANDIRMA (YENİ MOTOR)
+    // A. KURGU / EDİT HİZMETİNİ FATURALANDIRMA & BORÇLANDIRMA
     // ==========================================
     if ($action === 'bill_edit_service') {
         $rev_id       = (int)$_POST['revision_id'];
-        $edit_fee     = (float)str_replace(['.', ','], ['', '.'], $_POST['billing_fee'] ?? '0');
-        $billing_type = $_POST['billing_type'] ?? 'invoice'; // 'invoice' = KDV'li Fatura, 'debit' = Faturasız Borç Dekontu
+        $edit_fee     = parse_money($_POST['billing_fee'] ?? '0');
+        $billing_type = ($_POST['billing_type'] ?? 'invoice') === 'debit' ? 'debit' : 'invoice';
         $vat_rate     = (float)($_POST['vat_rate'] ?? 20);
-        $issue_date   = $_POST['issue_date'] ?? date('Y-m-d');
+        $issue_date   = valid_date($_POST['issue_date'] ?? '', date('Y-m-d'));
         $notes        = trim($_POST['notes'] ?? '');
 
-        $rev = $db->query("SELECT * FROM project_revisions WHERE id = {$rev_id} AND project_id = {$project_id}")->fetch();
+        $rev_stmt = $db->prepare("SELECT * FROM project_revisions WHERE id = ? AND project_id = ?");
+        $rev_stmt->execute([$rev_id, $project_id]);
+        $rev = $rev_stmt->fetch();
 
-        if ($rev && $edit_fee > 0) {
-            $created_invoice_id = null;
-
-            // 1. Seçenek: KDV'li Resmi Satış Faturası Kes
-            if ($billing_type === 'invoice') {
-                $tax = calculate_tax_breakdown($edit_fee, $vat_rate, '0/10', 0);
-                $inv_no = generate_invoice_number('sales');
-
-                $ins_inv = $db->prepare("
-                    INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, grand_total, payment_status, notes, created_at)
-                    VALUES ('sales', ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, NOW())
-                ");
-                $ins_inv->execute([
-                    $inv_no, $project['client_contact_id'], $project_id, $issue_date,
-                    $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'],
-                    ($notes ?: "{$project['project_name']} ({$rev['version_title']}) kurgu & edit hizmet bedeli")
-                ]);
-                $created_invoice_id = (int)$db->lastInsertId();
-
-                $db->prepare("UPDATE contacts SET balance = balance + ? WHERE id = ?")->execute([$tax['grand_total'], $project['client_contact_id']]);
-                $new_b_status = 'invoiced';
-            }
-
-            // 2. Seçenek: Faturasız Manuel Borç Dekontu Kes
-            if ($billing_type === 'debit') {
-                $db->prepare("
-                    INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at)
-                    VALUES (NULL, ?, NULL, ?, 'expense', 'Kurgu / Edit Hizmet Dekontu', ?, ?, ?, ?, NOW())
-                ")->execute([
-                    $project['client_contact_id'], $project_id, $edit_fee, $issue_date,
-                    ($notes ?: "{$project['project_name']} ({$rev['version_title']}) faturasız edit bedeli"), $user['id']
-                ]);
-
-                $db->prepare("UPDATE contacts SET balance = balance + ? WHERE id = ?")->execute([$edit_fee, $project['client_contact_id']]);
-                $new_b_status = 'debited';
-            }
-
-            // Revizyonun Faturalandırma Durumunu Güncelle
-            $up_rev = $db->prepare("
-                UPDATE project_revisions 
-                SET billing_status = ?, billing_fee = ?, invoice_id = ?
-                WHERE id = ?
-            ");
-            $up_rev->execute([$new_b_status, $edit_fee, $created_invoice_id, $rev_id]);
-
-            recalculate_contact_balance($project['client_contact_id']);
-            set_flash('success', "{$rev['version_title']} edit hizmeti başarıyla faturalandırıldı / müşteriye borç kaydedildi.");
-            redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        if (!$rev || $edit_fee <= 0 || $client_contact_id <= 0) {
+            set_flash('error', 'Geçerli bir kurgu versiyonu, müşteri ve tutar gereklidir.');
+            redirect($detail_url);
         }
+        if (($rev['billing_status'] ?? 'unbilled') !== 'unbilled') {
+            set_flash('error', 'Bu kurgu versiyonu zaten faturalandırılmış / borçlandırılmış.');
+            redirect($detail_url);
+        }
+
+        $created_invoice_id = null;
+
+        if ($billing_type === 'invoice') {
+            // 1. Seçenek: KDV'li Resmi Satış Faturası Kes
+            $tax = calculate_tax_breakdown($edit_fee, $vat_rate, '0/10', 0);
+            $inv_no = generate_invoice_number('sales');
+
+            $db->prepare("
+                INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
+                VALUES ('sales', ?, ?, ?, ?, ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())
+            ")->execute([
+                $inv_no, $client_contact_id, $project_id, $issue_date,
+                $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'],
+                ($notes ?: "{$project['project_name']} ({$rev['version_title']}) kurgu & edit hizmet bedeli")
+            ]);
+            $created_invoice_id = (int)$db->lastInsertId();
+            $new_b_status = 'invoiced';
+        } else {
+            // 2. Seçenek: Faturasız Manuel Borç Dekontu Kes (kasaya dokunmaz)
+            $db->prepare("
+                INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at)
+                VALUES (NULL, ?, NULL, ?, 'expense', 'Kurgu / Edit Hizmet Dekontu', ?, ?, ?, ?, NOW())
+            ")->execute([
+                $client_contact_id, $project_id, $edit_fee, $issue_date,
+                ($notes ?: "{$project['project_name']} ({$rev['version_title']}) faturasız edit bedeli"), $user['id']
+            ]);
+            $new_b_status = 'debited';
+        }
+
+        $db->prepare("UPDATE project_revisions SET billing_status = ?, billing_fee = ?, invoice_id = ? WHERE id = ?")
+           ->execute([$new_b_status, $edit_fee, $created_invoice_id, $rev_id]);
+
+        recalculate_contact_balance($client_contact_id);
+        set_flash('success', "{$rev['version_title']} edit hizmeti başarıyla faturalandırıldı / müşteriye borç kaydedildi.");
+        redirect($detail_url);
     }
 
     // ==========================================
     // B. PROJE BİLGİLERİ VE İŞ MODELİNİ DÜZENLEME
     // ==========================================
     if ($action === 'edit_project_details') {
-        require_permission('projects.edit');
-
         $p_name           = trim($_POST['project_name'] ?? '');
         $p_type           = $_POST['project_type'] ?? 'commercial';
-        $p_workflow       = $_POST['workflow_model'] ?? 'internal_full';
-        $p_outsource_id   = !empty($_POST['outsource_contact_id']) ? (int)$_POST['outsource_contact_id'] : null;
-        $p_budget         = (float)str_replace(['.', ','], ['', '.'], $_POST['agreed_budget'] ?? '0');
-        $p_currency       = $_POST['currency'] ?? 'TRY';
-        $p_start          = !empty($_POST['start_date']) ? $_POST['start_date'] : null;
-        $p_deadline       = !empty($_POST['deadline']) ? $_POST['deadline'] : null;
+        $p_workflow       = array_key_exists($_POST['workflow_model'] ?? '', WORKFLOW_MODELS) ? $_POST['workflow_model'] : 'internal_full';
+        $p_outsource_id   = (!empty($_POST['outsource_contact_id']) && str_contains($p_workflow, 'outsource')) ? (int)$_POST['outsource_contact_id'] : null;
+        $p_budget         = parse_money($_POST['agreed_budget'] ?? '0');
+        $p_currency       = array_key_exists($_POST['currency'] ?? '', CURRENCIES) ? $_POST['currency'] : $project['currency'];
+        $p_start          = valid_date($_POST['start_date'] ?? '');
+        $p_deadline       = valid_date($_POST['deadline'] ?? '');
         $p_desc           = trim($_POST['description'] ?? '');
 
-        if (!empty($p_name)) {
-            $up = $db->prepare("
+        if ($p_start && $p_deadline && $p_deadline < $p_start) {
+            set_flash('error', 'Teslim tarihi başlangıç tarihinden önce olamaz.');
+        } elseif ($p_name !== '') {
+            $db->prepare("
                 UPDATE projects 
                 SET project_name = ?, project_type = ?, workflow_model = ?, outsource_contact_id = ?, agreed_budget = ?, currency = ?, start_date = ?, deadline = ?, description = ?
                 WHERE id = ?
-            ");
-            $up->execute([$p_name, $p_type, $p_workflow, $p_outsource_id, $p_budget, $p_currency, $p_start, $p_deadline, $p_desc, $project_id]);
+            ")->execute([$p_name, $p_type, $p_workflow, $p_outsource_id, $p_budget, $p_currency, $p_start, $p_deadline, $p_desc, $project_id]);
             set_flash('success', 'Proje iş modeli ve detayları güncellendi.');
-            redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
         }
+        redirect($detail_url);
     }
 
     // ==========================================
     // C. SET GİDERİ İŞLEMLERİ
     // ==========================================
     if ($action === 'add_crew_gear') {
-        $shoot_id       = (int)$_POST['shoot_id'];
-        $category       = $_POST['category'];
-        $item_title     = trim($_POST['item_title']);
-        $fee            = (float)str_replace(['.', ','], ['', '.'], $_POST['agreed_fee'] ?? '0');
+        $shoot          = $find_shoot((int)($_POST['shoot_id'] ?? 0));
+        $category       = array_key_exists($_POST['category'] ?? '', CREW_CATEGORIES) ? $_POST['category'] : 'other';
+        $item_title     = trim($_POST['item_title'] ?? '');
+        $fee            = parse_money($_POST['agreed_fee'] ?? '0');
         $contact_id     = !empty($_POST['contact_id']) ? (int)$_POST['contact_id'] : null;
-        $is_rebillable  = (int)($_POST['is_rebillable'] ?? 0);
+        $is_rebillable  = (int)($_POST['is_rebillable'] ?? 0) === 1 ? 1 : 0;
         $vat_rate       = (float)($_POST['vat_rate'] ?? 20);
         $invoice_number = trim($_POST['invoice_number'] ?? '');
-        $auto_invoice   = isset($_POST['create_purchase_invoice']) ? 1 : 0;
+        $auto_invoice   = isset($_POST['create_purchase_invoice']);
+
+        if (!$shoot || $item_title === '') {
+            set_flash('error', 'Geçerli bir çekim günü ve gider başlığı giriniz.');
+            redirect($detail_url);
+        }
 
         $vat_amount  = round($fee * ($vat_rate / 100), 2);
         $grand_total = round($fee + $vat_amount, 2);
         $created_invoice_id = null;
 
         if ($auto_invoice && $contact_id && $fee > 0) {
-            $inv_no = !empty($invoice_number) ? $invoice_number : 'ALIS-' . date('Ymd') . '-' . rand(100, 999);
-            $inv_stmt = $db->prepare("INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, grand_total, payment_status, notes, created_at) VALUES ('purchase', ?, ?, ?, CURRENT_DATE(), ?, ?, ?, ?, 'unpaid', ?, NOW())");
-            $inv_stmt->execute([$inv_no, $contact_id, $project_id, $fee, $vat_rate, $vat_amount, $grand_total, "{$project['project_name']} ({$item_title}) gideri"]);
+            if ($invoice_number !== '' && invoice_number_exists($invoice_number, 0, 'purchase')) {
+                set_flash('error', "{$invoice_number} numaralı alış faturası zaten kayıtlı.");
+                redirect($detail_url);
+            }
+            $inv_no = $invoice_number !== '' ? $invoice_number : generate_invoice_number('purchase');
+            $db->prepare("
+                INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
+                VALUES ('purchase', ?, ?, ?, ?, ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())
+            ")->execute([$inv_no, $contact_id, $project_id, $shoot['shoot_date'] ?: date('Y-m-d'), $fee, $vat_rate, $vat_amount, $grand_total, "{$project['project_name']} ({$item_title}) gideri"]);
             $created_invoice_id = (int)$db->lastInsertId();
-            $db->prepare("UPDATE contacts SET balance = balance - ? WHERE id = ?")->execute([$grand_total, $contact_id]);
+            $invoice_number = $inv_no;
+            recalculate_contact_balance($contact_id);
         }
 
-        $ins_crew = $db->prepare("INSERT INTO shoot_crew_gear (shoot_id, contact_id, category, item_title, agreed_fee, currency, is_rebillable, vat_rate, vat_amount, invoice_id, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $ins_crew->execute([$shoot_id, $contact_id, $category, $item_title, $fee, $project['currency'], $is_rebillable, $vat_rate, $vat_amount, $created_invoice_id, $invoice_number]);
+        $db->prepare("INSERT INTO shoot_crew_gear (shoot_id, contact_id, category, item_title, agreed_fee, currency, is_rebillable, vat_rate, vat_amount, invoice_id, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+           ->execute([$shoot['id'], $contact_id, $category, $item_title, $fee, $project['currency'], $is_rebillable, $vat_rate, $vat_amount, $created_invoice_id, $invoice_number ?: null]);
 
         set_flash('success', 'Set gideri başarıyla kaydedildi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        redirect($detail_url);
     }
 
     if ($action === 'edit_crew_gear') {
-        $item_id        = (int)$_POST['item_id'];
-        $fee            = (float)str_replace(['.', ','], ['', '.'], $_POST['agreed_fee'] ?? '0');
+        $old_it = $find_crew_item((int)($_POST['item_id'] ?? 0));
+        if (!$old_it) {
+            set_flash('error', 'Gider kaydı bulunamadı.');
+            redirect($detail_url);
+        }
+
+        $category       = array_key_exists($_POST['category'] ?? '', CREW_CATEGORIES) ? $_POST['category'] : $old_it['category'];
+        $item_title     = trim($_POST['item_title'] ?? '') ?: $old_it['item_title'];
+        $fee            = parse_money($_POST['agreed_fee'] ?? '0');
         $contact_id     = !empty($_POST['contact_id']) ? (int)$_POST['contact_id'] : null;
-        $is_rebillable  = (int)($_POST['is_rebillable'] ?? 0);
+        $is_rebillable  = (int)($_POST['is_rebillable'] ?? 0) === 1 ? 1 : 0;
         $vat_rate       = (float)($_POST['vat_rate'] ?? 20);
         $vat_amount     = round($fee * ($vat_rate / 100), 2);
         $grand_total    = round($fee + $vat_amount, 2);
 
-        $old_it = $db->query("SELECT * FROM shoot_crew_gear WHERE id = {$item_id}")->fetch();
-        if ($old_it && !empty($old_it['invoice_id'])) {
-            $old_inv = $db->query("SELECT * FROM invoices WHERE id = {$old_it['invoice_id']}")->fetch();
+        $affected_contacts = array_filter([(int)$old_it['contact_id'], (int)$contact_id]);
+
+        if (!empty($old_it['invoice_id'])) {
+            $inv_stmt = $db->prepare("SELECT * FROM invoices WHERE id = ?");
+            $inv_stmt->execute([(int)$old_it['invoice_id']]);
+            $old_inv = $inv_stmt->fetch();
             if ($old_inv) {
-                $db->prepare("UPDATE contacts SET balance = balance + ? WHERE id = ?")->execute([$old_inv['grand_total'], $old_inv['contact_id']]);
-                $db->prepare("UPDATE invoices SET subtotal = ?, vat_rate = ?, vat_amount = ?, grand_total = ?, contact_id = ? WHERE id = ?")->execute([$fee, $vat_rate, $vat_amount, $grand_total, ($contact_id ?: $old_inv['contact_id']), $old_it['invoice_id']]);
-                $db->prepare("UPDATE contacts SET balance = balance - ? WHERE id = ?")->execute([$grand_total, ($contact_id ?: $old_inv['contact_id'])]);
+                $inv_contact = $contact_id ?: (int)$old_inv['contact_id'];
+                $affected_contacts[] = (int)$old_inv['contact_id'];
+                $db->prepare("UPDATE invoices SET subtotal = ?, vat_rate = ?, vat_amount = ?, grand_total = ?, contact_id = ? WHERE id = ?")
+                   ->execute([$fee, $vat_rate, $vat_amount, $grand_total, $inv_contact, $old_it['invoice_id']]);
+                sync_invoice_payment((int)$old_it['invoice_id']);
             }
         }
 
-        $up = $db->prepare("UPDATE shoot_crew_gear SET category = ?, item_title = ?, agreed_fee = ?, contact_id = ?, is_rebillable = ?, vat_rate = ?, vat_amount = ? WHERE id = ?");
-        $up->execute([$_POST['category'], trim($_POST['item_title']), $fee, $contact_id, $is_rebillable, $vat_rate, $vat_amount, $item_id]);
+        $db->prepare("UPDATE shoot_crew_gear SET category = ?, item_title = ?, agreed_fee = ?, contact_id = ?, is_rebillable = ?, vat_rate = ?, vat_amount = ? WHERE id = ?")
+           ->execute([$category, $item_title, $fee, $contact_id, $is_rebillable, $vat_rate, $vat_amount, $old_it['id']]);
 
+        foreach (array_unique($affected_contacts) as $cid) {
+            recalculate_contact_balance((int)$cid);
+        }
         set_flash('success', 'Gider güncellendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        redirect($detail_url);
     }
 
     if ($action === 'delete_crew_item') {
-        $item_id = (int)$_POST['item_id'];
-        $old_it = $db->query("SELECT * FROM shoot_crew_gear WHERE id = {$item_id}")->fetch();
-        if ($old_it && !empty($old_it['invoice_id'])) {
-            delete_invoice_cascade((int)$old_it['invoice_id']);
+        $old_it = $find_crew_item((int)($_POST['item_id'] ?? 0));
+        if ($old_it) {
+            if (!empty($old_it['invoice_id'])) {
+                delete_invoice_cascade((int)$old_it['invoice_id']);
+            }
+            $db->prepare("DELETE FROM shoot_crew_gear WHERE id = ?")->execute([$old_it['id']]);
+            set_flash('success', 'Gider ve varsa bağlı alış faturası silindi.');
         }
-        $db->prepare("DELETE FROM shoot_crew_gear WHERE id = ?")->execute([$item_id]);
-        set_flash('success', 'Gider silindi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        redirect($detail_url);
     }
 
     // ==========================================
-    // D. DİĞER MODALLAR & İŞLEMLER
+    // D. KURGU VERSİYONLARI
     // ==========================================
+    $rev_statuses = ['in_progress', 'sent_to_client', 'revision_requested', 'approved'];
+
     if ($action === 'add_revision') {
-        $ins_rev = $db->prepare("INSERT INTO project_revisions (project_id, assigned_editor_id, version_title, preview_url, feedback_notes, status) VALUES (?, ?, ?, ?, ?, ?)");
-        $ins_rev->execute([$project_id, $_POST['assigned_editor_id']?:null, $_POST['version_title'], $_POST['preview_url'], $_POST['feedback_notes'], $_POST['status']]);
-        set_flash('success', 'Kurgu versiyonu eklendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $title = trim($_POST['version_title'] ?? '');
+        if ($title !== '') {
+            $db->prepare("INSERT INTO project_revisions (project_id, assigned_editor_id, version_title, preview_url, feedback_notes, status) VALUES (?, ?, ?, ?, ?, ?)")
+               ->execute([
+                   $project_id, !empty($_POST['assigned_editor_id']) ? (int)$_POST['assigned_editor_id'] : null, $title,
+                   trim($_POST['preview_url'] ?? ''), trim($_POST['feedback_notes'] ?? ''),
+                   in_array($_POST['status'] ?? '', $rev_statuses, true) ? $_POST['status'] : 'in_progress'
+               ]);
+            set_flash('success', 'Kurgu versiyonu eklendi.');
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'edit_revision') {
-        $up = $db->prepare("UPDATE project_revisions SET version_title = ?, preview_url = ?, assigned_editor_id = ?, feedback_notes = ?, status = ? WHERE id = ? AND project_id = ?");
-        $up->execute([$_POST['version_title'], $_POST['preview_url'], $_POST['assigned_editor_id']?:null, $_POST['feedback_notes'], $_POST['status'], (int)$_POST['revision_id'], $project_id]);
-        set_flash('success', 'Kurgu versiyonu güncellendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $title = trim($_POST['version_title'] ?? '');
+        if ($title !== '') {
+            $db->prepare("UPDATE project_revisions SET version_title = ?, preview_url = ?, assigned_editor_id = ?, feedback_notes = ?, status = ? WHERE id = ? AND project_id = ?")
+               ->execute([
+                   $title, trim($_POST['preview_url'] ?? ''), !empty($_POST['assigned_editor_id']) ? (int)$_POST['assigned_editor_id'] : null,
+                   trim($_POST['feedback_notes'] ?? ''), in_array($_POST['status'] ?? '', $rev_statuses, true) ? $_POST['status'] : 'in_progress',
+                   (int)$_POST['revision_id'], $project_id
+               ]);
+            set_flash('success', 'Kurgu versiyonu güncellendi.');
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'delete_revision') {
-        $db->prepare("DELETE FROM project_revisions WHERE id = ? AND project_id = ?")->execute([(int)$_POST['revision_id'], $project_id]);
-        set_flash('success', 'Kurgu versiyonu silindi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $rev_stmt = $db->prepare("SELECT * FROM project_revisions WHERE id = ? AND project_id = ?");
+        $rev_stmt->execute([(int)$_POST['revision_id'], $project_id]);
+        $rev = $rev_stmt->fetch();
+        if ($rev && ($rev['billing_status'] ?? 'unbilled') !== 'unbilled') {
+            set_flash('error', 'Faturalandırılmış / borçlandırılmış bir kurgu versiyonu silinemez. Önce ilgili faturayı veya dekontu iptal ediniz.');
+        } elseif ($rev) {
+            $db->prepare("DELETE FROM project_revisions WHERE id = ? AND project_id = ?")->execute([$rev['id'], $project_id]);
+            set_flash('success', 'Kurgu versiyonu silindi.');
+        }
+        redirect($detail_url);
     }
 
+    // ==========================================
+    // E. ÇEKİM GÜNLERİ
+    // ==========================================
     if ($action === 'add_shoot') {
-        $ins_shoot = $db->prepare("INSERT INTO shoots (project_id, title, shoot_date, start_time, end_time, location_name, location_address, call_sheet_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $ins_shoot->execute([$project_id, $_POST['title'], $_POST['shoot_date'], $_POST['start_time']?:null, $_POST['end_time']?:null, $_POST['location_name'], $_POST['location_address'], $_POST['call_sheet_notes']]);
-        set_flash('success', 'Çekim günü eklendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $title = trim($_POST['title'] ?? '');
+        $date  = valid_date($_POST['shoot_date'] ?? '');
+        if ($title === '' || !$date) {
+            set_flash('error', 'Çekim başlığı ve geçerli bir tarih zorunludur.');
+        } else {
+            $db->prepare("INSERT INTO shoots (project_id, title, shoot_date, start_time, end_time, location_name, location_address, call_sheet_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+               ->execute([$project_id, $title, $date, ($_POST['start_time'] ?? '') ?: null, ($_POST['end_time'] ?? '') ?: null, trim($_POST['location_name'] ?? ''), trim($_POST['location_address'] ?? ''), trim($_POST['call_sheet_notes'] ?? '')]);
+            set_flash('success', 'Çekim günü eklendi.');
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'edit_shoot') {
-        $up = $db->prepare("UPDATE shoots SET title = ?, shoot_date = ?, location_name = ?, location_address = ?, call_sheet_notes = ? WHERE id = ? AND project_id = ?");
-        $up->execute([$_POST['title'], $_POST['shoot_date'], $_POST['location_name'], $_POST['location_address'], $_POST['call_sheet_notes'], (int)$_POST['shoot_id'], $project_id]);
-        set_flash('success', 'Çekim günü güncellendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $shoot = $find_shoot((int)($_POST['shoot_id'] ?? 0));
+        $title = trim($_POST['title'] ?? '');
+        $date  = valid_date($_POST['shoot_date'] ?? '');
+        if ($shoot && $title !== '' && $date) {
+            $db->prepare("UPDATE shoots SET title = ?, shoot_date = ?, start_time = ?, end_time = ?, location_name = ?, location_address = ?, call_sheet_notes = ? WHERE id = ? AND project_id = ?")
+               ->execute([$title, $date, ($_POST['start_time'] ?? '') ?: null, ($_POST['end_time'] ?? '') ?: null, trim($_POST['location_name'] ?? ''), trim($_POST['location_address'] ?? ''), trim($_POST['call_sheet_notes'] ?? ''), $shoot['id'], $project_id]);
+            set_flash('success', 'Çekim günü güncellendi.');
+        } else {
+            set_flash('error', 'Çekim başlığı ve geçerli bir tarih zorunludur.');
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'delete_shoot') {
-        $db->prepare("DELETE FROM shoots WHERE id = ? AND project_id = ?")->execute([(int)$_POST['shoot_id'], $project_id]);
-        set_flash('success', 'Çekim günü silindi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $shoot = $find_shoot((int)($_POST['shoot_id'] ?? 0));
+        if ($shoot) {
+            // Çekim giderlerinden otomatik oluşan alış faturaları da silinir
+            $items = $db->prepare("SELECT invoice_id FROM shoot_crew_gear WHERE shoot_id = ? AND invoice_id IS NOT NULL");
+            $items->execute([$shoot['id']]);
+            foreach ($items->fetchAll(PDO::FETCH_COLUMN) as $inv_id) {
+                delete_invoice_cascade((int)$inv_id);
+            }
+            $db->prepare("DELETE FROM shoot_crew_gear WHERE shoot_id = ?")->execute([$shoot['id']]);
+            $db->prepare("DELETE FROM shoots WHERE id = ? AND project_id = ?")->execute([$shoot['id'], $project_id]);
+            set_flash('success', 'Çekim günü ve bağlı giderleri silindi.');
+        }
+        redirect($detail_url);
     }
 
+    // ==========================================
+    // F. PROJEYİ TAMAMLA & FATURALANDIR
+    // ==========================================
     if ($action === 'complete_and_invoice') {
-        $subtotal = (float)$_POST['final_billing_subtotal'];
-        $vat_rate = (float)($_POST['vat_rate'] ?? 20);
-        $tax = calculate_tax_breakdown($subtotal, $vat_rate, '0/10', 0);
+        $invoice_number   = trim($_POST['invoice_number'] ?? '') ?: generate_invoice_number('sales');
+        $withholding_rate = array_key_exists($_POST['withholding_rate'] ?? '', WITHHOLDING_RATES) ? $_POST['withholding_rate'] : '0/10';
+        $vat_rate         = (float)($_POST['vat_rate'] ?? 20);
+        $issue_date       = valid_date($_POST['issue_date'] ?? '', date('Y-m-d'));
+        $due_date         = valid_date($_POST['due_date'] ?? '');
 
-        $inv_stmt = $db->prepare("INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, due_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at) VALUES ('sales', ?, ?, ?, ?, ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())");
-        $inv_stmt->execute([$_POST['invoice_number'], $project['client_contact_id'], $project_id, $_POST['issue_date'], $_POST['due_date']?:null, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'], $_POST['notes']]);
+        if ($client_contact_id <= 0) {
+            set_flash('error', 'Projeye bağlı bir müşteri carisi bulunamadı.');
+        } elseif ($project['status'] === 'invoiced' || project_main_sales_invoice_id($project_id) !== null) {
+            set_flash('error', 'Bu proje zaten faturalandırılmış.');
+        } elseif (invoice_number_exists($invoice_number, 0, 'sales')) {
+            set_flash('error', "{$invoice_number} numaralı satış faturası zaten mevcut. Lütfen farklı bir numara giriniz.");
+        } else {
+            // Matrah sunucu tarafında yeniden hesaplanır (formdan gelen değere güvenilmez)
+            $reb = $db->prepare("SELECT COALESCE(SUM(scg.agreed_fee), 0) FROM shoot_crew_gear scg JOIN shoots s ON scg.shoot_id = s.id WHERE s.project_id = ? AND scg.is_rebillable = 1");
+            $reb->execute([$project_id]);
+            $subtotal = (float)$project['agreed_budget'] + (float)$reb->fetchColumn();
 
-        $db->prepare("UPDATE contacts SET balance = balance + ? WHERE id = ?")->execute([$tax['grand_total'], $project['client_contact_id']]);
-        $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
+            if ($subtotal <= 0) {
+                set_flash('error', 'Faturalandırılacak tutar sıfır. Lütfen proje bütçesini giriniz.');
+                redirect($detail_url);
+            }
 
-        recalculate_contact_balance((int)$project['client_contact_id']);
-        set_flash('success', "Proje faturalandırıldı.");
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+            $tax = calculate_tax_breakdown($subtotal, $vat_rate, $withholding_rate, 0);
+            $db->prepare("INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, due_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at) VALUES ('sales', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'unpaid', ?, NOW())")
+               ->execute([$invoice_number, $client_contact_id, $project_id, $issue_date, $due_date, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['withholding_rate'], $tax['withholding_amount'], $tax['grand_total'], trim($_POST['notes'] ?? '') ?: "{$project['project_name']} prodüksiyon hizmet bedeli"]);
+
+            $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
+            recalculate_contact_balance($client_contact_id);
+            set_flash('success', "Proje faturalandırıldı ({$invoice_number}).");
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'cancel_project_invoice') {
-        delete_invoice_cascade((int)$_POST['invoice_id']);
-        set_flash('success', 'Fatura iptal edildi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $inv_id = (int)($_POST['invoice_id'] ?? 0);
+        $own = $db->prepare("SELECT id FROM invoices WHERE id = ? AND project_id = ?");
+        $own->execute([$inv_id, $project_id]);
+        if ($own->fetch()) {
+            delete_invoice_cascade($inv_id);
+            set_flash('success', 'Fatura ve bağlı tahsilatları iptal edildi.');
+        }
+        redirect($detail_url);
     }
 
     if ($action === 'delete_project_permanent') {
         require_permission('projects.delete');
-        $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$project_id]);
-        set_flash('success', "Proje tamamen silindi.");
+        delete_project_cascade($project_id);
+        set_flash('success', "Proje ve bağlı tüm kayıtları tamamen silindi.");
         redirect(BASE_URL . '/modules/projects/index.php');
     }
 
     if ($action === 'update_status') {
-        $db->prepare("UPDATE projects SET status = ? WHERE id = ?")->execute([$_POST['status'], $project_id]);
-        set_flash('success', 'Proje durumu güncellendi.');
-        redirect(BASE_URL . "/modules/projects/detail.php?id={$project_id}");
+        $new_status = $_POST['status'] ?? '';
+        if (array_key_exists($new_status, PROJECT_STATUSES)) {
+            $db->prepare("UPDATE projects SET status = ? WHERE id = ?")->execute([$new_status, $project_id]);
+            set_flash('success', 'Proje durumu güncellendi.');
+        }
+        redirect($detail_url);
     }
 }
 
@@ -333,7 +460,9 @@ $editors = $db->query("SELECT id, full_name FROM users WHERE status = 'active' O
 $freelancers = $db->query("SELECT id, company_title, type FROM contacts ORDER BY company_title ASC")->fetchAll();
 $project_types = get_project_types();
 
-$is_invoiced = ($project['status'] === 'invoiced' || !empty($project_invoices));
+$has_sales_invoice = project_main_sales_invoice_id($project_id) !== null;
+$is_invoiced = ($project['status'] === 'invoiced' || $has_sales_invoice);
+$next_sales_invoice_no = generate_invoice_number('sales');
 $wf_info = WORKFLOW_MODELS[$project['workflow_model'] ?? 'internal_full'] ?? ['label' => 'Ajans İçi Prodüksiyon', 'color' => 'bg-slate-100 text-slate-700'];
 
 $page_title = e($project['project_name']) . ' | Prodüksiyon Detayı';
@@ -352,7 +481,7 @@ require_once __DIR__ . '/../../includes/header.php';
     editShootData: {},
     openEditCrewModal: false,
     editCrewData: {},
-    vatRate: 20, 
+    vatRate: '<?= (int)get_setting('default_vat_rate', '20') ?>', 
     withholdingRate: '0/10', 
     finalSubtotal: <?= $final_billing_subtotal ?>,
     calcInvoice() {
@@ -536,7 +665,30 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <i data-lucide="printer" class="w-4 h-4"></i>
                                 </a>
 
-                                <button @click="$dispatch('open-crew-modal', { shoot_id: <?= $shoot['id'] ?>, shoot_title: '<?= e($shoot['title']) ?>' })" class="inline-flex items-center gap-1 bg-brand-50 text-brand-600 hover:bg-brand-100 text-xs font-semibold py-1.5 px-3 rounded-lg border border-brand-200">
+                                <button @click="editShootData = {
+                                            id: <?= (int)$shoot['id'] ?>,
+                                            title: <?= js_val($shoot['title']) ?>,
+                                            shoot_date: <?= js_val($shoot['shoot_date']) ?>,
+                                            start_time: <?= js_val(substr((string)($shoot['start_time'] ?? ''), 0, 5)) ?>,
+                                            end_time: <?= js_val(substr((string)($shoot['end_time'] ?? ''), 0, 5)) ?>,
+                                            location_name: <?= js_val($shoot['location_name'] ?? '') ?>,
+                                            location_address: <?= js_val($shoot['location_address'] ?? '') ?>,
+                                            call_sheet_notes: <?= js_val($shoot['call_sheet_notes'] ?? '') ?>
+                                        }; openEditShootModal = true"
+                                        class="p-2 bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 rounded-xl" title="Çekim Gününü Düzenle">
+                                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                </button>
+
+                                <form method="POST" action="" onsubmit="return confirm('Bu çekim gününü ve bağlı tüm set giderlerini (otomatik alış faturaları dahil) silmek istiyor musunuz?');">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="delete_shoot">
+                                    <input type="hidden" name="shoot_id" value="<?= (int)$shoot['id'] ?>">
+                                    <button type="submit" class="p-2 bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl" title="Çekim Gününü Sil">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </form>
+
+                                <button @click="$dispatch('open-crew-modal', { shoot_id: <?= $shoot['id'] ?>, shoot_title: <?= js_val($shoot['title']) ?> })" class="inline-flex items-center gap-1 bg-brand-50 text-brand-600 hover:bg-brand-100 text-xs font-semibold py-1.5 px-3 rounded-lg border border-brand-200">
                                     <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
                                     <span>Gider Ekle</span>
                                 </button>
@@ -568,11 +720,11 @@ require_once __DIR__ . '/../../includes/header.php';
                                             <button @click="editCrewData = {
                                                         id: '<?= $it['id'] ?>',
                                                         category: '<?= $it['category'] ?>',
-                                                        item_title: '<?= e(addslashes($it['item_title'])) ?>',
+                                                        item_title: <?= js_val($it['item_title']) ?>,
                                                         agreed_fee: '<?= (float)$it['agreed_fee'] ?>',
                                                         contact_id: '<?= $it['contact_id'] ?? '' ?>',
                                                         is_rebillable: '<?= (int)$it['is_rebillable'] ?>',
-                                                        vat_rate: '<?= (float)$it['vat_rate'] ?>'
+                                                        vat_rate: '<?= (int)$it['vat_rate'] ?>'
                                                     }; openEditCrewModal = true"
                                                     class="p-1.5 bg-slate-100 hover:bg-brand-50 text-slate-500 rounded-lg" title="Düzenle">
                                                 <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
@@ -663,7 +815,7 @@ require_once __DIR__ . '/../../includes/header.php';
                         <div class="flex flex-wrap items-center gap-2 flex-shrink-0">
                             <!-- BAĞIMSIZ EDİT FATURALANDIRMA BUTONU (YENİ) -->
                             <?php if ($rev['billing_status'] === 'unbilled'): ?>
-                            <button @click="billEditData = { revision_id: '<?= $rev['id'] ?>', title: '<?= e(addslashes($rev['version_title'])) ?>', fee: 0, billing_type: 'invoice', vat_rate: 20 }; openBillEditModal = true"
+                            <button @click="billEditData = { revision_id: '<?= $rev['id'] ?>', title: <?= js_val($rev['version_title']) ?>, fee: 0, billing_type: 'invoice', vat_rate: 20 }; openBillEditModal = true"
                                     class="inline-flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 font-bold rounded-xl border border-indigo-200 text-xs transition cursor-pointer">
                                 <i data-lucide="receipt" class="w-3.5 h-3.5"></i>
                                 <span>Edit Bedelini Faturalandır / Borçlandır</span>
@@ -679,10 +831,10 @@ require_once __DIR__ . '/../../includes/header.php';
 
                             <button @click="editRevData = { 
                                         id: '<?= $rev['id'] ?>', 
-                                        version_title: '<?= e(addslashes($rev['version_title'])) ?>', 
+                                        version_title: <?= js_val($rev['version_title']) ?>, 
                                         assigned_editor_id: '<?= $rev['assigned_editor_id'] ?? '' ?>', 
-                                        preview_url: '<?= e(addslashes($rev['preview_url'] ?? '')) ?>', 
-                                        feedback_notes: '<?= e(addslashes($rev['feedback_notes'] ?? '')) ?>', 
+                                        preview_url: <?= js_val($rev['preview_url'] ?? '') ?>, 
+                                        feedback_notes: <?= js_val($rev['feedback_notes'] ?? '') ?>, 
                                         status: '<?= $rev['status'] ?>' 
                                     }; openEditRevModal = true" 
                                     class="p-2 bg-white hover:bg-brand-50 hover:text-brand-600 text-slate-600 border border-slate-200 rounded-xl transition" title="Versiyonu Düzenle">
@@ -718,11 +870,34 @@ require_once __DIR__ . '/../../includes/header.php';
                             <?= $is_sales ? '↗ SATIŞ FATURASI (GELİR)' : '↘ GİDER / ALIŞ FATURASI' ?>
                         </span>
                     </div>
-                    <div class="text-right">
-                        <span class="text-sm font-black text-slate-900 block"><?= format_money($p_inv['grand_total']) ?></span>
+                    <div class="flex items-center gap-3">
+                        <div class="text-right">
+                            <span class="text-sm font-black text-slate-900 block"><?= format_money($p_inv['grand_total']) ?></span>
+                            <?php
+                                $pay_labels = ['paid' => ['Ödendi', 'text-emerald-600'], 'partial' => ['Kısmi Ödendi', 'text-amber-600'], 'unpaid' => ['Ödenmedi', 'text-rose-600']];
+                                $pl = $pay_labels[$p_inv['payment_status']] ?? [$p_inv['payment_status'], 'text-slate-500'];
+                            ?>
+                            <span class="text-[10px] font-bold <?= $pl[1] ?>"><?= e($pl[0]) ?> · <?= format_date($p_inv['issue_date']) ?></span>
+                        </div>
+                        <a href="<?= BASE_URL ?>/modules/finance/invoice_print.php?id=<?= (int)$p_inv['id'] ?>" target="_blank" class="p-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl" title="Yazdır / PDF">
+                            <i data-lucide="printer" class="w-4 h-4"></i>
+                        </a>
+                        <?php if (has_permission('projects.edit')): ?>
+                        <form method="POST" action="" onsubmit="return confirm('Bu fatura ve bağlı tahsilatları iptal edilsin mi? Kasa ve cari bakiyeleri yeniden hesaplanacak.');">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="cancel_project_invoice">
+                            <input type="hidden" name="invoice_id" value="<?= (int)$p_inv['id'] ?>">
+                            <button type="submit" class="p-2 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 rounded-xl" title="Faturayı İptal Et">
+                                <i data-lucide="x-circle" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
+                <?php if (empty($project_invoices)): ?>
+                    <p class="text-xs text-slate-400 italic">Bu projeye bağlı fatura bulunmuyor.</p>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -992,6 +1167,16 @@ require_once __DIR__ . '/../../includes/header.php';
                         <input type="text" name="location_name" required placeholder="Plato Adı" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     </div>
                 </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Set Başlangıç Saati</label>
+                        <input type="time" name="start_time" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Paket (Bitiş) Saati</label>
+                        <input type="time" name="end_time" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">Mekan Adresi</label>
                     <input type="text" name="location_address" placeholder="Açık adres..." class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
@@ -1099,6 +1284,127 @@ require_once __DIR__ . '/../../includes/header.php';
         </div>
     </div>
 
+    <!-- MODAL: ÇEKİM GÜNÜNÜ DÜZENLE -->
+    <div x-show="openEditShootModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200" @click.away="openEditShootModal = false">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="text-sm font-bold text-slate-900">Çekim Gününü Düzenle</h3>
+                <button type="button" @click="openEditShootModal = false" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="edit_shoot">
+                <input type="hidden" name="shoot_id" :value="editShootData.id">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Çekim Başlığı *</label>
+                    <input type="text" name="title" required x-model="editShootData.title" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tarih *</label>
+                        <input type="date" name="shoot_date" required x-model="editShootData.shoot_date" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Başlangıç</label>
+                        <input type="time" name="start_time" x-model="editShootData.start_time" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Bitiş</label>
+                        <input type="time" name="end_time" x-model="editShootData.end_time" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Mekan / Plato Adı</label>
+                    <input type="text" name="location_name" x-model="editShootData.location_name" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Mekan Adresi</label>
+                    <input type="text" name="location_address" x-model="editShootData.location_address" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Call Sheet Notları</label>
+                    <textarea name="call_sheet_notes" rows="2" x-model="editShootData.call_sheet_notes" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" @click="openEditShootModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-semibold rounded-xl text-xs shadow-md">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: SET GİDERİNİ DÜZENLE -->
+    <div x-show="openEditCrewModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200" @click.away="openEditCrewModal = false">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="text-base font-bold text-slate-900">Set Giderini Düzenle</h3>
+                <button type="button" @click="openEditCrewModal = false" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="edit_crew_gear">
+                <input type="hidden" name="item_id" :value="editCrewData.id">
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <label class="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-indigo-200 cursor-pointer">
+                        <input type="radio" name="is_rebillable" value="0" x-model="editCrewData.is_rebillable" class="text-indigo-600">
+                        <span class="font-bold text-slate-900 text-[11px]">Bütçeye DAHİL</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 bg-white rounded-xl border border-indigo-200 cursor-pointer">
+                        <input type="radio" name="is_rebillable" value="1" x-model="editCrewData.is_rebillable" class="text-indigo-600">
+                        <span class="font-bold text-indigo-700 text-[11px]">Bütçeye HARİÇ (Yansıtılır)</span>
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Kategori *</label>
+                        <select name="category" x-model="editCrewData.category" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                            <?php foreach (CREW_CATEGORIES as $ckey => $cname): ?>
+                                <option value="<?= $ckey ?>"><?= $cname ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tutar (KDV Hariç) *</label>
+                        <input type="number" step="0.01" min="0" name="agreed_fee" required x-model="editCrewData.agreed_fee" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Açıklama *</label>
+                    <input type="text" name="item_title" required x-model="editCrewData.item_title" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tedarikçi Carisi</label>
+                        <select name="contact_id" x-model="editCrewData.contact_id" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <option value="">-- Cari Seçin --</option>
+                            <?php foreach ($freelancers as $f): ?>
+                                <option value="<?= $f['id'] ?>"><?= e($f['company_title']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">KDV Oranı</label>
+                        <select name="vat_rate" x-model="editCrewData.vat_rate" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                            <?php foreach (VAT_RATES as $vr): ?>
+                                <option value="<?= $vr ?>">%<?= $vr ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400">Bu gidere bağlı otomatik alış faturası varsa tutar ve cari bilgisi faturaya da yansıtılır.</p>
+
+                <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                    <button type="button" @click="openEditCrewModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
+                    <button type="submit" class="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow-md transition">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- MODAL 7: PROJEYİ TAMAMLA & FATURALANDIR -->
     <div x-show="openInvoiceCompleteModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6">
         <div class="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200" @click.away="openInvoiceCompleteModal = false">
@@ -1130,7 +1436,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">Satış Fatura No *</label>
-                        <input type="text" name="invoice_number" required value="RYM-<?= date('Y') ?>-<?= str_pad((string)$project['id'], 4, '0', STR_PAD_LEFT) ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900">
+                        <input type="text" name="invoice_number" required value="<?= e($next_sales_invoice_no) ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">Fatura Tarihi</label>
@@ -1138,8 +1444,36 @@ require_once __DIR__ . '/../../includes/header.php';
                     </div>
                 </div>
 
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">KDV Oranı</label>
+                        <select name="vat_rate" x-model="vatRate" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                            <?php foreach (VAT_RATES as $vr): ?>
+                                <option value="<?= $vr ?>">%<?= $vr ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Tevkifat</label>
+                        <select name="withholding_rate" x-model="withholdingRate" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                            <?php foreach (WITHHOLDING_RATES as $wk => $wl): ?>
+                                <option value="<?= e($wk) ?>"><?= e($wl) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Vade Tarihi</label>
+                        <input type="date" name="due_date" value="<?= date('Y-m-d', strtotime('+30 days')) ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Fatura Notu</label>
+                        <input type="text" name="notes" placeholder="Opsiyonel açıklama" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                </div>
+
                 <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-1 text-xs">
                     <div class="flex justify-between text-emerald-900"><span>KDV:</span> <strong x-text="calcInvoice().vat + ' ₺'"></strong></div>
+                    <div class="flex justify-between text-purple-800" x-show="withholdingRate !== '0/10'"><span>Tevkifat:</span> <strong x-text="'-' + calcInvoice().withholding + ' ₺'"></strong></div>
                     <div class="pt-2 border-t border-emerald-200 flex justify-between text-sm font-bold text-emerald-950">
                         <span>Müşteriye Net Borç:</span>
                         <span x-text="calcInvoice().grand + ' ₺'"></span>

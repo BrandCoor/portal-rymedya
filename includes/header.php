@@ -5,6 +5,12 @@
  * ====================================================================
  */
 
+// Çıktı tamponlama: header.php'den sonra çalışan POST işleyicilerinin
+// yönlendirmeleri (Location) "headers already sent" hatasına düşmesin.
+// (Sunucudaki output_buffering=4096 tamponu sayfa büyüyünce boşaltıldığı için
+// her durumda sınırsız boyutlu ayrı bir tampon açılır.)
+ob_start();
+
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -14,6 +20,8 @@ if (!is_logged_in()) {
     redirect(BASE_URL . '/modules/auth/login.php');
 }
 
+// Kullanıcı durumu ve izinleri her istekte veritabanından tazelenir
+refresh_staff_session();
 $user = current_user();
 ?>
 <!DOCTYPE html>
@@ -21,7 +29,7 @@ $user = current_user();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $page_title ?? 'Yönetim Paneli' ?> | <?= APP_NAME ?></title>
+    <title><?= e(html_entity_decode($page_title ?? 'Yönetim Paneli', ENT_QUOTES, 'UTF-8')) ?> | <?= APP_NAME ?></title>
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -74,7 +82,7 @@ $user = current_user();
                     <i data-lucide="menu" class="w-6 h-6"></i>
                 </button>
                 <h2 class="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <?= $page_title ?? 'Yönetim Paneli' ?>
+                    <?= e(html_entity_decode($page_title ?? 'Yönetim Paneli', ENT_QUOTES, 'UTF-8')) ?>
                 </h2>
             </div>
 
@@ -107,11 +115,13 @@ $user = current_user();
                             <p class="text-xs text-slate-500">Giriş Yapıldı</p>
                             <p class="text-xs font-bold text-slate-800 truncate"><?= e($user['email']) ?></p>
                         </div>
+                        <?php if (has_permission('settings.manage')): ?>
                         <div class="py-1">
                             <a href="<?= BASE_URL ?>/modules/settings/index.php" class="flex items-center px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
                                 <i data-lucide="settings" class="w-4 h-4 mr-2 text-slate-400"></i> Sistem Ayarları
                             </a>
                         </div>
+                        <?php endif; ?>
                         <div class="py-1">
                             <a href="<?= BASE_URL ?>/modules/auth/logout.php" class="flex items-center px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50">
                                 <i data-lucide="log-out" class="w-4 h-4 mr-2 text-rose-500"></i> Güvenli Çıkış

@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('contacts.view');
 
 // ====================================================================
@@ -25,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create_contact') {
         require_permission('contacts.create');
 
-        $type              = $_POST['type'] ?? 'client';
+        $type              = array_key_exists($_POST['type'] ?? '', CONTACT_TYPES) ? $_POST['type'] : 'client';
         $company_title     = trim($_POST['company_title'] ?? '');
         $authorized_person = trim($_POST['authorized_person'] ?? '');
         $phone             = trim($_POST['phone'] ?? '');
@@ -52,6 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('success', "{$company_title} carisi başarıyla kaydedildi.");
             redirect(BASE_URL . '/modules/contacts/index.php?type=' . $type);
         }
+        set_flash('error', 'Firma / kişi ünvanı zorunludur.');
+        redirect(BASE_URL . '/modules/contacts/index.php');
     }
 
     // Cari Silme
@@ -59,21 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_permission('contacts.delete');
         $del_id = (int)$_POST['contact_id'];
         
-        $db->prepare("DELETE FROM users WHERE contact_id = ?")->execute([$del_id]);
-        $db->prepare("DELETE FROM contact_change_logs WHERE contact_id = ?")->execute([$del_id]);
-        $db->prepare("DELETE FROM transactions WHERE contact_id = ?")->execute([$del_id]);
-        $db->prepare("DELETE FROM invoices WHERE contact_id = ?")->execute([$del_id]);
-
-        $projs = $db->query("SELECT id FROM projects WHERE client_id = {$del_id}")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($projs as $p_id) {
-            $db->prepare("DELETE FROM shoots WHERE project_id = ?")->execute([$p_id]);
-            $db->prepare("DELETE FROM project_revisions WHERE project_id = ?")->execute([$p_id]);
-            $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$p_id]);
-        }
-
-        $db->prepare("DELETE FROM contacts WHERE id = ?")->execute([$del_id]);
+        delete_contact_cascade($del_id);
         
-        set_flash('success', 'Cari kartı başarıyla silindi.');
+        set_flash('success', 'Cari kartı ve bağlı tüm kayıtları silindi, kasa bakiyeleri eşitlendi.');
         redirect(BASE_URL . '/modules/contacts/index.php');
     }
 }

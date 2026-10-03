@@ -11,6 +11,20 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
+// Giriş ve yetki kontrolü (POST işlemlerinden ÖNCE çalışmalıdır)
+require_staff_login();
+require_permission('contacts.view');
+
+// Cariyi en başta yükle (POST işlemleri de cari bilgisine ihtiyaç duyar)
+$stmt = $db->prepare("SELECT * FROM contacts WHERE id = ?");
+$stmt->execute([$contact_id]);
+$contact = $stmt->fetch();
+
+if (!$contact) {
+    set_flash('error', 'Aradığınız cari kart bulunamadı.');
+    redirect(BASE_URL . '/modules/contacts/index.php');
+}
+
 // 1. TÜM FORM VE MUHASEBE İŞLEMLERİ (POST HANDLER)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -19,188 +33,236 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A. CARİ KÜNYE BİLGİLERİNİ DÜZENLEME
     if ($action === 'edit_contact_info') {
         require_permission('contacts.edit');
+        $company_title = trim($_POST['company_title'] ?? '');
+        $type = array_key_exists($_POST['type'] ?? '', CONTACT_TYPES) ? $_POST['type'] : $contact['type'];
+
+        if ($company_title === '') {
+            set_flash('error', 'Firma / kişi ünvanı boş bırakılamaz.');
+            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}");
+        }
+
+        $fields = ['authorized_person', 'phone', 'email', 'tax_office', 'tax_number', 'id_number', 'iban', 'city', 'district', 'address'];
+        $values = [];
+        foreach ($fields as $f) {
+            $values[$f] = trim($_POST[$f] ?? '');
+        }
+
         $up = $db->prepare("UPDATE contacts SET type = ?, company_title = ?, authorized_person = ?, phone = ?, email = ?, tax_office = ?, tax_number = ?, id_number = ?, iban = ?, city = ?, district = ?, address = ? WHERE id = ?");
-        $up->execute([$_POST['type'], $_POST['company_title'], $_POST['authorized_person'], $_POST['phone'], $_POST['email'], $_POST['tax_office'], $_POST['tax_number'], $_POST['id_number'], $_POST['iban'], $_POST['city'], $_POST['district'], $_POST['address'], $contact_id]);
+        $up->execute([$type, $company_title, $values['authorized_person'], $values['phone'], $values['email'], $values['tax_office'], $values['tax_number'], $values['id_number'], $values['iban'], $values['city'], $values['district'], $values['address'], $contact_id]);
         set_flash('success', 'Cari bilgileri güncellendi.');
         redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}");
     }
 
     // B. FATURAYA İSTİNADEN TAHSİLAT ALMA
     if ($action === 'pay_invoice_from_contact') {
+        require_permission('finance.view');
         $invoice_id = (int)$_POST['invoice_id'];
         $account_id = (int)$_POST['account_id'];
-        $pay_amount = (float)str_replace(['.', ','], ['', '.'], $_POST['pay_amount'] ?? '0');
-        $pay_date   = $_POST['pay_date'] ?? date('Y-m-d');
-        $inv = $db->query("SELECT * FROM invoices WHERE id = {$invoice_id}")->fetch();
+        $pay_amount = parse_money($_POST['pay_amount'] ?? '0');
+        $pay_date   = valid_date($_POST['pay_date'] ?? '', date('Y-m-d'));
 
-        if ($inv && $account_id > 0 && $pay_amount > 0) {
-            $new_paid = (float)$inv['paid_amount'] + $pay_amount;
-            $new_status = ($new_paid >= (float)$inv['grand_total']) ? 'paid' : 'partial';
+        $own = $db->prepare("SELECT id FROM invoices WHERE id = ? AND contact_id = ?");
+        $own->execute([$invoice_id, $contact_id]);
 
-            $db->prepare("UPDATE invoices SET paid_amount = ?, payment_status = ? WHERE id = ?")->execute([$new_paid, $new_status, $invoice_id]);
-            $tx_type = ($inv['invoice_type'] === 'sales') ? 'income' : 'expense';
-            $acc_modifier = ($tx_type === 'income') ? $pay_amount : -$pay_amount;
+        $err = $own->fetch()
+            ? record_invoice_payment($invoice_id, $account_id, $pay_amount, $pay_date, (int)$user['id'])
+            : 'Fatura bu cariye ait değil.';
 
-            $db->prepare("INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'Fatura Tahsilatı', ?, ?, ?, ?, NOW())")
-               ->execute([$account_id, $contact_id, $invoice_id, $inv['project_id'], $tx_type, $pay_amount, $pay_date, "Fatura No: {$inv['invoice_number']} ödemesi", $user['id']]);
-
-            $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$acc_modifier, $account_id]);
-
-            recalculate_contact_balance($contact_id);
-            set_flash('success', "Tahsilat alındı ve bakiye eşitlendi.");
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=invoices");
-        }
+        $err ? set_flash('error', $err) : set_flash('success', 'Tahsilat/ödeme kaydedildi; kasa, cari ve fatura durumu eşitlendi.');
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=invoices");
     }
 
     // C. MANUEL BORÇ / ALACAK DEKONTU EKLEME
     if ($action === 'add_manual_adjustment') {
-        $type        = $_POST['adj_type'];
-        $amount      = (float)str_replace(['.', ','], ['', '.'], $_POST['amount'] ?? '0');
-        $date        = $_POST['transaction_date'] ?? date('Y-m-d');
-        $category    = trim($_POST['category'] ?? 'Manuel Cari Dekontu');
+        require_permission('contacts.edit');
+        $type        = ($_POST['adj_type'] ?? '') === 'credit' ? 'credit' : 'debit';
+        $amount      = parse_money($_POST['amount'] ?? '0');
+        $date        = valid_date($_POST['transaction_date'] ?? '', date('Y-m-d'));
+        $category    = trim($_POST['category'] ?? '') ?: 'Manuel Cari Dekontu';
         $description = trim($_POST['description'] ?? '');
         $account_id  = !empty($_POST['account_id']) ? (int)$_POST['account_id'] : null;
 
         if ($amount > 0) {
             $tx_type = ($type === 'credit') ? 'income' : 'expense';
-            if ($account_id) {
-                $acc_modifier = ($tx_type === 'income') ? $amount : -$amount;
-                $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$acc_modifier, $account_id]);
-            }
 
             $db->prepare("INSERT INTO transactions (account_id, contact_id, invoice_id, project_id, type, category, amount, transaction_date, description, created_by, created_at) VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, NOW())")
                ->execute([$account_id, $contact_id, $tx_type, $category, $amount, $date, ($description ?: ($type === 'debit' ? 'Manuel Borç Dekontu' : 'Manuel Alacak Dekontu')), $user['id']]);
 
+            if ($account_id) {
+                recalculate_account_balance($account_id);
+            }
             recalculate_contact_balance($contact_id);
             set_flash('success', "Manuel dekont işlendi ve bakiye eşitlendi.");
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
+        } else {
+            set_flash('error', 'Lütfen geçerli bir tutar giriniz.');
         }
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
     }
 
     // D. MANUEL DEKONTU DÜZENLEME
     if ($action === 'edit_manual_transaction') {
+        require_permission('contacts.edit');
         $tx_id       = (int)$_POST['transaction_id'];
-        $type        = $_POST['adj_type'];
-        $amount      = (float)str_replace(['.', ','], ['', '.'], $_POST['amount'] ?? '0');
-        $date        = $_POST['transaction_date'] ?? date('Y-m-d');
+        $type        = ($_POST['adj_type'] ?? '') === 'credit' ? 'credit' : 'debit';
+        $amount      = parse_money($_POST['amount'] ?? '0');
+        $date        = valid_date($_POST['transaction_date'] ?? '', date('Y-m-d'));
         $category    = trim($_POST['category'] ?? '');
         $description = trim($_POST['description'] ?? '');
 
-        $old_tx = $db->query("SELECT * FROM transactions WHERE id = {$tx_id} AND contact_id = {$contact_id}")->fetch();
+        $tx_stmt = $db->prepare("SELECT * FROM transactions WHERE id = ? AND contact_id = ?");
+        $tx_stmt->execute([$tx_id, $contact_id]);
+        $old_tx = $tx_stmt->fetch();
 
         if ($old_tx && $amount > 0) {
-            if (!empty($old_tx['account_id'])) {
-                $acc_reversal = ($old_tx['type'] === 'income') ? -$old_tx['amount'] : $old_tx['amount'];
-                $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$acc_reversal, $old_tx['account_id']]);
-                
-                $new_tx_type = ($type === 'credit') ? 'income' : 'expense';
-                $new_acc_mod = ($new_tx_type === 'income') ? $amount : -$amount;
-                $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$new_acc_mod, $old_tx['account_id']]);
-            } else {
-                $new_tx_type = ($type === 'credit') ? 'income' : 'expense';
-            }
+            $new_tx_type = ($type === 'credit') ? 'income' : 'expense';
 
             $db->prepare("UPDATE transactions SET type = ?, category = ?, amount = ?, transaction_date = ?, description = ? WHERE id = ?")
                ->execute([$new_tx_type, $category, $amount, $date, $description, $tx_id]);
 
+            if (!empty($old_tx['account_id'])) {
+                recalculate_account_balance((int)$old_tx['account_id']);
+            }
+            if (!empty($old_tx['invoice_id'])) {
+                sync_invoice_payment((int)$old_tx['invoice_id']);
+            }
             recalculate_contact_balance($contact_id);
             set_flash('success', 'Dekont güncellendi.');
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
         }
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
     }
 
     // E. MANUEL DEKONTU SİLME
     if ($action === 'delete_manual_transaction') {
+        require_permission('contacts.edit');
         $tx_id = (int)$_POST['transaction_id'];
-        $tx = $db->query("SELECT * FROM transactions WHERE id = {$tx_id} AND contact_id = {$contact_id}")->fetch();
+        $tx_stmt = $db->prepare("SELECT * FROM transactions WHERE id = ? AND contact_id = ?");
+        $tx_stmt->execute([$tx_id, $contact_id]);
+        $tx = $tx_stmt->fetch();
 
         if ($tx) {
-            if (!empty($tx['account_id'])) {
-                $acc_reversal = ($tx['type'] === 'income') ? -$tx['amount'] : $tx['amount'];
-                $db->prepare("UPDATE accounts SET balance = balance + ? WHERE id = ?")->execute([$acc_reversal, $tx['account_id']]);
-            }
             $db->prepare("DELETE FROM transactions WHERE id = ?")->execute([$tx_id]);
+            if (!empty($tx['account_id'])) {
+                recalculate_account_balance((int)$tx['account_id']);
+            }
+            if (!empty($tx['invoice_id'])) {
+                sync_invoice_payment((int)$tx['invoice_id']);
+            }
             recalculate_contact_balance($contact_id);
             set_flash('success', 'Dekont silindi.');
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
         }
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=ledger");
     }
 
     // F. RESMİ FATURAYI DÜZENLEME
     if ($action === 'edit_invoice_from_contact') {
+        require_permission('finance.invoices');
         $invoice_id       = (int)$_POST['invoice_id'];
-        $invoice_type     = $_POST['invoice_type'] ?? 'sales';
+        $invoice_type     = ($_POST['invoice_type'] ?? 'sales') === 'purchase' ? 'purchase' : 'sales';
         $invoice_number   = trim($_POST['invoice_number'] ?? '');
-        $subtotal         = (float)str_replace(['.', ','], ['', '.'], $_POST['subtotal'] ?? '0');
+        $subtotal         = parse_money($_POST['subtotal'] ?? '0');
         $vat_rate         = (float)($_POST['vat_rate'] ?? 20);
-        $issue_date       = $_POST['issue_date'] ?? date('Y-m-d');
+        $issue_date       = valid_date($_POST['issue_date'] ?? '', date('Y-m-d'));
         $notes            = trim($_POST['notes'] ?? '');
 
-        if (!empty($invoice_number) && $subtotal > 0) {
-            $tax = calculate_tax_breakdown($subtotal, $vat_rate, '0/10', 0);
-            $db->prepare("UPDATE invoices SET invoice_type = ?, invoice_number = ?, subtotal = ?, vat_rate = ?, vat_amount = ?, grand_total = ?, issue_date = ?, notes = ? WHERE id = ?")
-               ->execute([$invoice_type, $invoice_number, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'], $issue_date, $notes, $invoice_id]);
+        $inv_stmt = $db->prepare("SELECT * FROM invoices WHERE id = ? AND contact_id = ?");
+        $inv_stmt->execute([$invoice_id, $contact_id]);
+        $old_inv = $inv_stmt->fetch();
 
+        if (!$old_inv) {
+            set_flash('error', 'Fatura bu cariye ait değil.');
+        } elseif ($invoice_number === '' || $subtotal <= 0) {
+            set_flash('error', 'Fatura numarası ve tutar zorunludur.');
+        } elseif (invoice_number_exists($invoice_number, $invoice_id, $invoice_type)) {
+            set_flash('error', "{$invoice_number} numaralı başka bir fatura zaten mevcut.");
+        } else {
+            // Mevcut tevkifat ve stopaj oranları korunarak yeniden hesaplanır
+            $tax = calculate_tax_breakdown($subtotal, $vat_rate, $old_inv['withholding_rate'] ?: '0/10', (float)$old_inv['stoppage_rate']);
+            $db->prepare("UPDATE invoices SET invoice_type = ?, invoice_number = ?, subtotal = ?, vat_rate = ?, vat_amount = ?, withholding_amount = ?, stoppage_amount = ?, grand_total = ?, issue_date = ?, notes = ? WHERE id = ?")
+               ->execute([$invoice_type, $invoice_number, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['withholding_amount'], $tax['stoppage_amount'], $tax['grand_total'], $issue_date, $notes, $invoice_id]);
+
+            sync_invoice_payment($invoice_id);
             recalculate_contact_balance($contact_id);
             set_flash('success', "Fatura güncellendi.");
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=invoices");
         }
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=invoices");
     }
 
-    // G. RESMİ FATURAYI SİLME
+    // G. RESMİ FATURAYI SİLME (Tahsilatlar dahil zincirleme)
     if ($action === 'delete_invoice_from_contact') {
+        require_permission('finance.invoices');
         $inv_id = (int)$_POST['invoice_id'];
-        $db->prepare("DELETE FROM transactions WHERE invoice_id = ?")->execute([$inv_id]);
-        $db->prepare("DELETE FROM invoices WHERE id = ?")->execute([$inv_id]);
-
-        recalculate_contact_balance($contact_id);
-        set_flash('success', 'Fatura silindi ve bakiye eşitlendi.');
+        $own = $db->prepare("SELECT id FROM invoices WHERE id = ? AND contact_id = ?");
+        $own->execute([$inv_id, $contact_id]);
+        if ($own->fetch()) {
+            delete_invoice_cascade($inv_id);
+            set_flash('success', 'Fatura ve bağlı tahsilatları silindi, kasa ve cari bakiyeleri eşitlendi.');
+        }
         redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}&tab=invoices");
     }
 
     // H. CARİYİ KALICI SİLME
     if ($action === 'delete_contact_permanent') {
         require_permission('contacts.delete');
-        $db->prepare("DELETE FROM users WHERE contact_id = ?")->execute([$contact_id]);
-        $db->prepare("DELETE FROM contact_change_logs WHERE contact_id = ?")->execute([$contact_id]);
-        $db->prepare("DELETE FROM transactions WHERE contact_id = ?")->execute([$contact_id]);
-        $db->prepare("DELETE FROM invoices WHERE contact_id = ?")->execute([$contact_id]);
-        $db->prepare("DELETE FROM contacts WHERE id = ?")->execute([$contact_id]);
-
-        set_flash('success', "Cari kartı tamamen silindi.");
+        delete_contact_cascade($contact_id);
+        set_flash('success', "Cari kartı ve bağlı tüm kayıtları silindi, kasa bakiyeleri eşitlendi.");
         redirect(BASE_URL . '/modules/contacts/index.php');
     }
 
     // I. MÜŞTERİ PORTALI GİRİŞİ
     if ($action === 'create_client_user') {
+        require_permission('contacts.edit');
         $email    = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
-        $name     = trim($_POST['full_name'] ?? $contact['company_title']);
+        $name     = trim($_POST['full_name'] ?? '') ?: $contact['company_title'];
 
-        if (!empty($email) && !empty($password)) {
-            $role_stmt = $db->query("SELECT id FROM roles WHERE role_slug = 'client' LIMIT 1");
-            $client_role = $role_stmt->fetch();
-            $client_role_id = $client_role ? (int)$client_role['id'] : 6;
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
+        } elseif (strlen($password) < 8) {
+            set_flash('error', 'Portal şifresi en az 8 karakter olmalıdır.');
+        } else {
+            $client_role_id = get_client_role_id();
             $hashed = password_hash($password, PASSWORD_DEFAULT);
 
-            $chk = $db->prepare("SELECT id FROM users WHERE email = ?");
+            $chk = $db->prepare("SELECT u.id, u.role_id, u.contact_id, r.role_slug FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.email = ?");
             $chk->execute([$email]);
             $existing = $chk->fetch();
 
-            if ($existing) {
-                $db->prepare("UPDATE users SET password = ?, role_id = ?, contact_id = ?, status = 'active', full_name = ? WHERE id = ?")->execute([$hashed, $client_role_id, $contact_id, $name, $existing['id']]);
+            if ($existing && ((int)$existing['contact_id'] !== $contact_id || (int)$existing['role_id'] === 1)) {
+                // Personel veya başka bir cariye ait hesap asla müşteri hesabına dönüştürülmez
+                set_flash('error', 'Bu e-posta adresi başka bir kullanıcı (personel veya farklı cari) tarafından kullanılıyor.');
             } else {
-                $db->prepare("INSERT INTO users (role_id, contact_id, full_name, email, password, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())")->execute([$client_role_id, $contact_id, $name, $email, $hashed, $contact['phone']]);
+                if ($existing) {
+                    $db->prepare("UPDATE users SET password = ?, role_id = ?, contact_id = ?, status = 'active', full_name = ? WHERE id = ?")->execute([$hashed, $client_role_id, $contact_id, $name, $existing['id']]);
+                } else {
+                    // Cariye bağlı eski portal hesabı varsa onu güncelle (tek hesap)
+                    $old = $db->prepare("SELECT id FROM users WHERE contact_id = ? AND role_id != 1 LIMIT 1");
+                    $old->execute([$contact_id]);
+                    $old_id = $old->fetchColumn();
+                    if ($old_id) {
+                        $db->prepare("UPDATE users SET email = ?, password = ?, role_id = ?, status = 'active', full_name = ? WHERE id = ?")->execute([$email, $hashed, $client_role_id, $name, $old_id]);
+                    } else {
+                        $db->prepare("INSERT INTO users (role_id, contact_id, full_name, email, password, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())")->execute([$client_role_id, $contact_id, $name, $email, $hashed, $contact['phone']]);
+                    }
+                }
+                set_flash('success', "Müşteri portalı girişi güncellendi!");
             }
-            set_flash('success', "Müşteri portalı girişi güncellendi!");
-            redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}");
         }
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}");
+    }
+
+    // J. MÜŞTERİ PORTALI ERİŞİMİNİ KAPATMA / AÇMA
+    if ($action === 'toggle_client_user') {
+        require_permission('contacts.edit');
+        $db->prepare("UPDATE users SET status = IF(status = 'active', 'inactive', 'active') WHERE contact_id = ? AND role_id != 1")->execute([$contact_id]);
+        set_flash('success', 'Müşteri portalı erişim durumu değiştirildi.');
+        redirect(BASE_URL . "/modules/contacts/detail.php?id={$contact_id}");
     }
 }
 
 // CARİ BAKİYESİNİ HER SAYFA AÇILIŞINDA OTOMATİK EŞİTLE
 $accurate_balance = recalculate_contact_balance($contact_id);
 
+// Güncel cari bilgisini yeniden oku
 $stmt = $db->prepare("SELECT * FROM contacts WHERE id = ?");
 $stmt->execute([$contact_id]);
 $contact = $stmt->fetch();
@@ -212,6 +274,7 @@ $client_user = $client_user_stmt->fetch();
 $projects = $db->query("SELECT * FROM projects WHERE client_id = {$contact_id} ORDER BY id DESC")->fetchAll();
 $invoices = $db->query("SELECT * FROM invoices WHERE contact_id = {$contact_id} ORDER BY issue_date DESC")->fetchAll();
 $transactions = $db->query("SELECT t.*, a.account_name FROM transactions t LEFT JOIN accounts a ON t.account_id = a.id WHERE t.contact_id = {$contact_id} ORDER BY t.transaction_date DESC, t.id DESC")->fetchAll();
+ensure_contact_change_logs_table();
 $change_logs = $db->query("SELECT * FROM contact_change_logs WHERE contact_id = {$contact_id} ORDER BY id DESC LIMIT 50")->fetchAll();
 $accounts = $db->query("SELECT id, account_name, currency, balance FROM accounts WHERE status = 'active'")->fetchAll();
 
@@ -292,7 +355,20 @@ require_once __DIR__ . '/../../includes/header.php';
             <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                 <span class="text-slate-500">Müşteri Portalı:</span>
                 <?php if ($client_user): ?>
-                    <span class="text-emerald-600 font-bold flex items-center gap-1">✓ Aktif (<?= e($client_user['email']) ?>)</span>
+                    <span class="flex items-center gap-2">
+                        <?php if ($client_user['status'] === 'active'): ?>
+                            <span class="text-emerald-600 font-bold">✓ Aktif (<?= e($client_user['email']) ?>)</span>
+                        <?php else: ?>
+                            <span class="text-rose-600 font-bold">✕ Kapalı (<?= e($client_user['email']) ?>)</span>
+                        <?php endif; ?>
+                        <?php if (has_permission('contacts.edit')): ?>
+                        <form method="POST" action="" onsubmit="return confirm('Portal erişim durumu değiştirilsin mi?');">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="toggle_client_user">
+                            <button type="submit" class="text-[10px] font-bold underline text-slate-500 hover:text-slate-800"><?= $client_user['status'] === 'active' ? 'Erişimi Kapat' : 'Erişimi Aç' ?></button>
+                        </form>
+                        <?php endif; ?>
+                    </span>
                 <?php else: ?>
                     <span class="text-slate-400">Tanımlanmadı</span>
                 <?php endif; ?>
@@ -391,8 +467,8 @@ require_once __DIR__ . '/../../includes/header.php';
                                                     adj_type: '<?= $is_inc ? 'credit' : 'debit' ?>',
                                                     amount: '<?= (float)$tx['amount'] ?>',
                                                     transaction_date: '<?= $tx['transaction_date'] ?>',
-                                                    category: '<?= e(addslashes($tx['category'])) ?>',
-                                                    description: '<?= e(addslashes($tx['description'] ?? '')) ?>'
+                                                    category: <?= js_val($tx['category']) ?>,
+                                                    description: <?= js_val($tx['description'] ?? '') ?>
                                                 }; openEditTxModal = true"
                                                 class="p-1.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-500 rounded-lg transition" title="Düzenle">
                                             <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
@@ -453,7 +529,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                 <td class="py-3 px-4 text-right">
                                     <div class="flex items-center justify-end gap-1.5">
                                         <?php if ($inv['payment_status'] !== 'paid'): ?>
-                                        <button @click="payInvData = { id: '<?= $inv['id'] ?>', invoice_number: '<?= e($inv['invoice_number']) ?>', remaining: '<?= $rem ?>' }; openPayInvModal = true"
+                                        <button @click="payInvData = { id: '<?= $inv['id'] ?>', invoice_number: <?= js_val($inv['invoice_number']) ?>, remaining: '<?= $rem ?>' }; openPayInvModal = true"
                                                 class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold rounded-lg border border-emerald-200 transition text-[11px] flex items-center gap-1">
                                             <i data-lucide="hand-coins" class="w-3.5 h-3.5"></i>
                                             <span>Tahsilat Al</span>
@@ -467,11 +543,11 @@ require_once __DIR__ . '/../../includes/header.php';
                                         <button @click="editInvData = {
                                                     id: '<?= $inv['id'] ?>',
                                                     invoice_type: '<?= $inv['invoice_type'] ?>',
-                                                    invoice_number: '<?= e(addslashes($inv['invoice_number'])) ?>',
+                                                    invoice_number: <?= js_val($inv['invoice_number']) ?>,
                                                     subtotal: '<?= (float)$inv['subtotal'] ?>',
                                                     vat_rate: '<?= (float)$inv['vat_rate'] ?>',
                                                     issue_date: '<?= $inv['issue_date'] ?>',
-                                                    notes: '<?= e(addslashes($inv['notes'] ?? '')) ?>'
+                                                    notes: <?= js_val($inv['notes'] ?? '') ?>
                                                 }; openEditInvModal = true"
                                                 class="p-1.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-500 rounded-lg transition" title="Düzenle">
                                             <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
@@ -860,7 +936,8 @@ require_once __DIR__ . '/../../includes/header.php';
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Portal Şifresi *</label>
-                    <input type="password" name="password" required placeholder="••••••••" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
+                    <input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="En az 8 karakter" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
+                    <p class="text-[10px] text-slate-400 mt-1">Müşteri giriş adresi: <span class="font-mono"><?= e(BASE_URL) ?>/client/login.php</span></p>
                 </div>
 
                 <div class="pt-2 flex justify-end gap-2">

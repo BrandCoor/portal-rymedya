@@ -9,11 +9,13 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in() && !isset($_SESSION['client_user_id'])) {
+$proposal_id = (int)($_GET['id'] ?? 0);
+
+$is_staff_viewer = is_logged_in() && can_access_module('proposals.manage');
+if (!$is_staff_viewer && !is_client_logged_in()) {
+    http_response_code(403);
     die("Yetkisiz erişim!");
 }
-
-$proposal_id = (int)($_GET['id'] ?? 0);
 
 $stmt = $db->prepare("
     SELECT pr.*, 
@@ -24,6 +26,11 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([$proposal_id]);
 $proposal = $stmt->fetch();
+
+// Müşteri yalnızca kendisine hazırlanmış ve taslak olmayan teklifleri görebilir
+if ($proposal && !$is_staff_viewer && ((int)$proposal['client_id'] !== (int)$_SESSION['client_contact_id'] || $proposal['status'] === 'draft')) {
+    $proposal = false;
+}
 
 if (!$proposal) {
     die("Teklif belgesi bulunamadı!");

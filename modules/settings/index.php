@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/constants.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-if (!is_logged_in()) {
-    redirect(BASE_URL . '/modules/auth/login.php');
-}
+require_staff_login();
 require_permission('settings.manage');
 
 // ====================================================================
@@ -43,9 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'bank_payment_note'        => trim($_POST['bank_payment_note'] ?? ''),
 
             // 3. Finans & Vergi Parametreleri
-            'default_currency'         => $_POST['default_currency'] ?? 'TRY',
-            'default_vat_rate'         => trim($_POST['default_vat_rate'] ?? '20'),
-            'corporate_tax_rate'       => trim($_POST['corporate_tax_rate'] ?? '25'),
+            'default_currency'         => array_key_exists($_POST['default_currency'] ?? '', CURRENCIES) ? $_POST['default_currency'] : 'TRY',
+            'default_vat_rate'         => (string)max(0, min(100, (float)($_POST['default_vat_rate'] ?? 20))),
+            'corporate_tax_rate'       => (string)max(0, min(100, (float)($_POST['corporate_tax_rate'] ?? 25))),
             'invoice_prefix'           => trim($_POST['invoice_prefix'] ?? 'RYM-'),
             'project_prefix'           => trim($_POST['project_prefix'] ?? 'PRJ-'),
 

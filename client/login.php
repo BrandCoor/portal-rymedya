@@ -9,7 +9,7 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Zaten müşteri oturumu açıksa Dashboard'a yönlendir
-if (isset($_SESSION['client_user_id'])) {
+if (is_client_logged_in()) {
     redirect(BASE_URL . '/client/index.php');
 }
 
@@ -23,26 +23,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email) || empty($password)) {
         $error = 'Lütfen e-posta ve şifrenizi giriniz.';
+    } elseif (is_login_locked($email)) {
+        $error = 'Çok fazla hatalı giriş denemesi yapıldı. Lütfen ' . LOGIN_LOCKOUT_MINUTES . ' dakika sonra tekrar deneyiniz.';
     } else {
-        // Dinamik rol ve cari eşleştirme sorgusu (Sabit ID bağımlılığı kaldırıldı)
         $stmt = $db->prepare("
-            SELECT u.*, r.role_slug, c.id as linked_contact_id, c.company_title as client_name, c.balance as client_balance 
+            SELECT u.*, r.role_slug, c.id as linked_contact_id, c.company_title as client_name
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
-            LEFT JOIN contacts c ON (u.contact_id = c.id OR u.email = c.email)
+            LEFT JOIN contacts c ON u.contact_id = c.id
             WHERE u.email = ? AND u.status = 'active'
             LIMIT 1
         ");
         $stmt->execute([$email]);
         $client = $stmt->fetch();
 
-        // Kullanıcı bulunduysa ve rolü 'client' ise veya bir cariye bağlıysa
         if ($client && password_verify($password, $client['password'])) {
-            
-            // Eğer cari ID henüz kullanıcıya bağlanmadıysa otomatik bağla
             $active_contact_id = $client['linked_contact_id'];
-            if (!$active_contact_id) {
-                // E-posta ile cariler tablosunda ara
+
+            // Cari bağlantısı yoksa ve hesap bir müşteri hesabıysa e-posta ile eşleştir
+            $is_portal_account = ($client['role_slug'] === 'client' || !empty($client['contact_id'])) && (int)$client['role_id'] !== 1;
+            if (!$active_contact_id && $is_portal_account) {
                 $c_find = $db->prepare("SELECT id, company_title FROM contacts WHERE email = ? LIMIT 1");
                 $c_find->execute([$email]);
                 $found_c = $c_find->fetch();
@@ -53,22 +53,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            session_regenerate_id(true);
+            if (!$is_portal_account || !$active_contact_id) {
+                // Personel hesapları veya cariye bağlanmamış hesaplar portala giremez
+                $error = 'Bu hesap için müşteri portalı erişimi tanımlanmamış. Lütfen ajansınızla iletişime geçiniz.';
+            } else {
+                clear_login_failures($email);
+                session_regenerate_id(true);
 
-            $_SESSION['client_user_id'] = $client['id'];
-            $_SESSION['client_contact_id'] = $active_contact_id;
-            $_SESSION['client_user'] = [
-                'id'           => $client['id'],
-                'contact_id'   => $active_contact_id,
-                'full_name'    => $client['full_name'],
-                'company_name' => $client['client_name'] ?? $client['full_name'],
-                'email'        => $client['email'],
-                'phone'        => $client['phone']
-            ];
+                $_SESSION['client_user_id'] = $client['id'];
+                $_SESSION['client_contact_id'] = $active_contact_id;
+                $_SESSION['client_user'] = [
+                    'id'           => $client['id'],
+                    'contact_id'   => $active_contact_id,
+                    'full_name'    => $client['full_name'],
+                    'company_name' => $client['client_name'] ?? $client['full_name'],
+                    'email'        => $client['email'],
+                    'phone'        => $client['phone']
+                ];
 
-            set_flash('success', 'Hoş geldiniz, ' . $client['full_name']);
-            redirect(BASE_URL . '/client/index.php');
+                $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([$client['id']]);
+
+                set_flash('success', 'Hoş geldiniz, ' . $client['full_name']);
+                redirect(BASE_URL . '/client/index.php');
+            }
         } else {
+            record_login_failure($email);
             $error = 'E-posta adresi veya şifre hatalı!';
         }
     }
