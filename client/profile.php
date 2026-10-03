@@ -125,6 +125,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['client_user']['full_name'] = $new_authorized_person ?: $contact['company_title'];
         $_SESSION['client_user']['email']     = $new_email;
 
+        if ($changes_count > 0) {
+            log_activity('client_profile', "Müşteri iletişim bilgilerini güncelledi: {$contact['company_title']} ({$changes_count} alan)", 'contact', $contact_id, "/modules/contacts/detail.php?id={$contact_id}");
+        }
         set_flash('success', 'Şirket iletişim bilgileriniz başarıyla güncellendi ve denetim kaydına işlendi.');
         redirect(BASE_URL . '/client/profile.php');
     }

@@ -57,7 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_status = $_POST['new_status'] ?? 'draft';
         if (array_key_exists($new_status, PROPOSAL_STATUSES)) {
             $db->prepare("UPDATE proposals SET status = ? WHERE id = ?")->execute([$new_status, $prop_id]);
-            set_flash('success', 'Teklif aşaması güncellendi.');
+            log_activity('proposal_status', 'Teklif aşaması: ' . PROPOSAL_STATUSES[$new_status]['label'] . " (#{$prop_id})", 'proposal', $prop_id, '/modules/proposals/index.php');
+            set_flash('success', 'Teklif aşaması güncellendi.' . ($new_status === 'sent' ? ' Müşteri teklifi portalından görüntüleyip onaylayabilir.' : ''));
         }
         redirect(BASE_URL . '/modules/proposals/index.php');
     }
@@ -98,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // C. Teklif Silme
     if ($action === 'delete_proposal') {
         $del_id = (int)$_POST['proposal_id'];
+        $db->prepare("DELETE FROM proposal_items WHERE proposal_id = ?")->execute([$del_id]);
         $db->prepare("DELETE FROM proposals WHERE id = ?")->execute([$del_id]);
         set_flash('success', 'Teklif silindi.');
         redirect(BASE_URL . '/modules/proposals/index.php');
@@ -211,6 +213,12 @@ require_once __DIR__ . '/../../includes/header.php';
 
                     <h4 class="font-bold text-slate-900 text-xs line-clamp-2"><?= e($prop['title']) ?></h4>
                     <p class="text-[11px] text-slate-500 font-medium truncate">🏢 <?= e($prop['client_name']) ?></p>
+                    <?php if (!empty($prop['client_responded_at'])): ?>
+                        <div class="p-2 rounded-lg text-[10px] <?= $prop['status'] === 'approved' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800' ?>">
+                            <strong>Portaldan yanıt:</strong> <?= format_date($prop['client_responded_at'], true) ?>
+                            <?php if (!empty($prop['client_response_note'])): ?><br>“<?= e($prop['client_response_note']) ?>”<?php endif; ?>
+                        </div>
+                    <?php endif; ?>
 
                     <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                         <span class="text-[10px] text-slate-400"><?= format_date($prop['valid_until']) ?></span>

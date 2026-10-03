@@ -36,6 +36,15 @@ if (!$proposal) {
     die("Teklif belgesi bulunamadı!");
 }
 
+// Teklif kalemleri
+$items = [];
+try {
+    $it = $db->prepare("SELECT * FROM proposal_items WHERE proposal_id = ? ORDER BY sort_order, id");
+    $it->execute([$proposal_id]);
+    $items = $it->fetchAll();
+} catch (Throwable $e) {
+}
+
 // Şirket Ayarlarını Çek
 $settings_raw = $db->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_KEY_PAIR);
 $company_name = $settings_raw['company_name'] ?? 'RY MEDYA PRODÜKSİYON A.Ş.';
@@ -131,6 +140,34 @@ $bank_name = $settings_raw['bank_primary_name'] ?? 'Garanti BBVA';
                     <?= !empty($proposal['scope_items']) ? e($proposal['scope_items']) : 'Prodüksiyon çekim, kurgu, renk ve ses tasarımı teslim paketi.' ?>
                 </div>
             </div>
+
+            <?php if (!empty($items)): ?>
+            <!-- 3b. FİYAT KALEMLERİ -->
+            <div class="border border-slate-200 rounded-2xl overflow-hidden mb-6">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="bg-slate-900 text-white text-[10px] uppercase tracking-wider">
+                            <th class="py-2.5 px-3 text-left w-8">#</th>
+                            <th class="py-2.5 px-3 text-left">Hizmet / Kalem</th>
+                            <th class="py-2.5 px-3 text-right">Miktar</th>
+                            <th class="py-2.5 px-3 text-right">Birim Fiyat</th>
+                            <th class="py-2.5 px-3 text-right">Tutar</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <?php foreach ($items as $i => $item): ?>
+                        <tr>
+                            <td class="py-2 px-3 text-slate-400"><?= $i + 1 ?></td>
+                            <td class="py-2 px-3 font-semibold text-slate-800"><?= e($item['description']) ?></td>
+                            <td class="py-2 px-3 text-right text-slate-600"><?= rtrim(rtrim(number_format((float)$item['quantity'], 2, ',', '.'), '0'), ',') ?> <?= e($item['unit']) ?></td>
+                            <td class="py-2 px-3 text-right text-slate-600"><?= format_money($item['unit_price'], $proposal['currency']) ?></td>
+                            <td class="py-2 px-3 text-right font-bold text-slate-900"><?= format_money($item['line_total'], $proposal['currency']) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
 
             <!-- 4. ŞARTLAR & ÖDEME KOŞULLARI -->
             <?php if (!empty($proposal['terms'])): ?>

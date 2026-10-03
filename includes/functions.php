@@ -280,6 +280,12 @@ function record_invoice_payment(int $invoice_id, int $account_id, float $amount,
     }
     sync_invoice_payment($invoice_id);
 
+    log_activity(
+        $tx_type === 'income' ? 'payment_received' : 'payment_made',
+        ($tx_type === 'income' ? 'Tahsilat alındı: ' : 'Ödeme yapıldı: ') . "{$inv['invoice_number']} · " . format_money($amount),
+        'invoice', $invoice_id, '/modules/contacts/detail.php?id=' . (int)$inv['contact_id'] . '&tab=invoices'
+    );
+
     return null;
 }
 
@@ -346,6 +352,12 @@ function delete_project_cascade(int $project_id): bool {
     $db->prepare("DELETE scg FROM shoot_crew_gear scg JOIN shoots s ON scg.shoot_id = s.id WHERE s.project_id = ?")->execute([$project_id]);
     $db->prepare("DELETE FROM shoots WHERE project_id = ?")->execute([$project_id]);
     $db->prepare("DELETE FROM project_revisions WHERE project_id = ?")->execute([$project_id]);
+    foreach (['project_tasks', 'project_deliverables'] as $tbl) {
+        try {
+            $db->prepare("DELETE FROM `{$tbl}` WHERE project_id = ?")->execute([$project_id]);
+        } catch (Throwable $e) {
+        }
+    }
     $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$project_id]);
 
     foreach (array_unique($affected_contacts) as $cid) {
@@ -391,6 +403,10 @@ function delete_contact_cascade(int $contact_id): bool {
     $db->prepare("UPDATE projects SET outsource_contact_id = NULL WHERE outsource_contact_id = ?")->execute([$contact_id]);
     try {
         $db->prepare("UPDATE equipment SET status = 'in_office', rental_contact_id = NULL, rental_start_date = NULL, rental_end_date = NULL WHERE rental_contact_id = ?")->execute([$contact_id]);
+    } catch (Throwable $e) {
+    }
+    try {
+        $db->prepare("DELETE pi FROM proposal_items pi JOIN proposals p ON pi.proposal_id = p.id WHERE p.client_id = ?")->execute([$contact_id]);
     } catch (Throwable $e) {
     }
     try {
@@ -720,7 +736,7 @@ function turkish_month(int $month, bool $short = false): string {
  * İzin tabloda yoksa oluşturulur ve mevcut davranış bozulmasın diye tüm
  * rollere atanır. Yönetici daha sonra Roller ekranından kaldırabilir.
  */
-function ensure_permission(string $key, string $description, string $module): bool {
+function ensure_permission(string $key, string $description, string $module, ?string $grant_if = null): bool {
     global $db;
     try {
         $chk = $db->prepare("SELECT id FROM permissions WHERE permission_key = ? LIMIT 1");
@@ -732,7 +748,17 @@ function ensure_permission(string $key, string $description, string $module): bo
         $perm_id = (int)$db->lastInsertId();
         $roles = $db->query("SELECT id, role_slug FROM roles")->fetchAll();
         $grant = $db->prepare("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)");
+        // $grant_if verildiyse yalnızca o izne sahip rollere atanır (örn. raporlar → finans yetkilileri)
+        $allowed_roles = null;
+        if ($grant_if !== null) {
+            $gr = $db->prepare("SELECT rp.role_id FROM role_permissions rp JOIN permissions p ON rp.permission_id = p.id WHERE p.permission_key = ?");
+            $gr->execute([$grant_if]);
+            $allowed_roles = array_map('intval', $gr->fetchAll(PDO::FETCH_COLUMN));
+        }
         foreach ($roles as $r) {
+            if ($allowed_roles !== null && !in_array((int)$r['id'], $allowed_roles, true)) {
+                continue;
+            }
             if ((int)$r['id'] !== 1 && $r['role_slug'] !== 'client') {
                 $grant->execute([(int)$r['id'], $perm_id]);
             }
@@ -749,6 +775,7 @@ function ensure_permission(string $key, string $description, string $module): bo
 const MODULE_PERMISSIONS = [
     'proposals.manage' => ['description' => 'Teklifleri Görüntüleme & Yönetme', 'module' => 'proposals'],
     'inventory.manage' => ['description' => 'Ekipman & Demirbaş Envanteri Yönetimi', 'module' => 'inventory'],
+    'reports.view'     => ['description' => 'Yönetim Raporları (Kârlılık, Alacak Yaşlandırma)', 'module' => 'reports', 'grant_if' => 'finance.view'],
 ];
 
 /**
@@ -759,7 +786,7 @@ function can_access_module(string $key): bool {
         return false;
     }
     $def = MODULE_PERMISSIONS[$key] ?? ['description' => $key, 'module' => 'other'];
-    if (!ensure_permission($key, $def['description'], $def['module'])) {
+    if (!ensure_permission($key, $def['description'], $def['module'], $def['grant_if'] ?? null)) {
         return true;
     }
     return has_permission($key);
@@ -935,5 +962,242 @@ function clear_login_failures(string $email): void {
        ->execute([$_SERVER['REMOTE_ADDR'] ?? '', mb_strtolower($email)]);
 }
 
+/**
+ * ====================================================================
+ * OTOMATİK VERİTABANI GÜNCELLEMELERİ (MIGRATION)
+ * ====================================================================
+ * Yeni özelliklerin ihtiyaç duyduğu tablolar/kolonlar ilk istekte bir kez
+ * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
+ * böylece her istekte yalnızca tek bir ayar okunur.
+ */
+const SCHEMA_VERSION = 2;
+
+function column_exists(string $table, string $column): bool {
+    global $db;
+    $st = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+    $st->execute([$table, $column]);
+    return (int)$st->fetchColumn() > 0;
+}
+
+function run_migrations(): void {
+    global $db;
+    if (!isset($db)) {
+        return;
+    }
+    if ((int)get_setting('schema_version', '0') >= SCHEMA_VERSION) {
+        return;
+    }
+
+    try {
+        $tables = [
+            "CREATE TABLE IF NOT EXISTS `proposals` (
+              `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              `proposal_code` VARCHAR(50) NOT NULL UNIQUE,
+              `client_id` INT UNSIGNED NOT NULL,
+              `title` VARCHAR(200) NOT NULL,
+              `project_type` VARCHAR(50) DEFAULT 'commercial',
+              `workflow_model` VARCHAR(50) DEFAULT 'internal_full',
+              `subtotal` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+              `vat_rate` DECIMAL(5,2) DEFAULT 20.00,
+              `grand_total` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+              `currency` VARCHAR(10) DEFAULT 'TRY',
+              `valid_until` DATE NULL,
+              `status` ENUM('draft', 'sent', 'negotiating', 'approved', 'rejected') DEFAULT 'draft',
+              `scope_items` TEXT NULL,
+              `terms` TEXT NULL,
+              `converted_project_id` INT UNSIGNED NULL,
+              `created_by` INT UNSIGNED NULL,
+              `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `proposal_items` (
+              `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              `proposal_id` INT UNSIGNED NOT NULL,
+              `description` VARCHAR(255) NOT NULL,
+              `quantity` DECIMAL(12,2) NOT NULL DEFAULT 1,
+              `unit` VARCHAR(30) DEFAULT 'Adet',
+              `unit_price` DECIMAL(15,2) NOT NULL DEFAULT 0,
+              `line_total` DECIMAL(15,2) NOT NULL DEFAULT 0,
+              `sort_order` INT NOT NULL DEFAULT 0,
+              KEY `idx_proposal` (`proposal_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `project_tasks` (
+              `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              `project_id` INT UNSIGNED NOT NULL,
+              `title` VARCHAR(200) NOT NULL,
+              `description` TEXT NULL,
+              `assigned_user_id` INT UNSIGNED NULL,
+              `due_date` DATE NULL,
+              `status` ENUM('todo', 'in_progress', 'done') DEFAULT 'todo',
+              `priority` ENUM('low', 'normal', 'high') DEFAULT 'normal',
+              `created_by` INT UNSIGNED NULL,
+              `completed_at` DATETIME NULL,
+              `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_project` (`project_id`),
+              KEY `idx_assignee` (`assigned_user_id`, `status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `project_deliverables` (
+              `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              `project_id` INT UNSIGNED NOT NULL,
+              `title` VARCHAR(200) NOT NULL,
+              `url` VARCHAR(1000) NOT NULL,
+              `notes` TEXT NULL,
+              `visible_to_client` TINYINT(1) NOT NULL DEFAULT 1,
+              `created_by` INT UNSIGNED NULL,
+              `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_project` (`project_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `activity_log` (
+              `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              `actor_type` VARCHAR(10) NOT NULL DEFAULT 'staff',
+              `actor_id` INT UNSIGNED NULL,
+              `actor_name` VARCHAR(150) NULL,
+              `action` VARCHAR(50) NOT NULL,
+              `entity_type` VARCHAR(30) NULL,
+              `entity_id` INT UNSIGNED NULL,
+              `message` VARCHAR(500) NOT NULL,
+              `link` VARCHAR(255) NULL,
+              `target_user_id` INT UNSIGNED NULL,
+              `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_entity` (`entity_type`, `entity_id`),
+              KEY `idx_target` (`target_user_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `user_notification_state` (
+              `user_id` INT UNSIGNED PRIMARY KEY,
+              `last_seen_id` INT UNSIGNED NOT NULL DEFAULT 0
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ];
+        foreach ($tables as $sql) {
+            $db->query($sql);
+        }
+
+        if (!column_exists('proposals', 'client_response_note')) {
+            $db->query("ALTER TABLE `proposals` ADD COLUMN `client_response_note` TEXT NULL, ADD COLUMN `client_responded_at` DATETIME NULL");
+        }
+
+        ensure_contact_change_logs_table();
+
+        $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+           ->execute([(string)SCHEMA_VERSION]);
+        get_settings(true);
+    } catch (Throwable $e) {
+        error_log('Migration hatası: ' . $e->getMessage());
+    }
+}
+
+/**
+ * ====================================================================
+ * AKTİVİTE GÜNLÜĞÜ & BİLDİRİMLER
+ * ====================================================================
+ * Önemli olaylar (müşteri onayı, revizyon talebi, tahsilat, görev ataması...)
+ * kaydedilir. $target_user_id boşsa kayıt tüm proje yetkililerine bildirim
+ * olarak görünür; doluysa yalnızca o kullanıcıya.
+ */
+function log_activity(string $action, string $message, ?string $entity_type = null, ?int $entity_id = null, ?string $link = null, ?int $target_user_id = null): void {
+    global $db;
+    try {
+        if (is_logged_in()) {
+            $actor_type = 'staff';
+            $actor_id   = (int)$_SESSION['user_id'];
+            $actor_name = $_SESSION['user']['full_name'] ?? null;
+        } elseif (is_client_logged_in()) {
+            $actor_type = 'client';
+            $actor_id   = (int)$_SESSION['client_user_id'];
+            $actor_name = $_SESSION['client_user']['company_name'] ?? ($_SESSION['client_user']['full_name'] ?? null);
+        } else {
+            $actor_type = 'system';
+            $actor_id   = null;
+            $actor_name = 'Sistem';
+        }
+        $db->prepare("
+            INSERT INTO activity_log (actor_type, actor_id, actor_name, action, entity_type, entity_id, message, link, target_user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ")->execute([$actor_type, $actor_id, $actor_name, $action, $entity_type, $entity_id, mb_substr($message, 0, 500), $link, $target_user_id]);
+    } catch (Throwable $e) {
+        error_log('Aktivite günlüğü yazılamadı: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Kullanıcının göreceği bildirimler: müşteri hareketleri (proje yetkisi varsa)
+ * ve doğrudan kendisine atanan kayıtlar. Kendi yaptığı işlemler hariç.
+ */
+function notification_scope_sql(int $user_id): array {
+    $parts = ["a.target_user_id = ?"];
+    $params = [$user_id];
+    if (has_permission('projects.view')) {
+        $parts[] = "(a.target_user_id IS NULL AND a.actor_type = 'client')";
+    }
+    return ["(" . implode(' OR ', $parts) . ") AND NOT (a.actor_type = 'staff' AND a.actor_id = ?)", array_merge($params, [$user_id])];
+}
+
+function get_notifications(int $user_id, int $limit = 8): array {
+    global $db;
+    try {
+        [$where, $params] = notification_scope_sql($user_id);
+        $seen = $db->prepare("SELECT last_seen_id FROM user_notification_state WHERE user_id = ?");
+        $seen->execute([$user_id]);
+        $last_seen = (int)$seen->fetchColumn();
+
+        $cnt = $db->prepare("SELECT COUNT(*) FROM activity_log a WHERE {$where} AND a.id > ?");
+        $cnt->execute(array_merge($params, [$last_seen]));
+
+        $list = $db->prepare("SELECT a.* FROM activity_log a WHERE {$where} ORDER BY a.id DESC LIMIT " . (int)$limit);
+        $list->execute($params);
+        $items = $list->fetchAll();
+        foreach ($items as &$it) {
+            $it['is_unread'] = (int)$it['id'] > $last_seen;
+        }
+        return ['unread' => (int)$cnt->fetchColumn(), 'items' => $items];
+    } catch (Throwable $e) {
+        return ['unread' => 0, 'items' => []];
+    }
+}
+
+function mark_notifications_read(int $user_id): void {
+    global $db;
+    try {
+        $max = (int)$db->query("SELECT COALESCE(MAX(id), 0) FROM activity_log")->fetchColumn();
+        $db->prepare("INSERT INTO user_notification_state (user_id, last_seen_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_seen_id = VALUES(last_seen_id)")
+           ->execute([$user_id, $max]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * "3 saat önce" biçiminde göreli zaman
+ */
+function time_ago(?string $datetime): string {
+    if (empty($datetime)) {
+        return '-';
+    }
+    $diff = time() - strtotime($datetime);
+    if ($diff < 60) return 'az önce';
+    if ($diff < 3600) return floor($diff / 60) . ' dk önce';
+    if ($diff < 86400) return floor($diff / 3600) . ' saat önce';
+    if ($diff < 604800) return floor($diff / 86400) . ' gün önce';
+    return format_date($datetime);
+}
+
+const TASK_STATUSES = [
+    'todo'        => ['label' => 'Yapılacak',  'color' => 'bg-slate-100 text-slate-700 border-slate-300'],
+    'in_progress' => ['label' => 'Devam Ediyor', 'color' => 'bg-blue-100 text-blue-800 border-blue-300'],
+    'done'        => ['label' => 'Tamamlandı', 'color' => 'bg-emerald-100 text-emerald-800 border-emerald-300'],
+];
+
+const TASK_PRIORITIES = [
+    'low'    => ['label' => 'Düşük',  'color' => 'text-slate-400'],
+    'normal' => ['label' => 'Normal', 'color' => 'text-blue-600'],
+    'high'   => ['label' => 'Acil',   'color' => 'text-rose-600'],
+];
+
+// Yeni tablolar/kolonlar gerekiyorsa oluştur
+run_migrations();
+
 // POST işleyicilerinde (header.php yüklenmeden önce) kullanılabilmesi için aktif kullanıcı
 $user = current_user();
+

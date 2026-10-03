@@ -12,6 +12,38 @@ require_once __DIR__ . '/../includes/functions.php';
 // Müşteri Giriş Kontrolü
 require_client_login();
 
+// ====================================================================
+// TEKLİFE ONLINE YANIT (KABUL / RET)
+// ====================================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respond_proposal') {
+    verify_csrf();
+    $prop_id  = (int)($_POST['proposal_id'] ?? 0);
+    $response = ($_POST['response'] ?? '') === 'accept' ? 'approved' : 'rejected';
+    $note     = mb_substr(trim($_POST['note'] ?? ''), 0, 2000);
+
+    $ps = $db->prepare("SELECT * FROM proposals WHERE id = ? AND client_id = ? AND status IN ('sent', 'negotiating')");
+    $ps->execute([$prop_id, (int)$_SESSION['client_contact_id']]);
+    $prop = $ps->fetch();
+
+    if (!$prop) {
+        set_flash('error', 'Bu teklif yanıtlanamaz (bulunamadı veya zaten sonuçlanmış).');
+    } elseif ($response === 'rejected' && $note === '') {
+        set_flash('error', 'Teklifi reddederken lütfen kısa bir açıklama yazınız; size daha uygun bir teklif hazırlayabilelim.');
+    } else {
+        $db->prepare("UPDATE proposals SET status = ?, client_response_note = ?, client_responded_at = NOW() WHERE id = ?")
+           ->execute([$response, $note ?: null, $prop_id]);
+        log_activity(
+            $response === 'approved' ? 'client_proposal_accepted' : 'client_proposal_rejected',
+            ($response === 'approved' ? '🎉 Müşteri teklifi KABUL etti: ' : '❌ Müşteri teklifi reddetti: ') . "{$prop['proposal_code']} · {$prop['title']}" . ($note ? " — \"" . mb_substr($note, 0, 160) . "\"" : ''),
+            'proposal', $prop_id, '/modules/proposals/index.php'
+        );
+        set_flash('success', $response === 'approved'
+            ? 'Teşekkürler! Teklifi onayladınız. Prodüksiyon ekibimiz en kısa sürede sizinle iletişime geçecek.'
+            : 'Geri bildiriminiz iletildi. Ekibimiz sizinle iletişime geçecek.');
+    }
+    redirect(BASE_URL . '/client/index.php#teklifler');
+}
+
 $contact_id  = (int)$_SESSION['client_contact_id'];
 $client_user = $_SESSION['client_user'];
 
@@ -112,6 +144,8 @@ $proposal_labels = [
     <title>Müşteri Portalı | <?= e($contact['company_title']) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>[x-cloak] { display: none !important; }</style>
 </head>
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
@@ -228,7 +262,7 @@ $proposal_labels = [
 
         <?php if (!empty($proposals)): ?>
         <!-- FİYAT TEKLİFLERİ -->
-        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+        <div id="teklifler" class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
             <div class="mb-4 pb-3 border-b border-slate-100">
                 <h3 class="text-base font-bold text-slate-900">Fiyat Teklifleriniz (<?= count($proposals) ?>)</h3>
                 <p class="text-xs text-slate-500 mt-0.5">Size iletilen teklifleri görüntüleyip PDF olarak indirebilirsiniz.</p>
@@ -244,11 +278,34 @@ $proposal_labels = [
                         <p class="font-bold text-slate-900 mt-1"><?= e($pr['title']) ?></p>
                         <p class="text-[11px] text-slate-500">Geçerlilik: <?= format_date($pr['valid_until']) ?></p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span class="font-black text-slate-900"><?= format_money($pr['grand_total'], $pr['currency']) ?></span>
-                        <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= (int)$pr['id'] ?>" target="_blank" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-indigo-600 text-white rounded-lg font-bold">
-                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i> PDF
-                        </a>
+                    <div class="flex flex-col items-end gap-2" x-data="{ mode: null }">
+                        <div class="flex items-center gap-3">
+                            <span class="font-black text-slate-900"><?= format_money($pr['grand_total'], $pr['currency']) ?></span>
+                            <a href="<?= BASE_URL ?>/modules/proposals/print.php?id=<?= (int)$pr['id'] ?>" target="_blank" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-indigo-600 text-white rounded-lg font-bold">
+                                <i data-lucide="file-text" class="w-3.5 h-3.5"></i> PDF
+                            </a>
+                            <?php if (in_array($pr['status'], ['sent', 'negotiating'], true)): ?>
+                                <button type="button" @click="mode = 'accept'" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold">Kabul Et</button>
+                                <button type="button" @click="mode = 'reject'" class="px-3 py-1.5 bg-white border border-slate-300 hover:border-rose-400 text-slate-600 hover:text-rose-600 rounded-lg font-bold">Reddet</button>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (in_array($pr['status'], ['sent', 'negotiating'], true)): ?>
+                        <form x-show="mode" x-cloak method="POST" action="" class="w-full sm:w-96 p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="respond_proposal">
+                            <input type="hidden" name="proposal_id" value="<?= (int)$pr['id'] ?>">
+                            <input type="hidden" name="response" :value="mode">
+                            <textarea name="note" rows="2" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs"
+                                      :placeholder="mode === 'accept' ? 'Notunuz (opsiyonel): çekim tarihi tercihi, fatura bilgisi...' : 'Lütfen nedenini belirtiniz (bütçe, kapsam, tarih...)'"
+                                      :required="mode === 'reject'"></textarea>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" @click="mode = null" class="px-3 py-1.5 text-slate-500 font-semibold">Vazgeç</button>
+                                <button type="submit" :class="mode === 'accept' ? 'bg-emerald-600' : 'bg-rose-600'" class="px-3 py-1.5 text-white rounded-lg font-bold" x-text="mode === 'accept' ? 'Teklifi Onayla' : 'Reddi Gönder'"></button>
+                            </div>
+                        </form>
+                        <?php elseif (!empty($pr['client_response_note'])): ?>
+                            <p class="text-[11px] text-slate-500 max-w-sm text-right">Notunuz: “<?= e($pr['client_response_note']) ?>”</p>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>

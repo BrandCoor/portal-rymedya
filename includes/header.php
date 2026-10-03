@@ -23,6 +23,7 @@ if (!is_logged_in()) {
 // Kullanıcı durumu ve izinleri her istekte veritabanından tazelenir
 refresh_staff_session();
 $user = current_user();
+$notif = get_notifications((int)$user['id'], 8);
 ?>
 <!DOCTYPE html>
 <html lang="tr" class="h-full bg-slate-50">
@@ -88,6 +89,41 @@ $user = current_user();
 
             <!-- Sağ: Hızlı Eylemler & Kullanıcı Profili -->
             <div class="flex items-center space-x-4">
+
+                <!-- Global Arama -->
+                <form method="GET" action="<?= BASE_URL ?>/modules/search/index.php" class="hidden md:block">
+                    <div class="relative">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="search" name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Proje, cari, fatura, teklif ara..."
+                               class="w-64 pl-9 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                </form>
+
+                <!-- Bildirimler -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open" class="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 focus:outline-none" title="Bildirimler">
+                        <i data-lucide="bell" class="w-5 h-5"></i>
+                        <?php if ($notif['unread'] > 0): ?>
+                            <span class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center"><?= $notif['unread'] > 9 ? '9+' : $notif['unread'] ?></span>
+                        <?php endif; ?>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak class="origin-top-right absolute right-0 mt-2 w-80 rounded-2xl shadow-xl bg-white ring-1 ring-black/5 z-50 overflow-hidden">
+                        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-800">Bildirimler</span>
+                            <a href="<?= BASE_URL ?>/modules/notifications/index.php" class="text-[11px] font-bold text-brand-600 hover:underline">Tümünü Gör</a>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                            <?php if (empty($notif['items'])): ?>
+                                <p class="px-4 py-6 text-center text-xs text-slate-400">Henüz bildirim yok.</p>
+                            <?php else: foreach ($notif['items'] as $n): ?>
+                                <a href="<?= BASE_URL . e($n['link'] ?: '/modules/notifications/index.php') ?>" class="block px-4 py-3 hover:bg-slate-50 <?= $n['is_unread'] ? 'bg-brand-50/60' : '' ?>">
+                                    <p class="text-xs text-slate-800 leading-snug"><?= e($n['message']) ?></p>
+                                    <p class="text-[10px] text-slate-400 mt-1"><?= e($n['actor_name'] ?? '') ?> · <?= time_ago($n['created_at']) ?></p>
+                                </a>
+                            <?php endforeach; endif; ?>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Tarih Badge -->
                 <div class="hidden sm:flex items-center space-x-2 text-xs font-medium text-slate-500 bg-slate-100 py-1.5 px-3 rounded-lg border border-slate-200">

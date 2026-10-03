@@ -46,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 1. Revizyonu Onaylandı Yap
         $db->prepare("UPDATE project_revisions SET status = 'approved' WHERE id = ? AND project_id = ?")->execute([$revision_id, $project_id]);
+        log_activity('client_approved', "✅ Müşteri kurguyu onayladı: {$rev['version_title']} ({$project['project_name']})", 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=revisions");
 
         // 2. Bu Projeye Daha Önce Satış Faturası Kesilmiş mi Kontrol Et
         // (Kurgu/edit hizmeti için ayrıca kesilen faturalar ana proje faturası sayılmaz)
@@ -111,6 +112,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($up->rowCount() > 0 && !in_array($project['status'], ['invoiced', 'cancelled'], true)) {
                 $db->prepare("UPDATE projects SET status = 'revision' WHERE id = ?")->execute([$project_id]);
             }
+            if ($up->rowCount() > 0) {
+                $rv = $db->prepare("SELECT version_title, assigned_editor_id FROM project_revisions WHERE id = ?");
+                $rv->execute([$revision_id]);
+                $rvd = $rv->fetch();
+                $msg = "✏️ Müşteri revizyon istedi: {$rvd['version_title']} ({$project['project_name']}) — \"" . mb_substr($feedback, 0, 160) . "\"";
+                $link = "/modules/projects/detail.php?id={$project_id}&tab=revisions";
+                log_activity('client_revision', $msg, 'project', $project_id, $link);
+                // Kurgucuya doğrudan bildirim (proje yetkisi olmasa bile görsün)
+                if (!empty($rvd['assigned_editor_id'])) {
+                    log_activity('client_revision', $msg, 'revision', $revision_id, $link, (int)$rvd['assigned_editor_id']);
+                }
+            }
 
             set_flash('success', 'Revizyon talebiniz ve notlarınız prodüksiyon ekibimize iletildi.');
             redirect(BASE_URL . "/client/project_detail.php?id={$project_id}");
@@ -124,6 +137,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $shoots = $db->prepare("SELECT * FROM shoots WHERE project_id = ? ORDER BY shoot_date ASC");
 $shoots->execute([$project_id]);
 $shoot_list = $shoots->fetchAll();
+
+// Müşteriye açık teslim dosyaları
+$deliverables = [];
+try {
+    $dl = $db->prepare("SELECT * FROM project_deliverables WHERE project_id = ? AND visible_to_client = 1 ORDER BY id DESC");
+    $dl->execute([$project_id]);
+    $deliverables = $dl->fetchAll();
+} catch (Throwable $e) {
+}
 
 // Kurgu Versiyonlarını Getir
 $revs = $db->prepare("SELECT * FROM project_revisions WHERE project_id = ? ORDER BY id DESC");
@@ -147,6 +169,7 @@ $st = PROJECT_STATUSES[$project['status']] ?? ['label' => $project['status'], 'c
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>[x-cloak] { display: none !important; }</style>
 </head>
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
@@ -278,6 +301,26 @@ $st = PROJECT_STATUSES[$project['status']] ?? ['label' => $project['status'], 'c
                 </div>
             <?php endif; ?>
         </div>
+
+        <?php if (!empty($deliverables)): ?>
+        <!-- TESLİM DOSYALARI -->
+        <div class="bg-white rounded-3xl border border-emerald-200 p-6 shadow-sm">
+            <h3 class="text-base font-bold text-slate-900 mb-1">Teslim Dosyalarınız</h3>
+            <p class="text-xs text-slate-500 mb-4 pb-2 border-b border-slate-100">Final videolar ve proje dosyalarınızı aşağıdaki bağlantılardan indirebilirsiniz.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <?php foreach ($deliverables as $d): ?>
+                <a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="p-4 bg-emerald-50/60 hover:bg-emerald-100 rounded-2xl border border-emerald-200 flex items-start gap-3 transition">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0"><i data-lucide="download" class="w-4 h-4"></i></div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-bold text-slate-900"><?= e($d['title']) ?></p>
+                        <?php if (!empty($d['notes'])): ?><p class="text-xs text-slate-600 mt-0.5"><?= e($d['notes']) ?></p><?php endif; ?>
+                        <p class="text-[10px] text-slate-400 mt-1"><?= format_date($d['created_at']) ?></p>
+                    </div>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- 2. ÇEKİM GÜNLERİ VE MEKANLAR -->
         <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">

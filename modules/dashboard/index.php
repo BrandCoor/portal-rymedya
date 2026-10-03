@@ -109,6 +109,42 @@ if ($role_slug === 'director') {
         LIMIT 6
     ")->fetchAll();
 }
+
+// ====================================================================
+// D. HERKES İÇİN: GÖREVLERİM, BU HAFTA AJANDASI, MÜŞTERİ HAREKETLERİ
+// ====================================================================
+$my_tasks = [];
+$week_agenda = [];
+$client_feed = [];
+$pending_client_reviews = 0;
+$overdue_receivables = 0.0;
+if (has_permission('projects.view')) {
+    $mt = $db->prepare("
+        SELECT t.*, p.project_name FROM project_tasks t JOIN projects p ON t.project_id = p.id
+        WHERE t.assigned_user_id = ? AND t.status != 'done'
+        ORDER BY (t.due_date IS NULL), t.due_date ASC, FIELD(t.priority, 'high', 'normal', 'low') LIMIT 6
+    ");
+    $mt->execute([$user_id]);
+    $my_tasks = $mt->fetchAll();
+
+    $ag = $db->query("
+        SELECT s.shoot_date AS d, 'shoot' AS kind, s.title, p.project_name, p.id AS project_id, s.start_time
+        FROM shoots s JOIN projects p ON s.project_id = p.id
+        WHERE s.shoot_date BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY) AND p.status != 'cancelled'
+        UNION ALL
+        SELECT p.deadline AS d, 'deadline' AS kind, 'Teslim tarihi' AS title, p.project_name, p.id AS project_id, NULL
+        FROM projects p
+        WHERE p.deadline BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY) AND p.status NOT IN ('cancelled', 'invoiced', 'completed')
+        ORDER BY d ASC LIMIT 8
+    ");
+    $week_agenda = $ag->fetchAll();
+
+    $client_feed = $db->query("SELECT * FROM activity_log WHERE actor_type = 'client' ORDER BY id DESC LIMIT 5")->fetchAll();
+    $pending_client_reviews = (int)$db->query("SELECT COUNT(*) FROM project_revisions WHERE status = 'sent_to_client'")->fetchColumn();
+}
+if (has_permission('finance.view') || has_permission('finance.invoices')) {
+    $overdue_receivables = (float)$db->query("SELECT COALESCE(SUM(grand_total - paid_amount), 0) FROM invoices WHERE invoice_type = 'sales' AND payment_status != 'paid' AND due_date IS NOT NULL AND due_date < CURRENT_DATE()")->fetchColumn();
+}
 ?>
 
 <!-- ÜST KARŞILAMA VE ROL BADGE -->
@@ -420,6 +456,86 @@ if ($role_slug === 'director') {
 <?php endif; ?>
 
 <!-- Chart.js Sadece Yönetici Ekranında Yüklenir -->
+
+<!-- ==================================================================== -->
+<!-- ORTAK: GÖREVLERİM, BU HAFTA, MÜŞTERİ HAREKETLERİ -->
+<!-- ==================================================================== -->
+<?php if (has_permission('projects.view')): ?>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
+    <!-- Görevlerim -->
+    <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4 text-emerald-600"></i> Görevlerim</h3>
+            <a href="<?= BASE_URL ?>/modules/tasks/index.php" class="text-[11px] font-bold text-brand-600 hover:underline">Tümü →</a>
+        </div>
+        <?php if (empty($my_tasks)): ?>
+            <p class="text-xs text-slate-400 py-6 text-center">Size atanmış açık görev yok. 🎉</p>
+        <?php else: ?>
+            <div class="space-y-2">
+                <?php foreach ($my_tasks as $t): $late = !empty($t['due_date']) && $t['due_date'] < date('Y-m-d'); ?>
+                <a href="<?= BASE_URL ?>/modules/projects/detail.php?id=<?= (int)$t['project_id'] ?>&tab=tasks" class="block p-2.5 rounded-xl border <?= $late ? 'border-rose-200 bg-rose-50/50' : 'border-slate-100 bg-slate-50' ?> hover:border-brand-300">
+                    <p class="text-xs font-bold text-slate-900"><span class="<?= TASK_PRIORITIES[$t['priority']]['color'] ?? '' ?>">●</span> <?= e($t['title']) ?></p>
+                    <p class="text-[10px] text-slate-500 mt-0.5"><?= e($t['project_name']) ?><?= !empty($t['due_date']) ? ' · ' . format_date($t['due_date']) . ($late ? ' (gecikti)' : '') : '' ?></p>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Bu Hafta -->
+    <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2"><i data-lucide="calendar-days" class="w-4 h-4 text-sky-600"></i> Önümüzdeki 7 Gün</h3>
+            <a href="<?= BASE_URL ?>/modules/calendar/index.php" class="text-[11px] font-bold text-brand-600 hover:underline">Takvim →</a>
+        </div>
+        <?php if (empty($week_agenda)): ?>
+            <p class="text-xs text-slate-400 py-6 text-center">Bu hafta planlı çekim veya teslim yok.</p>
+        <?php else: ?>
+            <div class="space-y-2">
+                <?php foreach ($week_agenda as $a): ?>
+                <a href="<?= BASE_URL ?>/modules/projects/detail.php?id=<?= (int)$a['project_id'] ?>&tab=<?= $a['kind'] === 'shoot' ? 'shoots' : 'details' ?>" class="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50">
+                    <div class="w-11 text-center flex-shrink-0">
+                        <div class="text-base font-black <?= $a['kind'] === 'shoot' ? 'text-brand-600' : 'text-rose-600' ?>"><?= date('j', strtotime($a['d'])) ?></div>
+                        <div class="text-[9px] font-bold text-slate-400 uppercase"><?= turkish_month((int)date('n', strtotime($a['d'])), true) ?></div>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-slate-900 truncate"><?= $a['kind'] === 'shoot' ? '🎬 ' : '⏰ ' ?><?= !empty($a['start_time']) ? substr($a['start_time'], 0, 5) . ' · ' : '' ?><?= e($a['title']) ?></p>
+                        <p class="text-[10px] text-slate-500 truncate"><?= e($a['project_name']) ?></p>
+                    </div>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Müşteri Hareketleri -->
+    <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2"><i data-lucide="message-square-more" class="w-4 h-4 text-indigo-600"></i> Müşteri Hareketleri</h3>
+            <a href="<?= BASE_URL ?>/modules/notifications/index.php" class="text-[11px] font-bold text-brand-600 hover:underline">Tümü →</a>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
+            <span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700">Müşteri onayı bekleyen kurgu: <?= $pending_client_reviews ?></span>
+            <?php if ($overdue_receivables > 0): ?>
+                <a href="<?= BASE_URL ?>/modules/finance/invoices.php?status=overdue" class="px-2 py-1 rounded-lg bg-rose-50 text-rose-700">Vadesi geçen alacak: <?= format_money($overdue_receivables) ?></a>
+            <?php endif; ?>
+        </div>
+        <?php if (empty($client_feed)): ?>
+            <p class="text-xs text-slate-400 py-4 text-center">Henüz müşteri hareketi yok.</p>
+        <?php else: ?>
+            <div class="space-y-2">
+                <?php foreach ($client_feed as $f): ?>
+                <a href="<?= BASE_URL . e($f['link'] ?: '/modules/notifications/index.php') ?>" class="block p-2 rounded-xl hover:bg-slate-50">
+                    <p class="text-xs text-slate-800 leading-snug"><?= e($f['message']) ?></p>
+                    <p class="text-[10px] text-slate-400 mt-0.5"><?= e($f['actor_name'] ?? '') ?> · <?= time_ago($f['created_at']) ?></p>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if ($role_slug === 'super_admin' || $role_slug === 'producer'): ?>
 <script>
 document.addEventListener("DOMContentLoaded", function () {

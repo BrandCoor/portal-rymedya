@@ -86,6 +86,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    // İşlem sonrası ilgili sekmeye geri dön
+    $action_tabs = [
+        'add_shoot' => 'shoots', 'edit_shoot' => 'shoots', 'delete_shoot' => 'shoots',
+        'add_crew_gear' => 'shoots', 'edit_crew_gear' => 'shoots', 'delete_crew_item' => 'shoots',
+        'add_revision' => 'revisions', 'edit_revision' => 'revisions', 'delete_revision' => 'revisions', 'bill_edit_service' => 'revisions',
+        'complete_and_invoice' => 'finance', 'cancel_project_invoice' => 'finance',
+        'add_task' => 'tasks', 'edit_task' => 'tasks', 'toggle_task' => 'tasks', 'delete_task' => 'tasks',
+        'add_deliverable' => 'deliverables', 'delete_deliverable' => 'deliverables',
+    ];
+    if (isset($action_tabs[$action])) {
+        $detail_url .= '&tab=' . $action_tabs[$action];
+    }
+
+    // Görev durumunu değiştirmek (kendi görevi ise) proje düzenleme yetkisi gerektirmez
+    if ($action === 'toggle_task') {
+        $t_stmt = $db->prepare("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?");
+        $t_stmt->execute([(int)($_POST['task_id'] ?? 0), $project_id]);
+        $task = $t_stmt->fetch();
+        $new_status = $_POST['status'] ?? 'done';
+        if ($task && array_key_exists($new_status, TASK_STATUSES)
+            && (has_permission('projects.edit') || (int)$task['assigned_user_id'] === (int)$user['id'])) {
+            $db->prepare("UPDATE project_tasks SET status = ?, completed_at = ? WHERE id = ?")
+               ->execute([$new_status, $new_status === 'done' ? date('Y-m-d H:i:s') : null, $task['id']]);
+            if ($new_status === 'done' && !empty($task['created_by']) && (int)$task['created_by'] !== (int)$user['id']) {
+                log_activity('task_done', "Görev tamamlandı: {$task['title']} ({$project['project_name']})", 'task', (int)$task['id'], "/modules/projects/detail.php?id={$project_id}&tab=tasks", (int)$task['created_by']);
+            }
+            set_flash('success', 'Görev durumu güncellendi.');
+        }
+        redirect((($_POST['return_to'] ?? '') === 'tasks') ? BASE_URL . '/modules/tasks/index.php' : $detail_url);
+    }
+
     // Proje üzerinde değişiklik yapan tüm işlemler düzenleme yetkisi ister (silme hariç)
     if (!in_array($action, ['delete_project_permanent'], true)) {
         require_permission('projects.edit');
@@ -291,6 +322,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                    trim($_POST['preview_url'] ?? ''), trim($_POST['feedback_notes'] ?? ''),
                    in_array($_POST['status'] ?? '', $rev_statuses, true) ? $_POST['status'] : 'in_progress'
                ]);
+            $new_rev_id = (int)$db->lastInsertId();
+            $editor_id = !empty($_POST['assigned_editor_id']) ? (int)$_POST['assigned_editor_id'] : 0;
+            if ($editor_id && $editor_id !== (int)$user['id']) {
+                log_activity('revision_assigned', "Kurgu ataması: {$title} ({$project['project_name']})", 'revision', $new_rev_id, "/modules/projects/detail.php?id={$project_id}&tab=revisions", $editor_id);
+            }
             set_flash('success', 'Kurgu versiyonu eklendi.');
         }
         redirect($detail_url);
@@ -402,6 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
             recalculate_contact_balance($client_contact_id);
+            log_activity('invoice_created', "{$project['project_name']} faturalandırıldı: {$invoice_number} (" . format_money($tax['grand_total']) . ")", 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=finance");
             set_flash('success', "Proje faturalandırıldı ({$invoice_number}).");
         }
         redirect($detail_url);
@@ -425,10 +462,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/modules/projects/index.php');
     }
 
+    // ==========================================
+    // G. PROJE GÖREVLERİ (TO-DO)
+    // ==========================================
+    if ($action === 'add_task' || $action === 'edit_task') {
+        $title       = trim($_POST['title'] ?? '');
+        $assignee    = !empty($_POST['assigned_user_id']) ? (int)$_POST['assigned_user_id'] : null;
+        $due_date    = valid_date($_POST['due_date'] ?? '');
+        $priority    = array_key_exists($_POST['priority'] ?? '', TASK_PRIORITIES) ? $_POST['priority'] : 'normal';
+        $status      = array_key_exists($_POST['status'] ?? '', TASK_STATUSES) ? $_POST['status'] : 'todo';
+        $description = trim($_POST['description'] ?? '');
+
+        if ($title === '') {
+            set_flash('error', 'Görev başlığı zorunludur.');
+            redirect($detail_url);
+        }
+
+        if ($action === 'add_task') {
+            $db->prepare("INSERT INTO project_tasks (project_id, title, description, assigned_user_id, due_date, status, priority, created_by, completed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
+               ->execute([$project_id, $title, $description, $assignee, $due_date, $status, $priority, $user['id'], $status === 'done' ? date('Y-m-d H:i:s') : null]);
+            $task_id = (int)$db->lastInsertId();
+            $old_assignee = null;
+            set_flash('success', 'Görev eklendi.');
+        } else {
+            $task_id = (int)($_POST['task_id'] ?? 0);
+            $t_stmt = $db->prepare("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?");
+            $t_stmt->execute([$task_id, $project_id]);
+            $old = $t_stmt->fetch();
+            if (!$old) {
+                redirect($detail_url);
+            }
+            $old_assignee = $old['assigned_user_id'] ? (int)$old['assigned_user_id'] : null;
+            $completed_at = $status === 'done' ? ($old['completed_at'] ?: date('Y-m-d H:i:s')) : null;
+            $db->prepare("UPDATE project_tasks SET title = ?, description = ?, assigned_user_id = ?, due_date = ?, status = ?, priority = ?, completed_at = ? WHERE id = ?")
+               ->execute([$title, $description, $assignee, $due_date, $status, $priority, $completed_at, $task_id]);
+            set_flash('success', 'Görev güncellendi.');
+        }
+
+        // Yeni atanan kişiye bildirim
+        if ($assignee && $assignee !== $old_assignee && $assignee !== (int)$user['id']) {
+            log_activity('task_assigned', "Size yeni görev atandı: {$title} ({$project['project_name']})" . ($due_date ? ' · Son tarih: ' . format_date($due_date) : ''), 'task', $task_id, "/modules/projects/detail.php?id={$project_id}&tab=tasks", $assignee);
+        }
+        redirect($detail_url);
+    }
+
+    if ($action === 'delete_task') {
+        $db->prepare("DELETE FROM project_tasks WHERE id = ? AND project_id = ?")->execute([(int)($_POST['task_id'] ?? 0), $project_id]);
+        set_flash('success', 'Görev silindi.');
+        redirect($detail_url);
+    }
+
+    // ==========================================
+    // H. TESLİM DOSYALARI (Drive / WeTransfer / Vimeo linkleri)
+    // ==========================================
+    if ($action === 'add_deliverable') {
+        $title = trim($_POST['title'] ?? '');
+        $url   = trim($_POST['url'] ?? '');
+        if ($title === '' || !filter_var($url, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $url)) {
+            set_flash('error', 'Geçerli bir başlık ve http(s) ile başlayan bağlantı giriniz.');
+            redirect($detail_url);
+        }
+        $visible = isset($_POST['visible_to_client']) ? 1 : 0;
+        $db->prepare("INSERT INTO project_deliverables (project_id, title, url, notes, visible_to_client, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
+           ->execute([$project_id, $title, $url, trim($_POST['notes'] ?? ''), $visible, $user['id']]);
+        log_activity('deliverable_added', "Teslim dosyası eklendi: {$title} ({$project['project_name']})" . ($visible ? ' · Müşteriye açık' : ''), 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=deliverables");
+        set_flash('success', 'Teslim dosyası eklendi' . ($visible ? ' ve müşteri portalında yayınlandı.' : '.'));
+        redirect($detail_url);
+    }
+
+    if ($action === 'delete_deliverable') {
+        $db->prepare("DELETE FROM project_deliverables WHERE id = ? AND project_id = ?")->execute([(int)($_POST['deliverable_id'] ?? 0), $project_id]);
+        set_flash('success', 'Teslim dosyası kaldırıldı.');
+        redirect($detail_url);
+    }
+
     if ($action === 'update_status') {
         $new_status = $_POST['status'] ?? '';
         if (array_key_exists($new_status, PROJECT_STATUSES)) {
             $db->prepare("UPDATE projects SET status = ? WHERE id = ?")->execute([$new_status, $project_id]);
+            log_activity('project_status', "{$project['project_name']} durumu: " . PROJECT_STATUSES[$new_status]['label'], 'project', $project_id, "/modules/projects/detail.php?id={$project_id}");
             set_flash('success', 'Proje durumu güncellendi.');
         }
         redirect($detail_url);
@@ -456,7 +568,23 @@ $margin_percent         = $base_budget > 0 ? ($net_agency_profit / $base_budget)
 $revisions = $db->query("SELECT pr.*, u.full_name as editor_name FROM project_revisions pr LEFT JOIN users u ON pr.assigned_editor_id = u.id WHERE pr.project_id = {$project_id} ORDER BY pr.id DESC")->fetchAll();
 $project_invoices = $db->query("SELECT * FROM invoices WHERE project_id = {$project_id} ORDER BY id DESC")->fetchAll();
 
-$editors = $db->query("SELECT id, full_name FROM users WHERE status = 'active' ORDER BY full_name ASC")->fetchAll();
+// Personel listesi (müşteri portalı hesapları hariç)
+$editors = $db->query("
+    SELECT u.id, u.full_name FROM users u LEFT JOIN roles r ON u.role_id = r.id
+    WHERE u.status = 'active' AND (u.role_id = 1 OR (u.contact_id IS NULL AND COALESCE(r.role_slug, '') != 'client'))
+    ORDER BY u.full_name ASC
+")->fetchAll();
+
+$tasks = $db->query("
+    SELECT t.*, u.full_name AS assignee_name FROM project_tasks t
+    LEFT JOIN users u ON t.assigned_user_id = u.id
+    WHERE t.project_id = {$project_id}
+    ORDER BY FIELD(t.status, 'in_progress', 'todo', 'done'), (t.due_date IS NULL), t.due_date ASC, t.id DESC
+")->fetchAll();
+$open_task_count = count(array_filter($tasks, fn($t) => $t['status'] !== 'done'));
+$deliverables = $db->query("SELECT * FROM project_deliverables WHERE project_id = {$project_id} ORDER BY id DESC")->fetchAll();
+$project_activity = $db->query("SELECT * FROM activity_log WHERE (entity_type = 'project' AND entity_id = {$project_id}) OR link LIKE '/modules/projects/detail.php?id={$project_id}&%' OR link = '/modules/projects/detail.php?id={$project_id}' ORDER BY id DESC LIMIT 15")->fetchAll();
+$initial_tab = in_array($_GET['tab'] ?? '', ['shoots', 'revisions', 'finance', 'tasks', 'deliverables', 'details'], true) ? $_GET['tab'] : 'revisions';
 $freelancers = $db->query("SELECT id, company_title, type FROM contacts ORDER BY company_title ASC")->fetchAll();
 $project_types = get_project_types();
 
@@ -481,6 +609,9 @@ require_once __DIR__ . '/../../includes/header.php';
     editShootData: {},
     openEditCrewModal: false,
     editCrewData: {},
+    openTaskModal: false,
+    taskForm: {},
+    openDeliverableModal: false,
     vatRate: '<?= (int)get_setting('default_vat_rate', '20') ?>', 
     withholdingRate: '0/10', 
     finalSubtotal: <?= $final_billing_subtotal ?>,
@@ -595,7 +726,7 @@ require_once __DIR__ . '/../../includes/header.php';
     </div>
 
     <!-- SEKMELER -->
-    <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm mb-8" x-data="{ tab: 'revisions' }">
+    <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm mb-8" x-data="{ tab: '<?= $initial_tab ?>' }">
         <div class="flex flex-wrap border-b border-slate-200 mb-6 gap-6">
             <button @click="tab = 'shoots'" :class="tab === 'shoots' ? 'border-brand-600 text-brand-600 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-xs border-b-2 transition flex items-center gap-2">
                 <i data-lucide="clapperboard" class="w-4 h-4"></i>
@@ -612,6 +743,16 @@ require_once __DIR__ . '/../../includes/header.php';
                 <span>Faturalar (<?= count($project_invoices) ?>)</span>
             </button>
 
+            <button @click="tab = 'tasks'" :class="tab === 'tasks' ? 'border-brand-600 text-brand-600 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-xs border-b-2 transition flex items-center gap-2">
+                <i data-lucide="list-checks" class="w-4 h-4"></i>
+                <span>Görevler (<?= $open_task_count ?>/<?= count($tasks) ?>)</span>
+            </button>
+
+            <button @click="tab = 'deliverables'" :class="tab === 'deliverables' ? 'border-brand-600 text-brand-600 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-xs border-b-2 transition flex items-center gap-2">
+                <i data-lucide="package-check" class="w-4 h-4"></i>
+                <span>Teslim Dosyaları (<?= count($deliverables) ?>)</span>
+            </button>
+
             <button @click="tab = 'details'" :class="tab === 'details' ? 'border-brand-600 text-brand-600 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-xs border-b-2 transition flex items-center gap-2">
                 <i data-lucide="info" class="w-4 h-4"></i>
                 <span>Kreatif Brief & Notlar</span>
@@ -619,7 +760,7 @@ require_once __DIR__ . '/../../includes/header.php';
         </div>
 
         <!-- TAB 1: ÇEKİM GÜNLERİ -->
-        <div x-show="tab === 'shoots'">
+        <div x-show="tab === 'shoots'" x-cloak>
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-sm font-bold text-slate-800">Çekim Takvimi ve Maliyet Dökümü</h3>
                 <button @click="$dispatch('open-shoot-modal')" class="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 px-3 rounded-xl transition">
@@ -901,11 +1042,141 @@ require_once __DIR__ . '/../../includes/header.php';
             </div>
         </div>
 
+        <!-- TAB: GÖREVLER -->
+        <div x-show="tab === 'tasks'" x-cloak>
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-800">Proje Görevleri</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Lokasyon keşfi, cast seçimi, ses miksajı, renk düzenleme gibi işleri ekibe atayın. Atanan kişiye bildirim gider.</p>
+                </div>
+                <?php if (has_permission('projects.edit')): ?>
+                <button @click="taskForm = { id: 0, title: '', description: '', assigned_user_id: '', due_date: '', priority: 'normal', status: 'todo' }; openTaskModal = true"
+                        class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Görev Ekle</span>
+                </button>
+                <?php endif; ?>
+            </div>
+
+            <?php if (empty($tasks)): ?>
+                <div class="py-10 text-center border-2 border-dashed border-slate-200 rounded-2xl text-xs text-slate-500">Henüz görev eklenmedi.</div>
+            <?php else: ?>
+                <div class="space-y-2">
+                    <?php foreach ($tasks as $t):
+                        $ts = TASK_STATUSES[$t['status']] ?? TASK_STATUSES['todo'];
+                        $tp = TASK_PRIORITIES[$t['priority']] ?? TASK_PRIORITIES['normal'];
+                        $overdue = $t['status'] !== 'done' && !empty($t['due_date']) && $t['due_date'] < date('Y-m-d');
+                        $can_toggle = has_permission('projects.edit') || (int)$t['assigned_user_id'] === (int)$user['id'];
+                    ?>
+                    <div class="p-3.5 bg-slate-50 rounded-2xl border <?= $overdue ? 'border-rose-300' : 'border-slate-200' ?> flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-start gap-3 min-w-0">
+                            <?php if ($can_toggle): ?>
+                            <form method="POST" action="">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="toggle_task">
+                                <input type="hidden" name="task_id" value="<?= (int)$t['id'] ?>">
+                                <input type="hidden" name="status" value="<?= $t['status'] === 'done' ? 'todo' : 'done' ?>">
+                                <button type="submit" class="mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center <?= $t['status'] === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 bg-white hover:border-emerald-500' ?>" title="<?= $t['status'] === 'done' ? 'Yeniden aç' : 'Tamamlandı olarak işaretle' ?>">
+                                    <?php if ($t['status'] === 'done'): ?><i data-lucide="check" class="w-3.5 h-3.5"></i><?php endif; ?>
+                                </button>
+                            </form>
+                            <?php endif; ?>
+                            <div class="min-w-0">
+                                <p class="text-sm font-bold <?= $t['status'] === 'done' ? 'line-through text-slate-400' : 'text-slate-900' ?>"><?= e($t['title']) ?></p>
+                                <?php if (!empty($t['description'])): ?><p class="text-xs text-slate-500 mt-0.5 whitespace-pre-line"><?= e($t['description']) ?></p><?php endif; ?>
+                                <div class="flex flex-wrap items-center gap-2 mt-1.5 text-[11px]">
+                                    <span class="px-2 py-0.5 rounded-full border font-bold <?= $ts['color'] ?>"><?= $ts['label'] ?></span>
+                                    <span class="font-bold <?= $tp['color'] ?>">● <?= $tp['label'] ?></span>
+                                    <span class="text-slate-500">👤 <?= e($t['assignee_name'] ?? 'Atanmadı') ?></span>
+                                    <?php if (!empty($t['due_date'])): ?>
+                                        <span class="<?= $overdue ? 'text-rose-600 font-bold' : 'text-slate-500' ?>">📅 <?= format_date($t['due_date']) ?><?= $overdue ? ' (gecikti)' : '' ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php if (has_permission('projects.edit')): ?>
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                            <button @click="taskForm = { id: <?= (int)$t['id'] ?>, title: <?= js_val($t['title']) ?>, description: <?= js_val($t['description'] ?? '') ?>, assigned_user_id: '<?= (int)$t['assigned_user_id'] ?: '' ?>', due_date: <?= js_val($t['due_date'] ?? '') ?>, priority: '<?= e($t['priority']) ?>', status: '<?= e($t['status']) ?>' }; openTaskModal = true"
+                                    class="p-2 bg-white hover:bg-brand-50 text-slate-500 hover:text-brand-600 border border-slate-200 rounded-xl" title="Düzenle">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                            <form method="POST" action="" onsubmit="return confirm('Görev silinsin mi?');">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="delete_task">
+                                <input type="hidden" name="task_id" value="<?= (int)$t['id'] ?>">
+                                <button type="submit" class="p-2 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 rounded-xl" title="Sil">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </form>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- TAB: TESLİM DOSYALARI -->
+        <div x-show="tab === 'deliverables'" x-cloak>
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-800">Teslim Dosyaları & Bağlantılar</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Final videolar, ham görüntüler, müzik lisansları (Drive, WeTransfer, Vimeo, Frame.io...). "Müşteriye açık" olanlar portalda görünür.</p>
+                </div>
+                <?php if (has_permission('projects.edit')): ?>
+                <button @click="openDeliverableModal = true" class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition">
+                    <i data-lucide="link" class="w-3.5 h-3.5"></i><span>Bağlantı Ekle</span>
+                </button>
+                <?php endif; ?>
+            </div>
+            <?php if (empty($deliverables)): ?>
+                <div class="py-10 text-center border-2 border-dashed border-slate-200 rounded-2xl text-xs text-slate-500">Henüz teslim dosyası eklenmedi.</div>
+            <?php else: ?>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <?php foreach ($deliverables as $d): ?>
+                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-bold text-slate-900 truncate"><?= e($d['title']) ?></p>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $d['visible_to_client'] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600' ?>"><?= $d['visible_to_client'] ? 'Müşteriye Açık' : 'Ajans İçi' ?></span>
+                            </div>
+                            <a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="text-xs text-brand-600 hover:underline break-all"><?= e($d['url']) ?></a>
+                            <?php if (!empty($d['notes'])): ?><p class="text-xs text-slate-500 mt-1"><?= e($d['notes']) ?></p><?php endif; ?>
+                            <p class="text-[10px] text-slate-400 mt-1"><?= format_date($d['created_at'], true) ?></p>
+                        </div>
+                        <?php if (has_permission('projects.edit')): ?>
+                        <form method="POST" action="" onsubmit="return confirm('Bağlantı kaldırılsın mı?');">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="delete_deliverable">
+                            <input type="hidden" name="deliverable_id" value="<?= (int)$d['id'] ?>">
+                            <button type="submit" class="p-2 text-slate-300 hover:text-rose-600" title="Kaldır"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
         <!-- TAB 4: BRİEF & NOTLAR -->
         <div x-show="tab === 'details'" x-cloak>
             <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line">
                 <?= !empty($project['description']) ? e($project['description']) : 'Not girilmemiş.' ?>
             </div>
+
+            <h3 class="text-sm font-bold text-slate-800 mt-6 mb-3">Proje Geçmişi</h3>
+            <?php if (empty($project_activity)): ?>
+                <p class="text-xs text-slate-400">Henüz kayıtlı hareket yok.</p>
+            <?php else: ?>
+                <ol class="relative border-l-2 border-slate-200 ml-2 space-y-3">
+                    <?php foreach ($project_activity as $pa): ?>
+                    <li class="ml-4">
+                        <span class="absolute -left-[7px] w-3 h-3 rounded-full <?= $pa['actor_type'] === 'client' ? 'bg-indigo-500' : 'bg-slate-400' ?>"></span>
+                        <p class="text-xs text-slate-800"><?= e($pa['message']) ?></p>
+                        <p class="text-[10px] text-slate-400"><?= e($pa['actor_name'] ?? '') ?><?= $pa['actor_type'] === 'client' ? ' (Müşteri)' : '' ?> · <?= format_date($pa['created_at'], true) ?></p>
+                    </li>
+                    <?php endforeach; ?>
+                </ol>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1400,6 +1671,94 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openEditCrewModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
                     <button type="submit" class="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow-md transition">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: GÖREV EKLE / DÜZENLE -->
+    <div x-show="openTaskModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200" @click.away="openTaskModal = false">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="text-sm font-bold text-slate-900" x-text="taskForm.id ? 'Görevi Düzenle' : 'Yeni Görev'"></h3>
+                <button type="button" @click="openTaskModal = false" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" :value="taskForm.id ? 'edit_task' : 'add_task'">
+                <input type="hidden" name="task_id" :value="taskForm.id">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Görev *</label>
+                    <input type="text" name="title" required x-model="taskForm.title" placeholder="Örn: Lokasyon keşfi, oyuncu seçimi, renk düzenleme" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Sorumlu</label>
+                        <select name="assigned_user_id" x-model="taskForm.assigned_user_id" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <option value="">-- Atanmadı --</option>
+                            <?php foreach ($editors as $ed): ?>
+                                <option value="<?= (int)$ed['id'] ?>"><?= e($ed['full_name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Son Tarih</label>
+                        <input type="date" name="due_date" x-model="taskForm.due_date" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Öncelik</label>
+                        <select name="priority" x-model="taskForm.priority" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <?php foreach (TASK_PRIORITIES as $pk => $pv): ?><option value="<?= $pk ?>"><?= $pv['label'] ?></option><?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Durum</label>
+                        <select name="status" x-model="taskForm.status" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <?php foreach (TASK_STATUSES as $sk => $sv): ?><option value="<?= $sk ?>"><?= $sv['label'] ?></option><?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Açıklama</label>
+                    <textarea name="description" rows="2" x-model="taskForm.description" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" @click="openTaskModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-semibold rounded-xl text-xs shadow-md">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: TESLİM DOSYASI EKLE -->
+    <div x-show="openDeliverableModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200" @click.away="openDeliverableModal = false">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="text-sm font-bold text-slate-900">Teslim Dosyası / Bağlantı Ekle</h3>
+                <button type="button" @click="openDeliverableModal = false" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            <form method="POST" action="" class="space-y-4">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="add_deliverable">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Başlık *</label>
+                    <input type="text" name="title" required placeholder="Örn: Final Master 4K (60sn) + Reels Dikey Versiyonlar" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Bağlantı (URL) *</label>
+                    <input type="url" name="url" required placeholder="https://drive.google.com/..." class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Not</label>
+                    <input type="text" name="notes" placeholder="Örn: Bağlantı 7 gün geçerlidir, şifre: ..." class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                </div>
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                    <input type="checkbox" name="visible_to_client" value="1" checked class="rounded text-brand-600">
+                    <span>Müşteri portalında göster</span>
+                </label>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" @click="openDeliverableModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-brand-600 text-white font-semibold rounded-xl text-xs shadow-md">Ekle</button>
                 </div>
             </form>
         </div>

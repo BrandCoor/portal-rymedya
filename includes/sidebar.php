@@ -67,6 +67,14 @@ function is_active(string $path): string {
             <i data-lucide="film" class="w-4 h-4 mr-3"></i>
             <span>Projeler & Çekimler</span>
         </a>
+        <a href="<?= BASE_URL ?>/modules/calendar/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/calendar') ?>">
+            <i data-lucide="calendar-days" class="w-4 h-4 mr-3 text-sky-400"></i>
+            <span>Prodüksiyon Takvimi</span>
+        </a>
+        <a href="<?= BASE_URL ?>/modules/tasks/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/tasks') ?>">
+            <i data-lucide="list-checks" class="w-4 h-4 mr-3 text-emerald-400"></i>
+            <span>Görevler</span>
+        </a>
         <?php endif; ?>
 
         <!-- EKİPMAN & ENVANTER -->
@@ -106,6 +114,13 @@ function is_active(string $path): string {
         <a href="<?= BASE_URL ?>/modules/finance/accounts.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/finance/accounts') ?>">
             <i data-lucide="wallet" class="w-4 h-4 mr-3"></i>
             <span>Kasa & Banka Hesapları</span>
+        </a>
+        <?php endif; ?>
+
+        <?php if (can_access_module('reports.view')): ?>
+        <a href="<?= BASE_URL ?>/modules/reports/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/reports') ?>">
+            <i data-lucide="bar-chart-3" class="w-4 h-4 mr-3"></i>
+            <span>Yönetim Raporları</span>
         </a>
         <?php endif; ?>
 
