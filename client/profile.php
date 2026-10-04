@@ -29,6 +29,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    if (legal_profile_post($client_id, $client_user['email'] ?? null)) {
+        redirect(BASE_URL . '/client/profile.php');
+    }
+
     if ($action === 'email_prefs') {
         mail_save_user_prefs($client_id, isset($_POST['notify_email']), isset($_POST['newsletter']));
         set_flash('success', 'E-posta tercihleriniz kaydedildi.');
@@ -308,8 +312,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label class="flex items-center justify-between gap-4 text-sm"><span>Duyuru ve kampanyalar</span><span class="switch"><input type="checkbox" name="newsletter" value="1" <?= $prefs['newsletter'] ? 'checked' : '' ?>><span></span></span></label>
             <div class="flex justify-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
         </form>
+        <?= legal_profile_card($client_id, 'client') ?>
 
     </main>
+    <?= legal_portal_footer() ?>
 
     <script>
         lucide.createIcons();

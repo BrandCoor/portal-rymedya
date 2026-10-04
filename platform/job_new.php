@@ -300,6 +300,7 @@ $order_cfg = [
                     <button type="submit" class="btn btn-accent btn-lg btn-block" style="margin-top:16px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !rushAck)<?= $mode === 'catalog' ? ' || !lines().length' : '' ?>">
                         <?= $mode === 'catalog' ? 'İşi gönder' : 'Teklif iste' ?>
                     </button>
+                    <p class="xsmall text-muted" style="margin-top:10px;text-align:center">Göndererek bu iş için <?= legal_link('ajans-sozlesmesi', 'Ajans Hizmet Sözleşmesi') ?> ve <?= legal_link('iptal-iade', 'iptal koşulları') ?>nın uygulanacağını kabul edersiniz.</p>
                 </div>
             </div>
         </aside>

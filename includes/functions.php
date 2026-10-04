@@ -874,6 +874,7 @@ function require_client_login(array $allowed_roles = ['client']): void {
     security_portal_guard($row);
     $role = portal_role_from_slug($row['role_slug'] ?? '');
     $_SESSION['client_user']['role'] = $role;
+    legal_portal_guard((int)$_SESSION['client_user_id'], $role);
     if (!in_array($role, $allowed_roles, true)) {
         redirect(portal_home_url($role));
     }
@@ -995,7 +996,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1115,6 +1116,7 @@ function run_migrations(): void {
         run_fee_migrations();
         run_iyzico_migrations();
         run_security_migrations();
+        run_legal_migrations();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1251,6 +1253,7 @@ require_once __DIR__ . '/platform_fees.php';
 require_once __DIR__ . '/iyzico.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/backup.php';
+require_once __DIR__ . '/legal.php';
 send_security_headers();
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur

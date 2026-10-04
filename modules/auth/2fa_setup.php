@@ -43,7 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $mode !== 'off') {
             log_activity('security', 'İki adımlı doğrulama açıldı', 'user', $uid, null, $uid);
             redirect($self);
         }
-        $error = 'Kod doğrulanamadı. Uygulamadaki güncel 6 haneli kodu girin (telefonunuzun saati doğru olmalı).';
+        $error = 'Kod doğrulanamadı. Uygulamadaki güncel 6 haneli kodu girin.';
+        // Kod birkaç dakika kaymayla tutuyorsa sorun saattedir; kullanıcıya söyle
+        $digits = preg_replace('/\D/', '', $code);
+        if ($secret !== '' && strlen($digits) === 6) {
+            $now = intdiv(time(), 30);
+            for ($i = -20; $i <= 20; $i++) {
+                if (abs($i) > 1 && hash_equals(totp_code($secret, $now + $i), $digits)) {
+                    $error = 'Kod doğru ama telefonunuzun saati sunucudan yaklaşık ' . max(1, (int)round(abs($i) * 30 / 60)) . ' dakika ' . ($i > 0 ? 'ileride' : 'geride') . '. Telefonda Ayarlar → Tarih ve saat → "Otomatik" seçeneğini açıp yeni kodu girin.';
+                    break;
+                }
+            }
+        }
     }
     if ($action === 'disable' && (int)$me['totp_enabled'] === 1) {
         if ($mode === 'required') {
@@ -112,15 +123,17 @@ auth_page_open('İki adımlı doğrulama', $area === 'portal' ? 'login_portal' :
     <p class="small text-muted" style="margin-top:8px"><?= $mode === 'required' ? 'Hesabınız için iki adımlı doğrulama zorunlu. ' : '' ?>Girişte şifrenize ek olarak telefonunuzdaki uygulamanın ürettiği kod istenir.</p>
     <ol class="small stack-sm" style="margin-top:16px;padding-left:18px;list-style:decimal">
         <li>Telefonunuza <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong> veya benzeri bir uygulama kurun.</li>
-        <li>Uygulamada "QR kodu tara" deyip aşağıdaki kodu okutun (veya anahtarı elle girin).</li>
+        <li>Uygulamayı açın, <strong>+</strong> düğmesine basıp <strong>"QR kodu tara"</strong> deyin ve aşağıdaki kodu okutun. <span class="text-muted">Telefonun normal kamerasıyla okutmayın; kod uygulamanın içinden okutulmalı.</span></li>
         <li>Uygulamanın gösterdiği 6 haneli kodu yazıp onaylayın.</li>
     </ol>
     <div style="display:flex;gap:16px;align-items:center;margin-top:16px;flex-wrap:wrap">
-        <div id="qr" style="background:#fff;padding:8px;border:1px solid var(--line);border-radius:8px;width:176px;height:176px"></div>
+        <div id="qr" style="background:#fff;padding:8px;border:1px solid var(--line);border-radius:8px;width:216px;height:216px"></div>
         <div style="min-width:0;flex:1">
             <p class="xsmall text-muted">Elle giriş anahtarı</p>
             <p class="small" style="font-family:var(--font-mono,monospace);word-break:break-all;font-weight:500"><?= e(trim(chunk_split($secret, 4, ' '))) ?></p>
             <p class="xsmall text-muted" style="margin-top:4px">Hesap: <?= e($me['email']) ?></p>
+            <p class="xsmall text-muted" style="margin-top:6px">QR okutamıyorsanız uygulamada "Kurulum anahtarı gir" seçip yukarıdaki anahtarı yazın, tür: <strong>Zamana dayalı</strong>.</p>
+            <a class="btn btn-secondary btn-sm" style="margin-top:8px" href="<?= e(totp_uri($secret, $me['email'])) ?>"><i data-lucide="smartphone"></i>Bu telefondaysanız: uygulamaya ekle</a>
         </div>
     </div>
     <form method="POST" action="" class="stack" style="margin-top:18px"><?= csrf_field() ?>
@@ -130,6 +143,6 @@ auth_page_open('İki adımlı doğrulama', $area === 'portal' ? 'login_portal' :
     </form>
     <?php if ($mode !== 'required'): ?><p class="xsmall" style="margin-top:14px;text-align:center"><a class="link" href="<?= e($back) ?>">Şimdi değil</a></p><?php endif; ?>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script>try { new QRCode(document.getElementById('qr'), { text: <?= json_encode(totp_uri($secret, $me['email'])) ?>, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { document.getElementById('qr').innerHTML = '<p class="xsmall text-muted" style="padding:8px">QR yüklenemedi; anahtarı elle girin.</p>'; }</script>
+    <script>try { new QRCode(document.getElementById('qr'), { text: <?= json_encode(totp_uri($secret, $me['email'])) ?>, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { document.getElementById('qr').innerHTML = '<p class="xsmall text-muted" style="padding:8px">QR yüklenemedi; anahtarı elle girin.</p>'; }</script>
 <?php endif; ?>
 <?php auth_page_close();

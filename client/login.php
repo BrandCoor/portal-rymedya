@@ -134,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <?php if (site_setting('login_portal_show_staff_link') === '1'): ?><p class="xsmall text-muted" style="margin-top:24px;text-align:center"><a class="link" href="<?= BASE_URL ?>/modules/auth/login.php"><?= e(site_setting('login_portal_staff_link')) ?></a></p><?php endif; ?>
         </div>
+        <?= legal_auth_links() ?>
     </main>
 </div>
 <?php ui_icons_init(); ?>

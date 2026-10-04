@@ -45,6 +45,7 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 | Müşteri Portalı | `client/` | Projeler, kurgu onayı, teslim dosyaları, teklif kabul/ret, ekstre |
 | **İş Platformu (yönetici)** | `modules/platform` | İş merkezi, hizmet kataloğu, termin ve seviye kuralları, teklif kabul/ret, kişiye özel yazışma, kalite kontrol, performans karneleri, kalıcı silme |
 | **Ajans & Freelancer Paneli** | `platform/` | Katalogdan iş, iş düzenleme, iş havuzu, teklif, teslim, performans karnesi, kazançlar |
+| Yasal metinler | `legal/`, `modules/legal` | Sözleşmeler, KVKK, politikalar; kayıtta ve kartla ödemede onay, sürümleme, yeniden onay, onay kayıtları (CSV) |
 
 ## Kurulum
 

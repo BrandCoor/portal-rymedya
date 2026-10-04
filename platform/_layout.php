@@ -113,10 +113,7 @@ function platform_header(string $title, string $active = ''): void {
 function platform_footer(): void {
     ?>
 </main>
-<footer class="xsmall text-faint" style="max-width:1240px;margin:0 auto;padding:0 24px 32px;display:flex;justify-content:space-between">
-    <span><?= e(site_footer_text()) ?></span>
-    <span><?= e(site_setting('portal_footer_tagline')) ?></span>
-</footer>
+<?= legal_portal_footer(site_setting('portal_footer_tagline')) ?>
 <?php ui_icons_init(); ?>
 </body>
 </html>

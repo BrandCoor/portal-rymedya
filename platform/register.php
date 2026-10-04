@@ -59,8 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
     } elseif ($password !== $password2) {
         $errors[] = 'Şifreler eşleşmiyor.';
     }
+    if (empty($_POST['terms'])) {
+        $errors[] = 'Kullanım koşullarını ve ' . ($type === 'agency' ? 'Ajans Hizmet Sözleşmesi' : 'Freelancer Hizmet Sağlayıcı Sözleşmesi') . '\'ni kabul etmelisiniz.';
+    }
     if (empty($_POST['kvkk'])) {
-        $errors[] = 'Kullanım koşullarını ve KVKK aydınlatma metnini onaylamalısınız.';
+        $errors[] = 'KVKK aydınlatma metnini okuduğunuzu onaylamalısınız.';
     }
 
     $skills = array_values(array_intersect(array_keys(JOB_CATEGORIES), (array)($_POST['skills'] ?? [])));
@@ -97,6 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
         $db->prepare("INSERT INTO users (role_id, contact_id, full_name, email, password, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())")
            ->execute([$role_id, $contact_id, $full_name, $email, password_hash($password, PASSWORD_DEFAULT), $phone]);
         $user_id = (int)$db->lastInsertId();
+
+        // Sözleşme onay kayıtları (IP, tarayıcı, sürüm ve metin özetiyle)
+        $accepted = legal_required_slugs($type);
+        if (!empty($_POST['consent']))    $accepted[] = 'acik-riza';
+        if (!empty($_POST['newsletter'])) $accepted[] = 'ticari-ileti';
+        legal_record($user_id, $email, $accepted, 'register');
 
         if ($type === 'agency') {
             $db->prepare("INSERT INTO agency_profiles (user_id, contact_id, website, status) VALUES (?, ?, ?, 'pending')")
@@ -144,7 +153,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
 <div class="auth">
     <?php ui_auth_aside($is_agency ? 'register_agency' : 'register_freelancer'); ?>
 
-    <main class="auth-main" style="align-items:flex-start">
+    <main class="auth-main" style="justify-content:flex-start">
         <div class="auth-card" style="max-width:520px">
             <div class="seg" style="margin-bottom:24px">
                 <a href="?type=agency" class="<?= $is_agency ? 'is-active' : '' ?>">Ajans</a>
@@ -206,8 +215,12 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
                 <div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= $val('iban') ?>" placeholder="TR.."><span class="hint">Hakediş ödemeleri için.</span></div>
                 <?php endif; ?>
 
-                <label class="check"><input type="checkbox" name="newsletter" value="1"><span class="small"><?= e(site_setting('register_newsletter_text')) ?></span></label>
-                <label class="check"><input type="checkbox" name="kvkk" value="1" required><span class="small"><?= e(site_setting('register_consent_text')) ?><?php if (site_setting('register_terms_url') !== '' && is_safe_url(site_setting('register_terms_url'))): ?> <a class="link" href="<?= e(site_setting('register_terms_url')) ?>" target="_blank" rel="noopener">Metni oku</a><?php endif; ?></span></label>
+                <div class="stack-sm" style="padding-top:4px">
+                    <label class="check"><input type="checkbox" name="terms" value="1" required <?= !empty($old['terms']) ? 'checked' : '' ?>><span class="small"><?= legal_link('kullanim-kosullari', 'Kullanım Koşulları ve Üyelik Sözleşmesi') ?>'ni ve <?= $is_agency ? legal_link('ajans-sozlesmesi', 'Ajans Hizmet Sözleşmesi') : legal_link('freelancer-sozlesmesi', 'Freelancer Hizmet Sağlayıcı Sözleşmesi') ?>'ni okudum, anladım ve kabul ediyorum. <span class="req">*</span></span></label>
+                    <label class="check"><input type="checkbox" name="kvkk" value="1" required <?= !empty($old['kvkk']) ? 'checked' : '' ?>><span class="small"><?= legal_link('kvkk', 'KVKK Aydınlatma Metni') ?>'ni okudum; kişisel verilerimin işlenmesi hakkında bilgilendirildim. <span class="req">*</span></span></label>
+                    <label class="check"><input type="checkbox" name="consent" value="1" <?= !empty($old['consent']) ? 'checked' : '' ?>><span class="small"><?= legal_link('acik-riza', 'Açık Rıza Metni') ?> kapsamında kişisel verilerimin işlenmesine ve aktarılmasına onay veriyorum. <span class="text-muted">(isteğe bağlı)</span></span></label>
+                    <label class="check"><input type="checkbox" name="newsletter" value="1" <?= !empty($old['newsletter']) ? 'checked' : '' ?>><span class="small"><?= e(site_setting('register_newsletter_text')) ?> <?= legal_link('ticari-ileti', 'Ticari elektronik ileti onay metni') ?> <span class="text-muted">(isteğe bağlı)</span></span></label>
+                </div>
 
                 <button type="submit" class="btn btn-primary btn-lg btn-block"><?= $is_agency ? 'Hesabı oluştur' : 'Başvuruyu gönder' ?></button>
             </form>
@@ -215,6 +228,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
 
             <p class="small text-muted" style="margin-top:20px;text-align:center">Hesabınız var mı? <a class="link" href="<?= BASE_URL ?>/client/login.php">Giriş yapın</a></p>
         </div>
+        <?= legal_auth_links() ?>
     </main>
 </div>
 <?php ui_icons_init(); ?>

@@ -384,9 +384,7 @@ $proposal_labels = [
 
     </main>
 
-    <footer class="py-4 text-center text-xs text-slate-400 border-t border-slate-200 bg-white">
-        <?= e(site_footer_text()) ?>
-    </footer>
+    <?= legal_portal_footer() ?>
 
     <script>
         lucide.createIcons();

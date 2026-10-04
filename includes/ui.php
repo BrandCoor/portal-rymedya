@@ -8,7 +8,7 @@
  * ui_*()     : rozet, boş durum, avatar, puan halkası gibi küçük bileşenler
  */
 
-const UI_ASSET_VERSION = '2026.10.8';
+const UI_ASSET_VERSION = '2026.10.9';
 
 function ui_head(string $title, array $opts = []): void {
     $chart   = !empty($opts['chart']);

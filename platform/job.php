@@ -569,6 +569,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                     <input type="hidden" name="action" value="take">
                     <button class="btn btn-accent btn-lg" <?= $cap['can_take'] ? '' : 'disabled' ?>><i data-lucide="hand"></i>İşi al · <?= format_money((float)$job['freelancer_fee'], $job['currency']) ?></button>
                 </form>
+                <p class="xsmall text-muted" style="margin-top:10px">İşi alarak bu iş için <?= legal_link('freelancer-sozlesmesi', 'Freelancer Hizmet Sağlayıcı Sözleşmesi') ?> hükümlerinin (gizlilik, telif devri, doğrudan iletişim yasağı dahil) uygulanacağını kabul edersiniz.</p>
             </div></section>
 
         <?php else: /* teklif usulü */ ?>
@@ -642,6 +643,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                             <textarea name="note" rows="4" required class="textarea" placeholder="Benzer işleriniz, kullanacağınız ekipman, planınız"></textarea>
                         </div>
                         <div><button class="btn btn-primary" <?= $cap['can_take'] ? '' : 'disabled' ?>><i data-lucide="send"></i>Teklifi gönder</button></div>
+                        <p class="xsmall text-muted">Teklifiniz kabul edilirse bu iş için <?= legal_link('freelancer-sozlesmesi', 'Freelancer Hizmet Sağlayıcı Sözleşmesi') ?> hükümleri uygulanır.</p>
                     </form>
                 </div></section>
             <?php endif; ?>

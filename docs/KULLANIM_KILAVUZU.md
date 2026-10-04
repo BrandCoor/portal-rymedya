@@ -133,6 +133,18 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 - **Kart ödemesi mutabakatı:** ajans kartla ödeyip iyzico'dan dönmeden tarayıcıyı kapatırsa saatlik görev ödemeyi iyzico'dan sorgular ve faturaya işler.
 - Sunucuda kök `.htaccess` HTTPS'e yönlendirir, gizli/yedek dosyalara erişimi kapatır ve güvenlik başlıklarını ekler.
 
+## 9.1 Yasal metinler ve sözleşme onayları (yalnızca süper yönetici)
+
+- **Metinler:** Kullanım Koşulları ve Üyelik Sözleşmesi, Ajans Hizmet Sözleşmesi, Freelancer Hizmet Sağlayıcı Sözleşmesi, KVKK Aydınlatma Metni, Açık Rıza Metni, Ticari Elektronik İleti Onayı, Gizlilik ve Güvenlik Politikası, Çerez Politikası, Ön Bilgilendirme Formu ve Mesafeli Hizmet Sözleşmesi, İptal-İade ve Ödeme Koşulları, İletişim ve Künye. Herkese açık adres: `/legal/index.php`. Tüm giriş, kayıt ve portal sayfalarının altında bağlantıları vardır.
+- **Önce şirket bilgilerini doldurun:** Ayarlar → Şirket ve künye (ünvan, adres, vergi, MERSİS, KEP, KVKK e-postası, yetkili mahkeme). Metinlerdeki `{{unvan}}` gibi yer tutucular buradan dolar. Eksik bilgi metinde "[… — Ayarlar → Şirket ve künye]" olarak görünür.
+- **Kayıtta onay:** ajans/freelancer kendi sözleşmesini, kullanım koşullarını ve KVKK aydınlatmasını ayrı kutularla onaylamadan kayıt olamaz. Açık rıza ve ticari ileti izni isteğe bağlıdır.
+- **İlk girişte onay:** onay kaydı olmayan eski kullanıcılar (ve personelin açtığı müşteri hesapları) ilk girişte onay ekranına yönlendirilir; onaylamadan portalı kullanamaz.
+- **Metni düzenleme:** menü → Yasal metinler → Düzenle. Yazım düzeltmesinde kutuyu işaretlemeden kaydedin. Önemli değişiklikte **"yeni sürüm yayımla ve yeniden onay iste"** kutusunu işaretleyin: ilgili kullanıcılar bir sonraki girişte yeni metni onaylar. "Varsayılan metne dön" ilk metni yeni sürüm olarak yayımlar.
+- **Kartla ödeme:** ajans, ön bilgilendirme formu + mesafeli hizmet sözleşmesi + iptal/iade koşullarını onaylamadan kartla ödeyemez; onay faturayla birlikte kaydedilir.
+- **Onay kayıtları:** kim, hangi metni, hangi sürümü, ne zaman, hangi IP ve tarayıcıyla onayladı veya geri aldı; onaylanan metnin SHA-256 özetiyle. CSV olarak indirilebilir (uyuşmazlıkta delil).
+- Kullanıcılar profil sayfasında onayladıkları metinleri görür, açık rızayı verir veya geri alır; bülten tercihi değiştiğinde ileti izni kaydı da tutulur.
+- Metinler genel bir şablondur; yayına almadan önce bir avukata kontrol ettirmeniz önerilir.
+
 ## 10. Yetkiler
 
 | İzin | Ne açar? |

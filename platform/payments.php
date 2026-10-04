@@ -24,6 +24,10 @@ foreach ($open as $inv) $open_by_id[(int)$inv['id']] = $inv;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     if (($_POST['action'] ?? '') === 'card') {
+        if (empty($_POST['terms'])) {
+            set_flash('error', 'Kartla ödeme için Ön Bilgilendirme Formu, Mesafeli Hizmet Sözleşmesi ve İptal/İade Koşulları\'nı onaylamanız gerekir.');
+            redirect($self);
+        }
         $pick = array_map('intval', (array)($_POST['invoices'] ?? []));
         $chosen = array_values(array_filter($open, fn($i) => in_array((int)$i['id'], $pick, true)));
         $ct = $db->prepare("SELECT * FROM contacts WHERE id = ?");
@@ -32,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u->execute([$uid]);
         $r = iyzico_start($ct->fetch(), $uid, $u->fetch() ?: [], $chosen);
         if (isset($r['url'])) {
+            legal_record($uid, $_SESSION['client_user']['email'] ?? null, ['mesafeli', 'iptal-iade'], 'card_payment', (int)($chosen[0]['id'] ?? 0) ?: null);
             header('Location: ' . $r['url']);
             exit;
         }
@@ -131,6 +136,20 @@ platform_header('Ödemeler', 'finance');
 <div class="lg:col-span-2 stack-lg" style="min-width:0">
     <section class="card">
         <div class="card-head"><p class="card-title">Açık faturalar</p></div>
+        <?php if ($card_ok && $open): ?>
+        <label class="check card-pad-sm" style="border-bottom:1px solid var(--line-2);align-items:flex-start">
+            <input type="checkbox" id="card_terms">
+            <span class="small"><?= legal_link('mesafeli', 'Ön Bilgilendirme Formu ve Mesafeli Hizmet Sözleşmesi') ?>'ni ve <?= legal_link('iptal-iade', 'İptal, İade ve Ödeme Koşulları') ?>'nı okudum, onaylıyorum. <span class="xsmall text-muted">Kartla ödeme için gereklidir.</span></span>
+        </label>
+        <script>
+            function cardTerms(f) {
+                var c = document.getElementById('card_terms');
+                if (!c || !c.checked) { alert('Kartla ödemeden önce ön bilgilendirme formu ve mesafeli hizmet sözleşmesini onaylayın.'); if (c) c.focus(); return false; }
+                f.terms.value = '1';
+                return true;
+            }
+        </script>
+        <?php endif; ?>
         <?php if (!$open): ?>
             <?= ui_empty('Açık faturanız yok', 'Tüm faturalarınız ödenmiş görünüyor.', 'circle-check') ?>
         <?php else: ?>
@@ -145,7 +164,7 @@ platform_header('Ödemeler', 'finance');
                         <td class="r num"><?= format_money((float)$inv['grand_total']) ?></td>
                         <td class="r money"><?= format_money((float)$inv['remaining']) ?></td>
                         <td class="r" style="white-space:nowrap">
-                            <?php if ($card_ok): ?><form method="POST" action="" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="card"><input type="hidden" name="invoices[]" value="<?= (int)$inv['id'] ?>"><button class="btn btn-primary btn-sm"><i data-lucide="credit-card"></i>Kartla öde</button></form><?php endif; ?>
+                            <?php if ($card_ok): ?><form method="POST" action="" style="display:inline" onsubmit="return cardTerms(this)"><?= csrf_field() ?><input type="hidden" name="action" value="card"><input type="hidden" name="terms" value=""><input type="hidden" name="invoices[]" value="<?= (int)$inv['id'] ?>"><button class="btn btn-primary btn-sm"><i data-lucide="credit-card"></i>Kartla öde</button></form><?php endif; ?>
                             <a class="btn btn-ghost btn-sm" href="?invoice=<?= (int)$inv['id'] ?>#bildir"><?= $card_ok ? 'Havale bildir' : 'Ödedim' ?></a>
                         </td>
                     </tr>
@@ -157,8 +176,8 @@ platform_header('Ödemeler', 'finance');
     </section>
 
     <?php if ($card_ok && count($open) > 1): ?>
-    <form method="POST" action="" class="card card-pad-sm" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><?= csrf_field() ?>
-        <input type="hidden" name="action" value="card">
+    <form method="POST" action="" class="card card-pad-sm" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap" onsubmit="return cardTerms(this)"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="card"><input type="hidden" name="terms" value="">
         <?php foreach ($open as $inv): ?><input type="hidden" name="invoices[]" value="<?= (int)$inv['id'] ?>"><?php endforeach; ?>
         <p class="small"><i data-lucide="shield-check" style="width:15px;height:15px;vertical-align:-3px"></i> Tüm açık faturaları tek seferde kartla ödeyin: <strong><?= format_money($total_due) ?></strong></p>
         <button class="btn btn-primary btn-sm"><i data-lucide="credit-card"></i>Tümünü kartla öde</button>

@@ -403,6 +403,7 @@ function auth_page_open(string $title, string $aside = 'login_staff'): void {
 function auth_page_close(): void {
     ?>
         </div>
+        <?= legal_auth_links() ?>
     </main>
 </div>
 <?php ui_icons_init(); ?>

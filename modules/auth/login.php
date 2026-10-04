@@ -115,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
             <?php endif; ?>
         </div>
+        <?= legal_auth_links() ?>
     </main>
 </div>
 <?php ui_icons_init(); ?>

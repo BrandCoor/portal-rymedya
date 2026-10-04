@@ -25,6 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    if (legal_profile_post($uid, $_SESSION['client_user']['email'] ?? null)) {
+        redirect(BASE_URL . '/platform/profile.php');
+    }
+
     if ($action === 'email_prefs') {
         mail_save_user_prefs($uid, isset($_POST['notify_email']), isset($_POST['newsletter']));
         set_flash('success', 'E-posta tercihleriniz kaydedildi.');
@@ -188,6 +192,8 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         </div>
         <div class="card-foot" style="display:flex;justify-content:flex-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
     </form>
+
+    <?= legal_profile_card($uid, $role) ?>
 
     <form method="POST" action="" class="card" style="margin-top:24px">
         <?= csrf_field() ?>

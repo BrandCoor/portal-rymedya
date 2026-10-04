@@ -726,14 +726,16 @@ function mail_sanitize_html(string $html): string {
  */
 function mail_user_prefs(int $user_id): array {
     global $db;
-    $st = $db->prepare("SELECT u.email, u.notify_email, s.status AS sub_status FROM users u LEFT JOIN mail_subscribers s ON s.email = LOWER(u.email) WHERE u.id = ?");
+    $st = $db->prepare("SELECT u.email, u.notify_email, s.status AS sub_status, s.consent FROM users u LEFT JOIN mail_subscribers s ON s.email = LOWER(u.email) WHERE u.id = ?");
     $st->execute([$user_id]);
     $r = $st->fetch() ?: [];
-    return ['notify' => (int)($r['notify_email'] ?? 1) === 1, 'newsletter' => ($r['sub_status'] ?? 'subscribed') === 'subscribed'];
+    // Ticari ileti yalnızca açık onayla (6563): kayıt yoksa veya onay verilmemişse kapalı görünür
+    return ['notify' => (int)($r['notify_email'] ?? 1) === 1, 'newsletter' => ($r['sub_status'] ?? '') === 'subscribed' && (int)($r['consent'] ?? 0) === 1];
 }
 
 function mail_save_user_prefs(int $user_id, bool $notify, bool $newsletter): void {
     global $db;
+    $before = mail_user_prefs($user_id)['newsletter'];
     $db->prepare("UPDATE users SET notify_email = ? WHERE id = ?")->execute([$notify ? 1 : 0, $user_id]);
     $u = $db->prepare("SELECT u.email, u.full_name, u.contact_id, r.role_slug FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?");
     $u->execute([$user_id]);
@@ -744,4 +746,7 @@ function mail_save_user_prefs(int $user_id, bool $notify, bool $newsletter): voi
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'profile', NOW(), ?)
                   ON DUPLICATE KEY UPDATE status = VALUES(status), consent = IF(VALUES(status) = 'subscribed', 1, consent), unsubscribed_at = VALUES(unsubscribed_at)")
        ->execute([mb_strtolower($u['email']), $u['full_name'], $kind, $user_id, $u['contact_id'], $newsletter ? 1 : 0, $newsletter ? 'subscribed' : 'unsubscribed', mail_subscriber_token(), $newsletter ? null : date('Y-m-d H:i:s')]);
+    if ($before !== $newsletter && function_exists('legal_record')) {
+        legal_record($user_id, $u['email'], ['ticari-ileti'], 'profile', null, $newsletter ? 'accept' : 'withdraw');   // ileti izni kaydı
+    }
 }

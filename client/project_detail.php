@@ -340,6 +340,7 @@ $st = PROJECT_STATUSES[$project['status']] ?? ['label' => $project['status'], 'c
         </div>
 
     </main>
+    <?= legal_portal_footer() ?>
 
     <script>
         lucide.createIcons();
