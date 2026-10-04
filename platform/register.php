@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
             'company_name' => $type === 'agency' ? $company : $full_name, 'email' => $email, 'phone' => $phone,
         ];
 
-        log_activity('platform_signup', ($type === 'agency' ? '🏢 Yeni ajans kaydı: ' . $company : '🎥 Yeni freelancer başvurusu: ' . $full_name . ' (' . implode(', ', array_map('job_category_label', $skills)) . ')') . ' — onay bekliyor', $type, $user_id, '/modules/platform/' . ($type === 'agency' ? 'agencies.php' : 'freelancers.php') . '?status=pending');
+        log_activity('platform_signup', ($type === 'agency' ? 'Yeni ajans kaydı: ' . $company : 'Yeni freelancer başvurusu: ' . $full_name . ' (' . implode(', ', array_map('job_category_label', $skills)) . ')') . ' — onay bekliyor', $type, $user_id, '/modules/platform/' . ($type === 'agency' ? 'agencies.php' : 'freelancers.php') . '?status=pending');
 
         set_flash('success', 'Kaydınız alındı! Hesabınız platform ekibimiz tarafından incelendikten sonra aktifleşecek.');
         redirect(BASE_URL . '/platform/index.php');
@@ -120,155 +120,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
 }
 
 $is_agency = $type === 'agency';
-$accent = $is_agency ? 'indigo' : 'emerald';
-$val = fn($k) => e($old[$k] ?? '');
+$val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
 ?>
 <!DOCTYPE html>
-<html lang="tr" class="h-full bg-slate-900">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $is_agency ? 'Ajans Kaydı' : 'Freelancer Başvurusu' ?> | RY Medya Platform</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <?php ui_head($is_agency ? 'Ajans kaydı' : 'Freelancer başvurusu'); ?>
 </head>
-<body class="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-<?= $accent ?>-950 font-sans antialiased text-slate-100 py-10 px-4">
-    <div class="max-w-2xl mx-auto">
-        <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-<?= $accent ?>-600 shadow-xl mb-3">
-                <i data-lucide="<?= $is_agency ? 'building-2' : 'user-plus' ?>" class="w-7 h-7 text-white"></i>
-            </div>
-            <h1 class="text-2xl font-black text-white"><?= $is_agency ? 'Ajans Olarak Kayıt Olun' : 'Freelancer Olarak Başvurun' ?></h1>
-            <p class="text-sm text-slate-400 mt-1">
-                <?= $is_agency
-                    ? 'Çekim, kurgu ve prodüksiyon işlerinizi platforma girin; ekibimiz planlasın, teslim etsin.'
-                    : 'Profilinizi oluşturun, onaylandıktan sonra size uygun prodüksiyon işlerini alın.' ?>
-            </p>
-            <div class="mt-4 inline-flex bg-white/5 border border-slate-700 rounded-xl p-1 text-xs font-bold">
-                <a href="?type=agency" class="px-4 py-1.5 rounded-lg <?= $is_agency ? 'bg-indigo-600 text-white' : 'text-slate-400' ?>">Ajans</a>
-                <a href="?type=freelancer" class="px-4 py-1.5 rounded-lg <?= !$is_agency ? 'bg-emerald-600 text-white' : 'text-slate-400' ?>">Freelancer</a>
-            </div>
+<body>
+<div class="auth">
+    <aside class="auth-aside">
+        <div class="frame-lines"></div>
+        <div style="position:relative;display:flex;align-items:center;gap:10px">
+            <span class="brand-mark">RY</span>
+            <span style="font-weight:600;color:#F4F4F5"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
         </div>
+        <div style="position:relative">
+            <p class="eyebrow" style="color:#77767E;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span><?= $is_agency ? 'Ajanslar için' : 'Freelancer\'lar için' ?></p>
+            <?php if ($is_agency): ?>
+                <p class="auth-quote">Fiyat listesinden seçin, <em>anında</em> sipariş verin. Gerisini ekip halleder.</p>
+            <?php else: ?>
+                <p class="auth-quote">Uzmanlığınıza uygun prodüksiyon işleri. <em>Performansınız</em> seviyenizi belirler.</p>
+            <?php endif; ?>
+        </div>
+        <div class="auth-points">
+            <?php if ($is_agency): ?>
+                <div><i data-lucide="tags"></i><span><b>Şeffaf fiyat.</b> Hizmet kataloğundan seçtiğiniz anda toplam tutarı görürsünüz.</span></div>
+                <div><i data-lucide="shield-check"></i><span><b>Kalite kontrol.</b> Her teslimat size ulaşmadan önce ekibimiz tarafından incelenir.</span></div>
+                <div><i data-lucide="receipt-text"></i><span><b>Tek fatura.</b> İş kapandığında faturanız otomatik oluşur.</span></div>
+            <?php else: ?>
+                <div><i data-lucide="radar"></i><span><b>Size uygun işler.</b> Uzmanlık alanınız, şehriniz ve seviyenize göre filtrelenir.</span></div>
+                <div><i data-lucide="gauge"></i><span><b>Performans karnesi.</b> Zamanında teslim ve puanlarınız seviyenizi yükseltir.</span></div>
+                <div><i data-lucide="wallet"></i><span><b>Net hakediş.</b> Her işin ücreti iş açılırken bellidir.</span></div>
+            <?php endif; ?>
+        </div>
+    </aside>
 
-        <div class="bg-white text-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
+    <main class="auth-main" style="align-items:flex-start">
+        <div class="auth-card" style="max-width:520px">
+            <div class="seg" style="margin-bottom:24px">
+                <a href="?type=agency" class="<?= $is_agency ? 'is-active' : '' ?>">Ajans</a>
+                <a href="?type=freelancer" class="<?= !$is_agency ? 'is-active' : '' ?>">Freelancer</a>
+            </div>
+            <h1 class="h1"><?= $is_agency ? 'Ajans hesabı oluşturun' : 'Freelancer olarak başvurun' ?></h1>
+            <p class="small text-muted" style="margin-top:6px">Başvurunuz ekibimiz tarafından incelendikten sonra hesabınız aktifleşir.</p>
+
             <?php if (!$signup_open): ?>
-                <p class="text-center text-sm text-slate-600 py-8">Bu kayıt türü şu an yeni başvurulara kapalıdır. Lütfen daha sonra tekrar deneyiniz.</p>
+                <div class="alert alert-neutral" style="margin-top:24px"><i data-lucide="lock"></i><span>Bu kayıt türü şu an yeni başvurulara kapalı.</span></div>
             <?php else: ?>
             <?php if ($errors): ?>
-                <div class="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 space-y-1">
-                    <?php foreach ($errors as $er): ?><p>• <?= e($er) ?></p><?php endforeach; ?>
-                </div>
+                <div class="alert alert-danger" style="margin-top:20px"><i data-lucide="alert-circle"></i><div><?php foreach ($errors as $er): ?><div><?= e($er) ?></div><?php endforeach; ?></div></div>
             <?php endif; ?>
-            <form method="POST" action="" class="space-y-4">
+
+            <form method="POST" action="" class="stack" style="margin-top:24px">
                 <?= csrf_field() ?>
                 <input type="hidden" name="type" value="<?= $type ?>">
                 <input type="text" name="website_url_hp" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
 
-                <?php $in = 'w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-' . $accent . '-500 focus:outline-none'; ?>
+                <?php if ($is_agency): ?>
+                <div class="field"><label class="label">Ajans / firma adı <span class="req">*</span></label><input class="input" type="text" name="company_title" required value="<?= $val('company_title') ?>"></div>
+                <?php endif; ?>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <?php if ($is_agency): ?>
-                    <div class="sm:col-span-2">
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Ajans / Firma Adı *</label>
-                        <input type="text" name="company_title" required value="<?= $val('company_title') ?>" class="<?= $in ?>">
-                    </div>
-                    <?php endif; ?>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1"><?= $is_agency ? 'Yetkili Ad Soyad *' : 'Ad Soyad *' ?></label>
-                        <input type="text" name="full_name" required value="<?= $val('full_name') ?>" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Telefon *</label>
-                        <input type="tel" name="phone" required value="<?= $val('phone') ?>" placeholder="05xx xxx xx xx" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">E-posta (giriş adresiniz) *</label>
-                        <input type="email" name="email" required value="<?= $val('email') ?>" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Şehir</label>
-                        <input type="text" name="city" value="<?= $val('city') ?>" placeholder="İstanbul" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Şifre *</label>
-                        <input type="password" name="password" required minlength="8" autocomplete="new-password" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Şifre (Tekrar) *</label>
-                        <input type="password" name="password2" required minlength="8" autocomplete="new-password" class="<?= $in ?>">
-                    </div>
+                    <div class="field"><label class="label"><?= $is_agency ? 'Yetkili ad soyad' : 'Ad soyad' ?> <span class="req">*</span></label><input class="input" type="text" name="full_name" required value="<?= $val('full_name') ?>"></div>
+                    <div class="field"><label class="label">Telefon <span class="req">*</span></label><input class="input" type="tel" name="phone" required value="<?= $val('phone') ?>" placeholder="05xx xxx xx xx"></div>
+                    <div class="field"><label class="label">E-posta <span class="req">*</span></label><input class="input" type="email" name="email" required value="<?= $val('email') ?>"><span class="hint">Giriş adresiniz olur.</span></div>
+                    <div class="field"><label class="label">Şehir</label><input class="input" type="text" name="city" value="<?= $val('city') ?>" placeholder="İstanbul"></div>
+                    <div class="field"><label class="label">Şifre <span class="req">*</span></label><input class="input" type="password" name="password" required minlength="8" autocomplete="new-password"><span class="hint">En az 8 karakter.</span></div>
+                    <div class="field"><label class="label">Şifre tekrar <span class="req">*</span></label><input class="input" type="password" name="password2" required minlength="8" autocomplete="new-password"></div>
                 </div>
 
                 <?php if ($is_agency): ?>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Web Sitesi</label>
-                        <input type="text" name="website" value="<?= $val('website') ?>" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Vergi Dairesi</label>
-                        <input type="text" name="tax_office" value="<?= $val('tax_office') ?>" class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Vergi No</label>
-                        <input type="text" name="tax_number" value="<?= $val('tax_number') ?>" class="<?= $in ?>">
-                    </div>
+                    <div class="field"><label class="label">Web sitesi</label><input class="input" type="text" name="website" value="<?= $val('website') ?>"></div>
+                    <div class="field"><label class="label">Vergi dairesi</label><input class="input" type="text" name="tax_office" value="<?= $val('tax_office') ?>"></div>
+                    <div class="field"><label class="label">Vergi no</label><input class="input" type="text" name="tax_number" value="<?= $val('tax_number') ?>"></div>
                 </div>
                 <?php else: ?>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Unvan</label>
-                    <input type="text" name="title" value="<?= $val('title') ?>" placeholder="Örn: Görüntü Yönetmeni, Kurgucu, Colorist" class="<?= $in ?>">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-2">Uzmanlık Alanları * <span class="font-normal text-slate-400">(size uygun işler bu alanlara göre gösterilir)</span></label>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div class="field"><label class="label">Unvan</label><input class="input" type="text" name="title" value="<?= $val('title') ?>" placeholder="Görüntü yönetmeni, kurgucu, colorist..."></div>
+                <div class="field">
+                    <label class="label">Uzmanlık alanları <span class="req">*</span></label>
+                    <span class="hint" style="margin-top:-2px">Havuzda size bu alanlardaki işler gösterilir.</span>
+                    <div class="grid grid-cols-2 gap-2" style="margin-top:4px">
                         <?php foreach (JOB_CATEGORIES as $ck => $cv): ?>
-                        <label class="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs cursor-pointer hover:border-emerald-400">
-                            <input type="checkbox" name="skills[]" value="<?= $ck ?>" <?= in_array($ck, (array)($old['skills'] ?? []), true) ? 'checked' : '' ?> class="rounded text-emerald-600">
-                            <span><?= e($cv['label']) ?></span>
+                        <label class="option-card" style="padding:9px 11px">
+                            <input type="checkbox" name="skills[]" value="<?= $ck ?>" <?= in_array($ck, (array)($old['skills'] ?? []), true) ? 'checked' : '' ?>>
+                            <span class="small"><?= e($cv['label']) ?></span>
                         </label>
                         <?php endforeach; ?>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Portfolyo / Showreel Linki</label>
-                        <input type="url" name="portfolio_url" value="<?= $val('portfolio_url') ?>" placeholder="https://vimeo.com/..." class="<?= $in ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Günlük Ücret Beklentisi (₺)</label>
-                        <input type="number" step="0.01" name="day_rate" value="<?= $val('day_rate') ?>" class="<?= $in ?>">
-                    </div>
+                    <div class="field"><label class="label">Portfolyo / showreel</label><input class="input" type="url" name="portfolio_url" value="<?= $val('portfolio_url') ?>" placeholder="https://vimeo.com/..."></div>
+                    <div class="field"><label class="label">Günlük ücret beklentisi</label><div class="input-group"><input class="input" type="number" step="0.01" name="day_rate" value="<?= $val('day_rate') ?>"><span class="addon">₺</span></div></div>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Ekipmanlarınız</label>
-                    <input type="text" name="equipment" value="<?= $val('equipment') ?>" placeholder="Örn: Sony FX6, DJI Mavic 3, DaVinci Resolve Studio" class="<?= $in ?>">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Kısaca Kendinizden Bahsedin</label>
-                    <textarea name="bio" rows="3" class="<?= $in ?>"><?= $val('bio') ?></textarea>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">IBAN (ödemeleriniz için)</label>
-                    <input type="text" name="iban" value="<?= $val('iban') ?>" placeholder="TR..." class="<?= $in ?> font-mono">
-                </div>
+                <div class="field"><label class="label">Ekipman</label><input class="input" type="text" name="equipment" value="<?= $val('equipment') ?>" placeholder="Sony FX6, DJI Mavic 3, DaVinci Resolve Studio"></div>
+                <div class="field"><label class="label">Kısaca deneyiminiz</label><textarea class="textarea" name="bio" rows="3"><?= $val('bio') ?></textarea></div>
+                <div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= $val('iban') ?>" placeholder="TR.."><span class="hint">Hakediş ödemeleri için.</span></div>
                 <?php endif; ?>
 
-                <label class="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
-                    <input type="checkbox" name="kvkk" value="1" required class="mt-0.5 rounded">
-                    <span>Platform kullanım koşullarını ve KVKK aydınlatma metnini okudum, kabul ediyorum. Bilgilerimin iş eşleştirme amacıyla işlenmesine onay veriyorum.</span>
-                </label>
+                <label class="check"><input type="checkbox" name="kvkk" value="1" required><span class="small">Kullanım koşullarını ve KVKK aydınlatma metnini okudum; bilgilerimin iş eşleştirme amacıyla işlenmesini kabul ediyorum.</span></label>
 
-                <button type="submit" class="w-full py-3.5 bg-<?= $accent ?>-600 hover:bg-<?= $accent ?>-700 text-white font-bold text-sm rounded-xl shadow-lg transition">
-                    <?= $is_agency ? 'Ajans Hesabı Oluştur' : 'Başvurumu Gönder' ?>
-                </button>
+                <button type="submit" class="btn btn-primary btn-lg btn-block"><?= $is_agency ? 'Hesabı oluştur' : 'Başvuruyu gönder' ?></button>
             </form>
             <?php endif; ?>
-        </div>
 
-        <p class="text-center text-sm text-slate-400 mt-6">
-            Zaten hesabınız var mı? <a href="<?= BASE_URL ?>/client/login.php" class="font-bold text-white underline">Giriş yapın</a>
-        </p>
-    </div>
-    <script>lucide.createIcons();</script>
+            <p class="small text-muted" style="margin-top:20px;text-align:center">Hesabınız var mı? <a class="link" href="<?= BASE_URL ?>/client/login.php">Giriş yapın</a></p>
+        </div>
+    </main>
+</div>
+<?php ui_icons_init(); ?>
 </body>
 </html>

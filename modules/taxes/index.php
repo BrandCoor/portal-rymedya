@@ -147,9 +147,9 @@ $actual_net_take_home = $monthly_gross_profit - ($net_payable_vat > 0 ? $net_pay
         
         <!-- Vergi Hesaplama Modu -->
         <select name="company_type" x-model="cType" onchange="this.form.submit()" class="py-2 px-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-950 cursor-pointer">
-            <option value="personal">👤 Şahıs Şirketi (Otomatik Kademeli %15-%40)</option>
-            <option value="corporate">🏢 Ltd. Şti. / A.Ş. (Sabit Kurumlar %<?= e((string)$corporate_rate) ?>)</option>
-            <option value="custom">⚡ Özel / Manuel Vergi Oranı Seçimi (%...)</option>
+            <option value="personal">Şahıs Şirketi (Otomatik Kademeli %15-%40)</option>
+            <option value="corporate">Ltd. Şti. / A.Ş. (Sabit Kurumlar %<?= e((string)$corporate_rate) ?>)</option>
+            <option value="custom">Özel / Manuel Vergi Oranı Seçimi (%...)</option>
         </select>
 
         <!-- Manuel Oran Seçimi (Sadece Özel Seçildiğinde Açılır) -->

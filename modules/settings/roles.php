@@ -423,8 +423,8 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div>
                         <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Durum</label>
                         <select name="status" x-model="editUser.status" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
-                            <option value="active">✓ Aktif</option>
-                            <option value="inactive">✕ Pasif</option>
+                            <option value="active">Aktif</option>
+                            <option value="inactive">Pasif</option>
                         </select>
                     </div>
                 </div>

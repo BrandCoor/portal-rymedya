@@ -136,12 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="tr" class="h-full bg-slate-50">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Şirket Profilim & Bilgilerim | RY Medya Müşteri Portalı</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <?php ui_head('Profil'); ?>
 </head>
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 

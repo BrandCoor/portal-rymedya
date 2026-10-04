@@ -23,17 +23,28 @@ mark_notifications_read($uid);
 
 platform_header('Bildirimler', '');
 ?>
-<div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-black text-slate-900 mb-5">Bildirimler</h1>
-    <div class="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
+<div style="max-width:760px;margin:0 auto">
+    <div class="page-head"><div><h1 class="h1">Bildirimler</h1><p class="sub">Siparişler, atamalar ve teslimatlarla ilgili son 100 bildirim.</p></div></div>
+    <div class="card">
         <?php if (!$items): ?>
-            <p class="py-12 text-center text-sm text-slate-400">Bildiriminiz yok.</p>
-        <?php else: foreach ($items as $n): ?>
-            <a href="<?= BASE_URL . e($n['link'] ?: '/platform/index.php') ?>" class="block p-4 hover:bg-slate-50 <?= (int)$n['id'] > $last ? 'bg-sky-50/60' : '' ?>">
-                <p class="text-sm text-slate-800"><?= e($n['message']) ?></p>
-                <p class="text-[11px] text-slate-400 mt-0.5"><?= format_date($n['created_at'], true) ?></p>
-            </a>
-        <?php endforeach; endif; ?>
+            <?= ui_empty('Bildiriminiz yok', 'Siparişlerinizde bir gelişme olduğunda burada görünecek.', 'bell') ?>
+        <?php else: ?>
+        <div class="divide">
+            <?php $day = null; foreach ($items as $n): $d = substr($n['created_at'], 0, 10); ?>
+                <?php if ($d !== $day): $day = $d; ?>
+                    <p class="eyebrow" style="padding:14px 20px 6px;background:var(--surface-2)"><?= $d === date('Y-m-d') ? 'Bugün' : ($d === date('Y-m-d', strtotime('-1 day')) ? 'Dün' : format_date($d)) ?></p>
+                <?php endif; ?>
+                <a href="<?= BASE_URL . e($n['link'] ?: '/platform/index.php') ?>" style="display:flex;gap:12px;padding:13px 20px;align-items:flex-start" class="hover:bg-slate-50">
+                    <span style="width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0;background:<?= (int)$n['id'] > $last ? 'var(--accent)' : 'transparent' ?>"></span>
+                    <span style="flex:1;min-width:0">
+                        <span class="small text-ink" style="display:block;line-height:1.5;<?= (int)$n['id'] > $last ? 'font-weight:500' : '' ?>"><?= e($n['message']) ?></span>
+                        <span class="xsmall text-faint"><?= date('H:i', strtotime($n['created_at'])) ?></span>
+                    </span>
+                    <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--faint);margin-top:3px"></i>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 <?php platform_footer();

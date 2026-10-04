@@ -1,22 +1,18 @@
 <?php
 /**
  * ====================================================================
- * AJANS CRM / ERP - GLOBAL SAYFA ALTI (FOOTER)
+ * PERSONEL PANELİ - SAYFA SONU
  * ====================================================================
  */
 ?>
-        </main>
-        
-        <!-- Alt Çubuk Bilgisi -->
-        <footer class="h-10 bg-white border-t border-slate-200 px-6 flex items-center justify-between text-[11px] text-slate-400">
-            <span>&copy; <?= date('Y') ?> <?= APP_NAME ?> v<?= APP_VERSION ?></span>
-            <span class="font-medium">Video Prodüksiyon ERP Sistemi</span>
-        </footer>
+            </div>
+            <footer class="xsmall text-faint" style="padding:0 32px 24px;max-width:1400px;margin:0 auto;display:flex;justify-content:space-between">
+                <span>&copy; <?= date('Y') ?> <?= e(get_setting('company_name', APP_NAME)) ?></span>
+                <span>v<?= APP_VERSION ?></span>
+            </footer>
+        </div>
     </div>
-
-    <!-- Lucide İkonlarını Başlat -->
-    <script>
-        lucide.createIcons();
-    </script>
+</div>
+<?php ui_icons_init(); ?>
 </body>
 </html>

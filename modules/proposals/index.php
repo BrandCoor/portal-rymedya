@@ -40,8 +40,8 @@ const PROPOSAL_STATUSES = [
     'draft'       => ['label' => 'Taslak Hazırlanıyor', 'badge' => 'bg-slate-100 text-slate-700 border-slate-300', 'color' => 'slate'],
     'sent'        => ['label' => 'Müşteriye İletildi', 'badge' => 'bg-blue-100 text-blue-800 border-blue-300', 'color' => 'blue'],
     'negotiating' => ['label' => 'Pazarlık / Revizyonda', 'badge' => 'bg-amber-100 text-amber-800 border-amber-300', 'color' => 'amber'],
-    'approved'    => ['label' => '✓ Kabul Edildi (Kazanıldı)', 'badge' => 'bg-emerald-100 text-emerald-800 border-emerald-300', 'color' => 'emerald'],
-    'rejected'    => ['label' => '✕ Reddedildi (Kaybedildi)', 'badge' => 'bg-rose-100 text-rose-800 border-rose-300', 'color' => 'rose']
+    'approved'    => ['label' => 'Kabul Edildi (Kazanıldı)', 'badge' => 'bg-emerald-100 text-emerald-800 border-emerald-300', 'color' => 'emerald'],
+    'rejected'    => ['label' => 'Reddedildi (Kaybedildi)', 'badge' => 'bg-rose-100 text-rose-800 border-rose-300', 'color' => 'rose']
 ];
 
 // ====================================================================
@@ -162,7 +162,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kazanılan & Projeye Dönen</p>
             <p class="text-2xl font-black text-emerald-600 mt-1"><?= format_money($won_val) ?></p>
-            <span class="text-[10px] text-emerald-600 font-semibold block mt-1">✓ Onaylanan Toplam Teklif Hacmi</span>
+            <span class="text-[10px] text-emerald-600 font-semibold block mt-1">Onaylanan Toplam Teklif Hacmi</span>
         </div>
 
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
@@ -212,7 +212,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     </div>
 
                     <h4 class="font-bold text-slate-900 text-xs line-clamp-2"><?= e($prop['title']) ?></h4>
-                    <p class="text-[11px] text-slate-500 font-medium truncate">🏢 <?= e($prop['client_name']) ?></p>
+                    <p class="text-[11px] text-slate-500 font-medium truncate"><?= e($prop['client_name']) ?></p>
                     <?php if (!empty($prop['client_responded_at'])): ?>
                         <div class="p-2 rounded-lg text-[10px] <?= $prop['status'] === 'approved' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800' ?>">
                             <strong>Portaldan yanıt:</strong> <?= format_date($prop['client_responded_at'], true) ?>

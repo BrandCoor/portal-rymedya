@@ -1,7 +1,7 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - İŞLERİM (AJANS & FREELANCER)
+ * RY MEDYA PLATFORM - SİPARİŞLERİM (AJANS) / İŞLERİM (FREELANCER)
  * ====================================================================
  */
 
@@ -13,64 +13,124 @@ require_once __DIR__ . '/_layout.php';
 require_client_login(['agency', 'freelancer']);
 $role    = portal_role();
 $profile = require_platform_role($role);
-$filter  = in_array($_GET['f'] ?? '', ['active', 'completed', 'all', 'applications'], true) ? $_GET['f'] : 'active';
+$uid     = (int)$_SESSION['client_user_id'];
+$cid     = (int)$_SESSION['client_contact_id'];
+$q       = trim($_GET['q'] ?? '');
 
-$where = $role === 'agency' ? 'j.agency_contact_id = ?' : 'j.assigned_user_id = ?';
-$param = $role === 'agency' ? (int)$_SESSION['client_contact_id'] : (int)$_SESSION['client_user_id'];
-if ($filter === 'active') {
-    $where .= " AND j.status NOT IN ('completed', 'cancelled')";
-} elseif ($filter === 'completed') {
-    $where .= " AND j.status IN ('completed', 'cancelled')";
+$tabs = $role === 'agency'
+    ? ['action' => 'Onayınızı bekleyen', 'active' => 'Devam eden', 'completed' => 'Tamamlanan', 'cancelled' => 'İptal', 'all' => 'Tümü']
+    : ['active' => 'Aktif', 'offers' => 'Tekliflerim', 'completed' => 'Tamamlanan', 'all' => 'Tümü'];
+$tab = array_key_exists($_GET['f'] ?? '', $tabs) ? $_GET['f'] : 'active';
+
+// Sekme sayıları için tüm kayıtlar bir kez çekilir
+if ($role === 'agency') {
+    $st = $db->prepare("SELECT * FROM platform_jobs WHERE agency_contact_id = ? ORDER BY id DESC");
+    $st->execute([$cid]);
+} else {
+    $st = $db->prepare("SELECT * FROM platform_jobs WHERE assigned_user_id = ? AND assigned_type = 'freelancer' ORDER BY id DESC");
+    $st->execute([$uid]);
+}
+$all = $st->fetchAll();
+if ($q !== '') {
+    $needle = mb_strtolower($q);
+    $all = array_values(array_filter($all, fn($j) => str_contains(mb_strtolower($j['title'] . ' ' . $j['job_code']), $needle)));
+}
+
+$buckets = [
+    'action'    => fn($j) => in_array($j['status'], ['quote_sent', 'delivered'], true),
+    'active'    => fn($j) => !in_array($j['status'], ['completed', 'cancelled'], true),
+    'completed' => fn($j) => $j['status'] === 'completed',
+    'cancelled' => fn($j) => $j['status'] === 'cancelled',
+    'all'       => fn($j) => true,
+];
+$counts = [];
+foreach ($tabs as $k => $_) {
+    $counts[$k] = isset($buckets[$k]) ? count(array_filter($all, $buckets[$k])) : 0;
 }
 
 $applications = [];
-if ($role === 'freelancer' && $filter === 'applications') {
-    $st = $db->prepare("SELECT a.*, j.job_code, j.title, j.status AS job_status, j.id AS job_id FROM platform_applications a JOIN platform_jobs j ON a.job_id = j.id WHERE a.user_id = ? ORDER BY a.id DESC");
-    $st->execute([(int)$_SESSION['client_user_id']]);
-    $applications = $st->fetchAll();
-    $jobs = [];
-} else {
-    $st = $db->prepare("SELECT j.*, NULL AS agency_name FROM platform_jobs j WHERE {$where} ORDER BY j.id DESC");
-    $st->execute([$param]);
-    $jobs = $st->fetchAll();
-}
-
-$tabs = ['active' => 'Devam Eden', 'completed' => 'Tamamlanan / İptal', 'all' => 'Tümü'];
 if ($role === 'freelancer') {
-    $tabs['applications'] = 'Başvurularım';
+    $st = $db->prepare("SELECT a.*, j.job_code, j.title, j.status AS job_status, j.freelancer_fee, j.currency, j.deadline, j.category
+                        FROM platform_applications a JOIN platform_jobs j ON a.job_id = j.id
+                        WHERE a.user_id = ? ORDER BY FIELD(a.status, 'pending', 'accepted', 'rejected', 'withdrawn'), a.id DESC");
+    $st->execute([$uid]);
+    $applications = $st->fetchAll();
+    $counts['offers'] = count(array_filter($applications, fn($a) => $a['status'] === 'pending'));
 }
-$app_labels = ['pending' => ['Değerlendiriliyor', 'bg-amber-100 text-amber-800'], 'accepted' => ['Kabul Edildi', 'bg-emerald-100 text-emerald-800'], 'rejected' => ['Başkası Seçildi', 'bg-slate-100 text-slate-600'], 'withdrawn' => ['Geri Çekildi', 'bg-slate-100 text-slate-500']];
+$jobs = $tab === 'offers' ? [] : array_values(array_filter($all, $buckets[$tab]));
 
-platform_header('İşlerim', 'jobs');
+$app_status = [
+    'pending'   => ['Değerlendiriliyor', 'info'],
+    'accepted'  => ['Kabul edildi', 'success'],
+    'rejected'  => ['Kabul edilmedi', 'neutral'],
+    'withdrawn' => ['Geri çekildi', 'neutral'],
+];
+
+$title = $role === 'agency' ? 'Siparişler' : 'İşlerim';
+platform_header($title, 'jobs');
 ?>
-<div class="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-    <h1 class="text-2xl font-black text-slate-900">İşlerim</h1>
-    <div class="inline-flex bg-white border border-slate-200 rounded-xl p-1 text-xs font-bold">
-        <?php foreach ($tabs as $k => $v): ?>
-            <a href="?f=<?= $k ?>" class="px-3 py-1.5 rounded-lg <?= $filter === $k ? 'bg-slate-900 text-white' : 'text-slate-500' ?>"><?= $v ?></a>
-        <?php endforeach; ?>
+<div class="page-head">
+    <div>
+        <h1 class="h1"><?= $title ?></h1>
+        <p class="sub"><?= $role === 'agency' ? 'Verdiğiniz tüm siparişler ve durumları.' : 'Size atanan işler ve verdiğiniz teklifler.' ?></p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+        <form method="GET" action="" class="searchbox hidden sm:block" style="width:240px">
+            <input type="hidden" name="f" value="<?= e($tab) ?>">
+            <i data-lucide="search"></i><input type="search" name="q" value="<?= e($q) ?>" placeholder="Başlık veya kod" style="width:100%">
+        </form>
+        <?php if ($role === 'agency'): ?><a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent"><i data-lucide="plus"></i>Yeni sipariş</a><?php endif; ?>
     </div>
 </div>
 
-<?php if ($filter === 'applications'): ?>
+<nav class="tabs" style="margin-bottom:20px">
+    <?php foreach ($tabs as $k => $label): ?>
+        <a href="?f=<?= $k ?><?= $q !== '' ? '&q=' . urlencode($q) : '' ?>" class="tab <?= $tab === $k ? 'is-active' : '' ?>"><?= e($label) ?><?php if ($counts[$k] > 0 || $tab === $k): ?><span class="count"><?= $counts[$k] ?></span><?php endif; ?></a>
+    <?php endforeach; ?>
+</nav>
+
+<?php if ($tab === 'offers'): ?>
     <?php if (!$applications): ?>
-        <p class="p-10 text-center bg-white border-2 border-dashed border-slate-200 rounded-2xl text-sm text-slate-500">Henüz başvurunuz yok.</p>
+        <div class="card"><?= ui_empty('Henüz teklif vermediniz', 'Teklif usulündeki işlere iş havuzundan teklif verebilirsiniz.', 'send', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzuna git</a>') ?></div>
     <?php else: ?>
-    <div class="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
-        <?php foreach ($applications as $a): $al = $app_labels[$a['status']] ?? [$a['status'], 'bg-slate-100']; ?>
-        <a href="<?= BASE_URL ?>/platform/job.php?id=<?= (int)$a['job_id'] ?>" class="flex items-center justify-between p-4 hover:bg-slate-50">
-            <div>
-                <p class="text-sm font-bold text-slate-900"><span class="font-mono text-[10px] text-slate-400"><?= e($a['job_code']) ?></span> <?= e($a['title']) ?></p>
-                <p class="text-[11px] text-slate-500"><?= format_date($a['created_at'], true) ?><?= $a['proposed_fee'] !== null ? ' · Önerdiğiniz ücret: ' . format_money($a['proposed_fee']) : '' ?></p>
-            </div>
-            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold <?= $al[1] ?>"><?= $al[0] ?></span>
-        </a>
-        <?php endforeach; ?>
+    <div class="card">
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>İş</th><th>Teklifiniz</th><th>Müsaitlik</th><th>Durum</th><th>Gerekçe / not</th></tr></thead>
+                <tbody>
+                <?php foreach ($applications as $a): [$al, $at] = $app_status[$a['status']] ?? [$a['status'], 'neutral']; ?>
+                    <tr class="row-link" onclick="location.href='<?= BASE_URL ?>/platform/job.php?id=<?= (int)$a['job_id'] ?>'">
+                        <td>
+                            <span class="code-tag"><?= e($a['job_code']) ?></span>
+                            <div style="font-weight:500;margin-top:2px"><?= e($a['title']) ?></div>
+                            <div class="xsmall text-muted"><?= e(job_category_label($a['category'])) ?> · teslim <?= format_date($a['deadline']) ?></div>
+                        </td>
+                        <td class="money"><?= format_money((float)($a['proposed_fee'] ?? $a['freelancer_fee']), $a['currency']) ?></td>
+                        <td class="small"><?= $a['available_from'] ? format_date($a['available_from']) : '—' ?></td>
+                        <td><?= ui_badge($al, $at, true) ?><div class="xsmall text-faint" style="margin-top:4px"><?= time_ago($a['reviewed_at'] ?: $a['created_at']) ?></div></td>
+                        <td class="small" style="max-width:280px">
+                            <?php if ($a['status'] === 'rejected' && $a['reject_reason']): ?><span class="text-ink-2"><?= e($a['reject_reason']) ?></span>
+                            <?php else: ?><span class="text-muted truncate-2"><?= e($a['note'] ?? '') ?></span><?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
     <?php endif; ?>
+
 <?php elseif (!$jobs): ?>
-    <p class="p-10 text-center bg-white border-2 border-dashed border-slate-200 rounded-2xl text-sm text-slate-500">Bu listede iş yok.</p>
+    <div class="card">
+        <?php if ($role === 'agency'): ?>
+            <?= ui_empty($q !== '' ? 'Aramanızla eşleşen sipariş yok' : 'Bu listede sipariş yok', $tab === 'action' ? 'Onayınızı bekleyen teklif veya teslimat bulunmuyor.' : 'Hizmet kataloğundan birkaç adımda sipariş verebilirsiniz.', 'briefcase', '<a class="btn btn-accent" href="' . BASE_URL . '/platform/job_new.php">Yeni sipariş</a>') ?>
+        <?php else: ?>
+            <?= ui_empty('Bu listede iş yok', 'Size uygun işler iş havuzunda listelenir.', 'radar', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzu</a>') ?>
+        <?php endif; ?>
+    </div>
 <?php else: ?>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3"><?php foreach ($jobs as $j) platform_job_card($j, $role, false); ?></div>
+    <div class="stack-sm">
+        <?php foreach ($jobs as $j) platform_job_row($j, $role); ?>
+    </div>
 <?php endif; ?>
 <?php platform_footer();

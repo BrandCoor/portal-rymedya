@@ -1,10 +1,11 @@
 <?php
 /**
  * ====================================================================
- * PLATFORM YÖNETİMİ - İŞ MERKEZİ (DİSPEÇER EKRANI)
+ * PLATFORM YÖNETİMİ - İŞ MERKEZİ
  * ====================================================================
- * Ajanslardan gelen talepler, havuzdaki işler, atamalar, kalite kontrol
- * bekleyen teslimler ve tamamlanan işlerin tek ekranda yönetimi.
+ * Gelen siparişler, havuzdaki işler, teklifler, kalite kontrol, üretim
+ * ve tamamlanan işler tek ekranda. Yönetici adına sipariş oluşturma,
+ * toplu kalıcı silme (platform.delete).
  */
 
 require_once __DIR__ . '/../../config/db.php';
@@ -13,42 +14,91 @@ require_once __DIR__ . '/../../includes/functions.php';
 
 require_staff_login();
 require_module_permission('platform.manage');
+$user = current_user();
+$can_delete = can_access_module('platform.delete');
+$self = BASE_URL . '/modules/platform/index.php';
 
-// Yönetici adına iş oluşturma (telefonla gelen talepler veya kendi işleriniz)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_job') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $title = trim($_POST['title'] ?? '');
-    $deadline = valid_date($_POST['deadline'] ?? '');
-    if ($title === '' || !$deadline) {
-        set_flash('error', 'Başlık ve teslim tarihi zorunludur.');
-        redirect(BASE_URL . '/modules/platform/index.php');
+    $action = $_POST['action'] ?? '';
+
+    // ---------- Yönetici adına iş oluşturma ----------
+    if ($action === 'create_job') {
+        $mode     = ($_POST['mode'] ?? '') === 'catalog' ? 'catalog' : 'custom';
+        $title    = trim($_POST['title'] ?? '');
+        $start    = valid_date($_POST['start_date'] ?? '');
+        $deadline = valid_date($_POST['deadline'] ?? '');
+        $agency   = !empty($_POST['agency_contact_id']) ? (int)$_POST['agency_contact_id'] : null;
+        $remote   = isset($_POST['is_remote']) ? 1 : 0;
+        $items    = $mode === 'catalog' ? build_order_items((array)($_POST['qty'] ?? [])) : [];
+        $errors   = [];
+        if ($title === '' || !$deadline) $errors[] = 'Başlık ve teslim tarihi zorunlu.';
+        if ($mode === 'catalog' && !$items) $errors[] = 'En az bir katalog kalemi seçin.';
+        $lead = assess_lead_time($start, $deadline, $items);
+        if ($lead['level'] === 'block' && empty($_POST['override_lead'])) {
+            $errors[] = $lead['message'] . ' Ekip olarak yine de oluşturmak için "termin kuralını aş" seçeneğini işaretleyin.';
+        }
+        if ($errors) {
+            set_flash('error', implode(' ', $errors));
+            redirect($self);
+        }
+        $rush     = $lead['level'] === 'warn' && empty($_POST['no_rush_fee']);
+        $category = $mode === 'catalog' ? dominant_category($items) : (array_key_exists($_POST['category'] ?? '', JOB_CATEGORIES) ? $_POST['category'] : 'other');
+        if ($mode === 'catalog') {
+            $p = price_order($items, $rush);
+            $price = $p['agency_price']; $fee = $p['freelancer_fee']; $rush_fee = $p['rush_fee'];
+        } else {
+            $price = parse_money($_POST['agency_price'] ?? '') ?: null;
+            $fee   = parse_money($_POST['freelancer_fee'] ?? '') ?: null;
+            $rush_fee = 0;
+        }
+        $policy = default_job_policy($items, $category, (bool)$remote);
+        $code = generate_job_code();
+        $db->prepare("
+            INSERT INTO platform_jobs (job_code, agency_contact_id, created_by_user_id, title, category, description, deliverables, location_city, is_remote, start_date, deadline,
+                agency_price, freelancer_fee, currency, status, pricing_source, is_rush, rush_fee, visibility, dispatch_mode, min_tier, priority_tier, priority_hours, skill_match_only, city_match_only, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'TRY', 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ")->execute([
+            $code, $agency, $user['id'], $title, $category, trim($_POST['description'] ?? ''), trim($_POST['deliverables'] ?? ''),
+            $remote ? null : (trim($_POST['location_city'] ?? '') ?: null), $remote, $start, $deadline, $price, $fee,
+            $mode, $lead['level'] === 'warn' ? 1 : 0, $rush_fee,
+            $policy['visibility'], $policy['dispatch_mode'], $policy['min_tier'], $policy['priority_tier'], $policy['priority_hours'], $policy['skill_match_only'], $policy['city_match_only'],
+        ]);
+        $id = (int)$db->lastInsertId();
+        if ($items) {
+            save_job_items($id, $items);
+        }
+        log_job_change($id, 'staff', (int)$user['id'], 'Durum', null, 'Ekip tarafından oluşturuldu' . ($lead['level'] === 'block' ? ' (termin kuralı aşıldı)' : ''));
+        log_activity('platform', "İş oluşturuldu: {$code} · {$title}", 'job', $id, "/modules/platform/job.php?id={$id}");
+        set_flash('success', "{$code} oluşturuldu. Görünürlük kurallarını kontrol edip yayına alabilirsiniz.");
+        redirect(BASE_URL . "/modules/platform/job.php?id={$id}");
     }
-    $agency = !empty($_POST['agency_contact_id']) ? (int)$_POST['agency_contact_id'] : null;
-    $price  = parse_money($_POST['agency_price'] ?? '');
-    $fee    = parse_money($_POST['freelancer_fee'] ?? '');
-    $code   = generate_job_code();
-    $db->prepare("
-        INSERT INTO platform_jobs (job_code, agency_contact_id, created_by_user_id, title, category, description, deliverables, location_city, is_remote, start_date, deadline, agency_price, freelancer_fee, currency, status, priority_hours, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'TRY', 'submitted', ?, NOW())
-    ")->execute([
-        $code, $agency, $user['id'], $title, array_key_exists($_POST['category'] ?? '', JOB_CATEGORIES) ? $_POST['category'] : 'other',
-        trim($_POST['description'] ?? ''), trim($_POST['deliverables'] ?? ''), trim($_POST['location_city'] ?? '') ?: null,
-        isset($_POST['is_remote']) ? 1 : 0, valid_date($_POST['start_date'] ?? ''), $deadline,
-        $price > 0 ? $price : null, $fee > 0 ? $fee : null, (int)platform_setting('platform_default_priority_hours')
-    ]);
-    $id = (int)$db->lastInsertId();
-    log_activity('platform', "İş oluşturuldu: {$code} · {$title}", 'job', $id, "/modules/platform/job.php?id={$id}");
-    set_flash('success', "{$code} oluşturuldu. Görünürlük ve atama ayarlarını yapıp yayınlayabilirsiniz.");
-    redirect(BASE_URL . "/modules/platform/job.php?id={$id}");
+
+    // ---------- Toplu kalıcı silme ----------
+    if ($action === 'bulk_delete') {
+        if (!$can_delete) {
+            set_flash('error', 'Kalıcı silme yetkiniz yok.');
+            redirect($self);
+        }
+        $ids = array_unique(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
+        $n = 0;
+        foreach ($ids as $jid) {
+            if (platform_delete_job($jid, !empty($_POST['with_invoices']))) $n++;
+        }
+        log_activity('platform', "{$n} platform işi kalıcı olarak silindi", 'job', null, '/modules/platform/index.php');
+        set_flash('success', "{$n} iş kalıcı olarak silindi.");
+        redirect($self . '?' . http_build_query(['g' => $_POST['g'] ?? 'action']));
+    }
+    redirect($self);
 }
 
 $groups = [
-    'action'    => ['label' => 'Aksiyon Bekleyen', 'statuses' => ['submitted', 'qa_review'], 'icon' => 'bell-ring'],
-    'open'      => ['label' => 'Havuzda / Atama', 'statuses' => ['open', 'quote_sent'], 'icon' => 'radar'],
-    'active'    => ['label' => 'Üretimde', 'statuses' => ['assigned', 'in_progress', 'revision', 'delivered'], 'icon' => 'clapperboard'],
-    'completed' => ['label' => 'Tamamlanan', 'statuses' => ['completed'], 'icon' => 'check-circle-2'],
-    'cancelled' => ['label' => 'İptal', 'statuses' => ['cancelled'], 'icon' => 'x-circle'],
-    'all'       => ['label' => 'Tümü', 'statuses' => array_keys(JOB_STATUSES), 'icon' => 'list'],
+    'action'    => ['label' => 'Aksiyon bekleyen', 'statuses' => ['submitted', 'qa_review']],
+    'open'      => ['label' => 'Atama', 'statuses' => ['open', 'quote_sent']],
+    'active'    => ['label' => 'Üretimde', 'statuses' => ['assigned', 'in_progress', 'revision', 'delivered']],
+    'completed' => ['label' => 'Tamamlanan', 'statuses' => ['completed']],
+    'cancelled' => ['label' => 'İptal', 'statuses' => ['cancelled']],
+    'all'       => ['label' => 'Tümü', 'statuses' => array_keys(JOB_STATUSES)],
 ];
 $g = array_key_exists($_GET['g'] ?? '', $groups) ? $_GET['g'] : 'action';
 $q = trim($_GET['q'] ?? '');
@@ -70,131 +120,177 @@ if ($q !== '') {
     $sql .= " AND (j.job_code LIKE ? OR j.title LIKE ? OR c.company_title LIKE ?)";
     array_push($params, "%{$q}%", "%{$q}%", "%{$q}%");
 }
-$sql .= " ORDER BY FIELD(j.status, 'submitted', 'qa_review', 'quote_sent', 'open', 'revision', 'delivered', 'assigned', 'in_progress', 'completed', 'cancelled'), j.deadline IS NULL, j.deadline ASC LIMIT 300";
+// Atama sekmesinde teklifi olan işler öne gelir
+$sql .= $g === 'open'
+    ? " ORDER BY pending_apps DESC, j.is_rush DESC, COALESCE(j.start_date, j.deadline) ASC LIMIT 300"
+    : " ORDER BY FIELD(j.status, 'submitted', 'qa_review', 'quote_sent', 'open', 'revision', 'delivered', 'assigned', 'in_progress', 'completed', 'cancelled'), j.is_rush DESC, j.deadline IS NULL, j.deadline ASC LIMIT 300";
 $st = $db->prepare($sql);
 $st->execute($params);
 $jobs = $st->fetchAll();
 
-// Bu ayın platform ekonomisi
 $month = $db->query("
     SELECT COALESCE(SUM(agency_price), 0) AS revenue, COALESCE(SUM(CASE WHEN assigned_type = 'freelancer' THEN freelancer_fee ELSE 0 END), 0) AS payouts, COUNT(*) AS cnt
     FROM platform_jobs WHERE status = 'completed' AND YEAR(completed_at) = YEAR(CURRENT_DATE()) AND MONTH(completed_at) = MONTH(CURRENT_DATE())
 ")->fetch();
+$pending_apps_total = (int)$db->query("SELECT COUNT(*) FROM platform_applications a JOIN platform_jobs j ON j.id = a.job_id WHERE a.status = 'pending' AND j.status = 'open'")->fetchColumn();
+$late = (int)$db->query("SELECT COUNT(*) FROM platform_jobs WHERE deadline < CURRENT_DATE() AND status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "')")->fetchColumn();
+// Başlangıcına 48 saatten az kalmış ama hâlâ atanmamış işler
+$at_risk = $db->query("SELECT id, job_code, title, start_date, deadline FROM platform_jobs WHERE status IN ('submitted', 'quote_sent', 'open') AND COALESCE(start_date, deadline) <= DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY) ORDER BY COALESCE(start_date, deadline) LIMIT 5")->fetchAll();
 $pending_people = (int)$db->query("SELECT (SELECT COUNT(*) FROM freelancer_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM agency_profiles WHERE status = 'pending')")->fetchColumn();
-$agencies = $db->query("SELECT c.id, c.company_title FROM contacts c WHERE c.type = 'agency' ORDER BY c.company_title")->fetchAll();
+$agencies = $db->query("SELECT id, company_title FROM contacts WHERE type = 'agency' ORDER BY company_title")->fetchAll();
+$services = catalog_services();
+$catalog_unreviewed = platform_setting('platform_catalog_reviewed') !== '1';
 
-$page_title = 'İş Platformu';
+$page_title = 'İş merkezi';
 require_once __DIR__ . '/../../includes/header.php';
 ?>
-<div x-data="{ openNew: false }">
-<div class="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+<div x-data="{ openNew: false, mode: '<?= $services ? 'catalog' : 'custom' ?>', sel: [] }">
+<div class="page-head">
     <div>
-        <h1 class="text-2xl font-black text-slate-900 tracking-tight">İş Platformu</h1>
-        <p class="text-xs text-slate-500 mt-0.5">Ajans talepleri → fiyatlama → ekibe veya freelancer'a dağıtım → kalite kontrol → teslim.</p>
+        <h1 class="h1">İş merkezi</h1>
+        <p class="sub">Siparişler, atamalar, kalite kontrol ve teslimler.</p>
     </div>
-    <div class="flex flex-wrap gap-2">
-        <a href="<?= BASE_URL ?>/modules/platform/freelancers.php" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700"><i data-lucide="users" class="w-4 h-4"></i> Freelancer'lar</a>
-        <a href="<?= BASE_URL ?>/modules/platform/agencies.php" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700"><i data-lucide="building-2" class="w-4 h-4"></i> Ajanslar</a>
-        <a href="<?= BASE_URL ?>/modules/platform/settings.php" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i> Politika Ayarları</a>
-        <button @click="openNew = true" class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold"><i data-lucide="plus" class="w-4 h-4"></i> Yeni İş</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="<?= BASE_URL ?>/modules/platform/settings.php" class="btn btn-secondary"><i data-lucide="sliders-horizontal"></i>Kurallar</a>
+        <button @click="openNew = true" class="btn btn-primary"><i data-lucide="plus"></i>Yeni iş</button>
     </div>
 </div>
 
+<?php if ($catalog_unreviewed && can_access_module('platform.pricing')): ?>
+    <div class="alert alert-warning" style="margin-bottom:12px"><i data-lucide="tag"></i><div>Hizmet kataloğu örnek fiyatlarla kuruldu. Ajanslar sipariş vermeden önce <a class="link" href="<?= BASE_URL ?>/modules/platform/catalog.php">fiyatları gözden geçirin</a>.</div></div>
+<?php endif; ?>
 <?php if ($pending_people > 0): ?>
-    <a href="<?= BASE_URL ?>/modules/platform/freelancers.php?status=pending" class="mb-4 flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-900 hover:bg-amber-100">
-        <i data-lucide="user-check" class="w-4 h-4"></i> <strong><?= $pending_people ?></strong> yeni ajans / freelancer başvurusu onayınızı bekliyor →
-    </a>
+    <div class="alert alert-info" style="margin-bottom:12px"><i data-lucide="user-check"></i><div><strong><?= $pending_people ?></strong> yeni ajans / freelancer başvurusu onay bekliyor. <a class="link" href="<?= BASE_URL ?>/modules/platform/freelancers.php?status=pending">Freelancer'lar</a> · <a class="link" href="<?= BASE_URL ?>/modules/platform/agencies.php?status=pending">Ajanslar</a></div></div>
+<?php endif; ?>
+<?php if ($at_risk): ?>
+    <div class="alert alert-danger" style="margin-bottom:12px"><i data-lucide="alarm-clock"></i><div>
+        <strong>Başlangıcı 48 saat içinde olan atanmamış işler:</strong>
+        <?php foreach ($at_risk as $i => $r): ?><?= $i ? ', ' : ' ' ?><a class="link" href="<?= BASE_URL ?>/modules/platform/job.php?id=<?= (int)$r['id'] ?>"><?= e($r['job_code']) ?></a> (<?= format_date($r['start_date'] ?: $r['deadline']) ?>)<?php endforeach; ?>
+    </div></div>
 <?php endif; ?>
 
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-    <?php foreach ([
-        ['Yeni Talep', (int)($counts['submitted'] ?? 0), 'text-sky-600'],
-        ['Kalite Kontrol', (int)($counts['qa_review'] ?? 0), 'text-purple-600'],
-        ['Havuzda', (int)($counts['open'] ?? 0), 'text-indigo-600'],
-        ['Üretimde', $gcount('active'), 'text-cyan-600'],
-        ['Bu Ay Marj', format_money((float)$month['revenue'] - (float)$month['payouts']), 'text-emerald-600'],
-    ] as [$l, $v, $cls]): ?>
-    <div class="bg-white p-4 rounded-2xl border border-slate-200">
-        <p class="text-[11px] font-bold text-slate-400 uppercase"><?= $l ?></p>
-        <p class="text-xl font-black mt-1 <?= $cls ?>"><?= $v ?></p>
+<div class="card" style="margin:12px 0 24px">
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div class="kpi"><div class="kpi-label">Onay bekleyen</div><div class="kpi-value"><?= (int)($counts['submitted'] ?? 0) ?></div><div class="kpi-meta">sipariş / özel talep</div></div>
+        <div class="kpi"><div class="kpi-label">Bekleyen teklif</div><div class="kpi-value"><?= $pending_apps_total ?></div><div class="kpi-meta">freelancer teklifi</div></div>
+        <div class="kpi"><div class="kpi-label">Kalite kontrol</div><div class="kpi-value" style="<?= ($counts['qa_review'] ?? 0) ? 'color:var(--accent)' : '' ?>"><?= (int)($counts['qa_review'] ?? 0) ?></div><div class="kpi-meta">teslim inceleme</div></div>
+        <div class="kpi"><div class="kpi-label">Üretimde</div><div class="kpi-value"><?= $gcount('active') ?></div><div class="kpi-meta"><?= $late ? "<span style='color:var(--danger)'>{$late} geciken</span>" : 'gecikme yok' ?></div></div>
+        <div class="kpi"><div class="kpi-label">Bu ay marj</div><div class="kpi-value"><?= format_money((float)$month['revenue'] - (float)$month['payouts']) ?></div><div class="kpi-meta"><?= (int)$month['cnt'] ?> iş · ciro <?= format_money((float)$month['revenue']) ?></div></div>
     </div>
-    <?php endforeach; ?>
 </div>
 
-<div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-    <div class="flex flex-wrap gap-2">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+    <nav class="tabs" style="border:0">
         <?php foreach ($groups as $gk => $gv): ?>
-            <a href="?g=<?= $gk ?>" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border <?= $g === $gk ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200' ?>">
-                <i data-lucide="<?= $gv['icon'] ?>" class="w-3.5 h-3.5"></i><?= $gv['label'] ?> <span class="opacity-70">(<?= $gcount($gk) ?>)</span>
-            </a>
+            <a href="?g=<?= $gk ?>" class="tab <?= $g === $gk ? 'is-active' : '' ?>"><?= e($gv['label']) ?><span class="count"><?= $gcount($gk) ?></span></a>
         <?php endforeach; ?>
-    </div>
-    <form method="GET"><input type="hidden" name="g" value="<?= e($g) ?>">
-        <input type="search" name="q" value="<?= e($q) ?>" placeholder="İş kodu, başlık, ajans..." class="py-2 px-3 bg-white border border-slate-200 rounded-xl text-xs w-60"></form>
+    </nav>
+    <form method="GET" class="searchbox"><input type="hidden" name="g" value="<?= e($g) ?>"><i data-lucide="search"></i><input type="search" name="q" value="<?= e($q) ?>" placeholder="İş kodu, başlık, ajans" style="width:240px"></form>
 </div>
 
-<div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-    <div class="overflow-x-auto">
-    <table class="w-full text-xs">
-        <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
-            <th class="py-3 px-4 text-left">İş</th><th class="py-3 px-4 text-left">Ajans</th><th class="py-3 px-4 text-left">Durum</th>
-            <th class="py-3 px-4 text-left">Atanan</th><th class="py-3 px-4 text-left">Teslim</th><th class="py-3 px-4 text-right">Ajans Fiyatı</th><th class="py-3 px-4 text-right">Freelancer</th><th class="py-3 px-4 text-right">Marj</th>
-        </tr></thead>
-        <tbody class="divide-y divide-slate-100">
-            <?php if (!$jobs): ?>
-                <tr><td colspan="8" class="py-12 text-center text-slate-400">Bu listede iş yok.</td></tr>
-            <?php else: foreach ($jobs as $j):
-                $margin = ($j['agency_price'] !== null && $j['assigned_type'] !== 'internal' && $j['freelancer_fee'] !== null) ? (float)$j['agency_price'] - (float)$j['freelancer_fee'] : null;
-                $late = $j['deadline'] && $j['deadline'] < date('Y-m-d') && !in_array($j['status'], ['completed', 'cancelled'], true);
-            ?>
-            <tr class="hover:bg-slate-50">
-                <td class="py-3 px-4">
-                    <a href="<?= BASE_URL ?>/modules/platform/job.php?id=<?= (int)$j['id'] ?>" class="font-bold text-slate-900 hover:text-brand-600"><?= e($j['title']) ?></a>
-                    <div class="text-[10px] text-slate-400"><span class="font-mono"><?= e($j['job_code']) ?></span> · <?= e(job_category_label($j['category'])) ?>
-                        <?php if ((int)$j['pending_apps'] > 0): ?><span class="ml-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold"><?= (int)$j['pending_apps'] ?> başvuru</span><?php endif; ?>
-                    </div>
-                </td>
-                <td class="py-3 px-4 text-slate-700"><?= e($j['agency_name'] ?? 'İç iş') ?></td>
-                <td class="py-3 px-4"><?= job_status_badge($j['status']) ?></td>
-                <td class="py-3 px-4 text-slate-700"><?= $j['assigned_type'] === 'internal' ? '🏢 Ekibimiz' : e($j['assignee_name'] ?? '-') ?></td>
-                <td class="py-3 px-4 <?= $late ? 'text-rose-600 font-bold' : 'text-slate-600' ?>"><?= format_date($j['deadline']) ?></td>
-                <td class="py-3 px-4 text-right font-semibold"><?= $j['agency_price'] !== null ? format_money($j['agency_price'], $j['currency']) : ($j['budget'] !== null ? '<span class="text-slate-400">Bütçe: ' . format_money($j['budget'], $j['currency']) . '</span>' : '-') ?></td>
-                <td class="py-3 px-4 text-right"><?= $j['freelancer_fee'] !== null ? format_money($j['freelancer_fee'], $j['currency']) : '-' ?></td>
-                <td class="py-3 px-4 text-right font-bold <?= $margin !== null && $margin < 0 ? 'text-rose-600' : 'text-emerald-700' ?>"><?= $margin !== null ? format_money($margin, $j['currency']) : '-' ?></td>
-            </tr>
-            <?php endforeach; endif; ?>
-        </tbody>
-    </table>
-    </div>
-</div>
-
-<!-- YENİ İŞ MODALI -->
-<div x-show="openNew" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 flex items-center justify-center p-4">
-    <form method="POST" action="" class="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-3" @click.away="openNew = false">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="create_job">
-        <h3 class="text-base font-bold text-slate-900">Yeni Platform İşi</h3>
-        <p class="text-xs text-slate-500">Telefonla/e-postayla gelen talepler veya kendi dağıtmak istediğiniz işler için.</p>
-        <?php $fi = 'w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs'; ?>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="sm:col-span-2"><label class="block text-xs font-bold text-slate-600 mb-1">Başlık *</label><input type="text" name="title" required class="<?= $fi ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Ajans (iş veren)</label>
-                <select name="agency_contact_id" class="<?= $fi ?>"><option value="">— İç iş / ajans yok —</option>
-                    <?php foreach ($agencies as $a): ?><option value="<?= (int)$a['id'] ?>"><?= e($a['company_title']) ?></option><?php endforeach; ?></select></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">İş Türü</label>
-                <select name="category" class="<?= $fi ?>"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><option value="<?= $ck ?>"><?= e($cv['label']) ?></option><?php endforeach; ?></select></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Başlangıç / Çekim</label><input type="date" name="start_date" class="<?= $fi ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Teslim *</label><input type="date" name="deadline" required class="<?= $fi ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Ajans Fiyatı (KDV hariç)</label><input type="number" step="0.01" name="agency_price" class="<?= $fi ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Freelancer Ücreti</label><input type="number" step="0.01" name="freelancer_fee" class="<?= $fi ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Şehir</label><input type="text" name="location_city" class="<?= $fi ?>"></div>
-            <label class="flex items-center gap-2 text-xs font-bold text-slate-700 mt-5"><input type="checkbox" name="is_remote" value="1" class="rounded"> Uzaktan yapılabilir</label>
-            <div class="sm:col-span-2"><label class="block text-xs font-bold text-slate-600 mb-1">Brief</label><textarea name="description" rows="3" class="<?= $fi ?>"></textarea></div>
-            <div class="sm:col-span-2"><label class="block text-xs font-bold text-slate-600 mb-1">Teslimatlar</label><textarea name="deliverables" rows="2" class="<?= $fi ?>"></textarea></div>
+<form method="POST" action="" class="card" onsubmit="return confirm('Seçili işler ve tüm kayıtları kalıcı olarak silinsin mi? Bu işlem geri alınamaz.');">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="bulk_delete"><input type="hidden" name="g" value="<?= e($g) ?>">
+    <?php if ($can_delete): ?>
+    <div x-show="sel.length" x-cloak class="card-head" style="background:var(--surface-2)">
+        <span class="small"><span x-text="sel.length"></span> iş seçildi</span>
+        <div style="display:flex;gap:10px;align-items:center">
+            <label class="check xsmall"><input type="checkbox" name="with_invoices" value="1">Faturalarıyla birlikte</label>
+            <button class="btn btn-danger-solid btn-sm"><i data-lucide="trash-2"></i>Kalıcı sil</button>
         </div>
-        <div class="flex justify-end gap-2 pt-2">
-            <button type="button" @click="openNew = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
-            <button class="px-5 py-2 bg-brand-600 text-white text-xs font-bold rounded-xl">Oluştur</button>
+    </div>
+    <?php endif; ?>
+    <?php if (!$jobs): ?>
+        <?= ui_empty('Bu listede iş yok', $g === 'action' ? 'Onay veya kalite kontrol bekleyen iş bulunmuyor.' : '', 'inbox') ?>
+    <?php else: ?>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr>
+                <?php if ($can_delete): ?><th style="width:32px"><input type="checkbox" @change="sel = $event.target.checked ? [...document.querySelectorAll('[data-jid]')].map(x => x.value) : []"></th><?php endif; ?>
+                <th>İş</th><th>Ajans</th><th>Durum</th><th>Atanan</th><th>Tarih</th><th class="r">Ajans</th><th class="r">Freelancer</th><th class="r">Marj</th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ($jobs as $j):
+                $margin = ($j['agency_price'] !== null && $j['assigned_type'] !== 'internal' && $j['freelancer_fee'] !== null) ? (float)$j['agency_price'] - (float)$j['freelancer_fee'] : null;
+                $is_late = $j['deadline'] && $j['deadline'] < date('Y-m-d') && !in_array($j['status'], ['completed', 'cancelled'], true);
+                $url = BASE_URL . '/modules/platform/job.php?id=' . (int)$j['id'];
+            ?>
+                <tr>
+                    <?php if ($can_delete): ?><td><input type="checkbox" name="ids[]" value="<?= (int)$j['id'] ?>" data-jid x-model="sel"></td><?php endif; ?>
+                    <td style="max-width:340px">
+                        <a href="<?= $url ?>" style="font-weight:500" class="hover:underline"><?= e($j['title']) ?></a>
+                        <div class="xsmall text-muted" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+                            <span class="code-tag"><?= e($j['job_code']) ?></span>
+                            <span><?= e(job_category_label($j['category'])) ?></span>
+                            <?php if ((int)$j['is_rush'] === 1): ?><?= ui_badge('Acil', 'accent') ?><?php endif; ?>
+                            <?php if ($j['pricing_source'] === 'custom'): ?><?= ui_badge('Özel', 'neutral') ?><?php endif; ?>
+                            <?php if ((int)$j['pending_apps'] > 0): ?><?= ui_badge($j['pending_apps'] . ' teklif', 'info') ?><?php endif; ?>
+                        </div>
+                    </td>
+                    <td class="small"><?= e($j['agency_name'] ?? 'İç iş') ?></td>
+                    <td><?= job_status_badge($j['status']) ?></td>
+                    <td class="small"><?= $j['assigned_type'] === 'internal' ? 'Ekibimiz' : e($j['assignee_name'] ?? '—') ?></td>
+                    <td class="small" style="white-space:nowrap">
+                        <?php if ($j['start_date']): ?><div class="text-muted"><?= format_date($j['start_date']) ?></div><?php endif; ?>
+                        <div style="<?= $is_late ? 'color:var(--danger);font-weight:500' : '' ?>"><?= format_date($j['deadline']) ?></div>
+                    </td>
+                    <td class="r money"><?= $j['agency_price'] !== null ? format_money((float)$j['agency_price'], $j['currency']) : ($j['budget'] !== null ? '<span class="text-muted xsmall">bütçe ' . format_money((float)$j['budget'], $j['currency']) . '</span>' : '—') ?></td>
+                    <td class="r num"><?= $j['freelancer_fee'] !== null ? format_money((float)$j['freelancer_fee'], $j['currency']) : '—' ?></td>
+                    <td class="r num" style="color:<?= $margin !== null && $margin < 0 ? 'var(--danger)' : 'var(--success)' ?>"><?= $margin !== null ? format_money($margin, $j['currency']) : '—' ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+</form>
+
+<!-- YENİ İŞ -->
+<div x-show="openNew" x-cloak class="modal-backdrop" @keydown.escape.window="openNew = false">
+    <form method="POST" action="" class="modal modal-lg" @click.outside="openNew = false">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="create_job"><input type="hidden" name="mode" :value="mode">
+        <div class="modal-head">
+            <div><p class="h3">Yeni iş</p><p class="small text-muted">Telefon / e-posta ile gelen talepler veya kendi dağıtacağınız işler.</p></div>
+            <button type="button" class="icon-btn" @click="openNew = false" aria-label="Kapat"><i data-lucide="x"></i></button>
+        </div>
+        <div class="modal-body stack">
+            <?php if ($services): ?>
+            <div class="seg"><a @click="mode = 'catalog'" :class="mode === 'catalog' && 'is-active'">Katalogdan</a><a @click="mode = 'custom'" :class="mode === 'custom' && 'is-active'">Özel fiyat</a></div>
+            <?php endif; ?>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="field sm:col-span-2"><label class="label">Başlık <span class="req">*</span></label><input class="input" name="title" required></div>
+                <div class="field"><label class="label">Ajans</label><select class="select" name="agency_contact_id"><option value="">— İç iş / ajans yok —</option><?php foreach ($agencies as $a): ?><option value="<?= (int)$a['id'] ?>"><?= e($a['company_title']) ?></option><?php endforeach; ?></select></div>
+                <div class="field" x-show="mode === 'custom'"><label class="label">İş türü</label><select class="select" name="category"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><option value="<?= $ck ?>"><?= e($cv['label']) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label class="label">Başlangıç / çekim</label><input class="input" type="date" name="start_date"></div>
+                <div class="field"><label class="label">Teslim <span class="req">*</span></label><input class="input" type="date" name="deadline" required></div>
+                <div class="field"><label class="label">Şehir</label><input class="input" name="location_city"></div>
+                <label class="check" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="is_remote" value="1">Uzaktan yapılabilir</label>
+            </div>
+            <?php if ($services): ?>
+            <div x-show="mode === 'catalog'" class="panel" style="padding:4px 0;max-height:260px;overflow-y:auto">
+                <?php foreach ($services as $s): ?>
+                    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 14px">
+                        <span class="small"><?= e($s['name']) ?> <span class="text-muted xsmall">· <?= format_money((float)$s['agency_price']) ?> / <?= e($s['unit']) ?></span></span>
+                        <input class="input input-sm" type="number" min="0" step="0.5" name="qty[<?= (int)$s['id'] ?>]" placeholder="0" style="width:80px">
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <div x-show="mode === 'custom'" class="grid grid-cols-2 gap-4">
+                <div class="field"><label class="label">Ajans fiyatı (KDV hariç)</label><input class="input" type="number" step="0.01" name="agency_price"></div>
+                <div class="field"><label class="label">Freelancer ücreti</label><input class="input" type="number" step="0.01" name="freelancer_fee"></div>
+            </div>
+            <div class="field"><label class="label">Brief</label><textarea class="textarea" name="description" rows="3"></textarea></div>
+            <div class="field"><label class="label">Teslimatlar</label><textarea class="textarea" name="deliverables" rows="2"></textarea></div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <label class="check xsmall"><input type="checkbox" name="override_lead" value="1">Termin kuralını aş (aynı gün / kısa süreli iş)</label>
+                <label class="check xsmall" x-show="mode === 'catalog'"><input type="checkbox" name="no_rush_fee" value="1">Acil iş farkı uygulama</label>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-ghost" @click="openNew = false">Vazgeç</button>
+            <button class="btn btn-primary">Oluştur</button>
         </div>
     </form>
 </div>

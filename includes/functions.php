@@ -50,21 +50,18 @@ function display_flash(): string {
     $flash = $_SESSION['flash_message'];
     unset($_SESSION['flash_message']);
 
-    $colors = [
-        'success' => 'bg-emerald-50 text-emerald-800 border-emerald-300',
-        'error'   => 'bg-rose-50 text-rose-800 border-rose-300',
-        'warning' => 'bg-amber-50 text-amber-800 border-amber-300',
-        'info'    => 'bg-sky-50 text-sky-800 border-sky-300'
+    $styles = [
+        'success' => ['background:var(--success-soft);color:#165A38;border-color:#CBE5D6', 'check-circle-2'],
+        'error'   => ['background:var(--danger-soft);color:#8F1F18;border-color:#F2CFCB', 'alert-circle'],
+        'warning' => ['background:var(--warning-soft);color:#7A4807;border-color:#F0DDB7', 'alert-triangle'],
+        'info'    => ['background:var(--info-soft);color:#1C3F8A;border-color:#D4DEF5', 'info'],
     ];
-
-    $color = $colors[$flash['type']] ?? $colors['info'];
+    [$style, $icon] = $styles[$flash['type']] ?? $styles['info'];
 
     return '
-    <div class="mb-4 p-4 rounded-xl border flex items-center justify-between text-sm shadow-sm ' . $color . '" role="alert">
-        <div class="flex items-center space-x-2">
-            <span>' . e($flash['message']) . '</span>
-        </div>
-        <button type="button" onclick="this.parentElement.remove()" class="opacity-70 hover:opacity-100 font-bold ml-4">✕</button>
+    <div class="flash" style="' . $style . '" role="alert">
+        <div style="display:flex;align-items:center;gap:10px"><i data-lucide="' . $icon . '" style="width:16px;height:16px;flex-shrink:0"></i><span>' . e($flash['message']) . '</span></div>
+        <button type="button" onclick="this.parentElement.remove()" aria-label="Kapat"><i data-lucide="x" style="width:15px;height:15px"></i></button>
     </div>';
 }
 
@@ -777,6 +774,8 @@ const MODULE_PERMISSIONS = [
     'inventory.manage' => ['description' => 'Ekipman & Demirbaş Envanteri Yönetimi', 'module' => 'inventory'],
     'reports.view'     => ['description' => 'Yönetim Raporları (Kârlılık, Alacak Yaşlandırma)', 'module' => 'reports', 'grant_if' => 'finance.view'],
     'platform.manage'  => ['description' => 'İş Platformu Yönetimi (Ajans işleri, freelancer atama)', 'module' => 'platform', 'grant_if' => 'projects.edit'],
+    'platform.delete'  => ['description' => 'Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog)', 'module' => 'platform', 'grant_if' => 'settings.manage'],
+    'platform.pricing' => ['description' => 'Hizmet kataloğu ve fiyatları yönetme', 'module' => 'platform', 'grant_if' => 'settings.manage'],
 ];
 
 /**
@@ -952,9 +951,15 @@ function is_login_locked(string $email): bool {
     if (!login_attempts_table()) {
         return false;
     }
+    // "register:IP" kayıtları yalnızca kayıt hız sınırı içindir; giriş kilidine sayılmaz
+    if (str_starts_with($email, 'register:')) {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE email = ? AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)");
+        $stmt->execute([$email]);
+        return (int)$stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
+    }
     $stmt = $db->prepare("
         SELECT COUNT(*) FROM login_attempts
-        WHERE (ip_address = ? OR email = ?) AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)
+        WHERE ((ip_address = ? AND email NOT LIKE 'register:%') OR email = ?) AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)
     ");
     $stmt->execute([$_SERVER['REMOTE_ADDR'] ?? '', mb_strtolower($email)]);
     return (int)$stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
@@ -975,7 +980,7 @@ function clear_login_failures(string $email): void {
     if (!login_attempts_table()) {
         return;
     }
-    $db->prepare("DELETE FROM login_attempts WHERE ip_address = ? OR email = ?")
+    $db->prepare("DELETE FROM login_attempts WHERE (ip_address = ? AND email NOT LIKE 'register:%') OR email = ?")
        ->execute([$_SERVER['REMOTE_ADDR'] ?? '', mb_strtolower($email)]);
 }
 
@@ -987,7 +992,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1098,6 +1103,7 @@ function run_migrations(): void {
 
         ensure_contact_change_logs_table();
         run_platform_migrations();
+        run_platform_migrations_v4();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1213,7 +1219,8 @@ const TASK_PRIORITIES = [
     'high'   => ['label' => 'Acil',   'color' => 'text-rose-600'],
 ];
 
-// İş platformu (ajans / freelancer pazaryeri)
+// Arayüz bileşenleri ve iş platformu (ajans / freelancer pazaryeri)
+require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/platform.php';
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur

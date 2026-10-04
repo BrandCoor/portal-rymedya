@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 1. Revizyonu Onaylandı Yap
         $db->prepare("UPDATE project_revisions SET status = 'approved' WHERE id = ? AND project_id = ?")->execute([$revision_id, $project_id]);
-        log_activity('client_approved', "✅ Müşteri kurguyu onayladı: {$rev['version_title']} ({$project['project_name']})", 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=revisions");
+        log_activity('client_approved', "Müşteri kurguyu onayladı: {$rev['version_title']} ({$project['project_name']})", 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=revisions");
 
         // 2. Bu Projeye Daha Önce Satış Faturası Kesilmiş mi Kontrol Et
         // (Kurgu/edit hizmeti için ayrıca kesilen faturalar ana proje faturası sayılmaz)
@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $rv = $db->prepare("SELECT version_title, assigned_editor_id FROM project_revisions WHERE id = ?");
                 $rv->execute([$revision_id]);
                 $rvd = $rv->fetch();
-                $msg = "✏️ Müşteri revizyon istedi: {$rvd['version_title']} ({$project['project_name']}) — \"" . mb_substr($feedback, 0, 160) . "\"";
+                $msg = "Müşteri revizyon istedi: {$rvd['version_title']} ({$project['project_name']}) — \"" . mb_substr($feedback, 0, 160) . "\"";
                 $link = "/modules/projects/detail.php?id={$project_id}&tab=revisions";
                 log_activity('client_revision', $msg, 'project', $project_id, $link);
                 // Kurgucuya doğrudan bildirim (proje yetkisi olmasa bile görsün)
@@ -162,14 +162,7 @@ $st = PROJECT_STATUSES[$project['status']] ?? ['label' => $project['status'], 'c
 <!DOCTYPE html>
 <html lang="tr" class="h-full bg-slate-50">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= e($project['project_name']) ?> | Müşteri Portalı</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <style>[x-cloak] { display: none !important; }</style>
+    <?php ui_head($project['project_name']); ?>
 </head>
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
@@ -237,7 +230,7 @@ $st = PROJECT_STATUSES[$project['status']] ?? ['label' => $project['status'], 'c
                                 <div class="flex items-center gap-2">
                                     <span class="font-bold text-slate-900 text-sm"><?= e($rev['version_title']) ?></span>
                                     <?php if ($rev['status'] === 'approved'): ?>
-                                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">✓ ONAYLANDI</span>
+                                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">ONAYLANDI</span>
                                     <?php elseif ($rev['status'] === 'revision_requested'): ?>
                                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300">Revizyon İstendi</span>
                                     <?php else: ?>

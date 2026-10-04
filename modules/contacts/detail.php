@@ -357,9 +357,9 @@ require_once __DIR__ . '/../../includes/header.php';
                 <?php if ($client_user): ?>
                     <span class="flex items-center gap-2">
                         <?php if ($client_user['status'] === 'active'): ?>
-                            <span class="text-emerald-600 font-bold">✓ Aktif (<?= e($client_user['email']) ?>)</span>
+                            <span class="text-emerald-600 font-bold">Aktif (<?= e($client_user['email']) ?>)</span>
                         <?php else: ?>
-                            <span class="text-rose-600 font-bold">✕ Kapalı (<?= e($client_user['email']) ?>)</span>
+                            <span class="text-rose-600 font-bold">Kapalı (<?= e($client_user['email']) ?>)</span>
                         <?php endif; ?>
                         <?php if (has_permission('contacts.edit')): ?>
                         <form method="POST" action="" onsubmit="return confirm('Portal erişim durumu değiştirilsin mi?');">
@@ -734,7 +734,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-2 flex justify-end gap-2">
                     <button type="button" @click="openPayInvModal = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
                     <button type="submit" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md">
-                        ✓ Onayla
+                        Onayla
                     </button>
                 </div>
             </form>
@@ -909,7 +909,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openManualAdjModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
                     <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition">
-                        ✓ Dekontu Kaydet
+                        Dekontu Kaydet
                     </button>
                 </div>
             </form>

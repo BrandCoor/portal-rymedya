@@ -6,7 +6,7 @@ Canlı adres: `https://portal.rymedya.com.tr`.
 
 Portalın iki yüzü vardır:
 - **İç ERP:** RY Medya personeli için.
-- **İş Platformu:** Ajanslar iş verir, RY Medya fiyatlar ve dağıtır, işi RY Medya ekibi veya freelancer'lar yapar. Ayrıntılar: [docs/PLATFORM.md](docs/PLATFORM.md).
+- **İş Platformu:** Ajanslar hizmet kataloğundan sipariş verir (fiyat anında, aynı gün / acil iş kuralları), iş havuza düşer; işi RY Medya ekibi veya seviyesine göre kapasitesi sınırlı freelancer'lar yapar. Ayrıntılar: [docs/PLATFORM.md](docs/PLATFORM.md).
 
 | Giriş | Adres |
 |-------|-------|
@@ -43,8 +43,8 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 | Ekipman | `modules/inventory` | Envanter, sete çıkış, dışarıya kiralama |
 | Bildirimler | `modules/notifications` | Müşteri hareketleri, görev atamaları, tüm aktivite günlüğü |
 | Müşteri Portalı | `client/` | Projeler, kurgu onayı, teslim dosyaları, teklif kabul/ret, ekstre |
-| **İş Platformu (yönetici)** | `modules/platform` | İş merkezi, fiyatlama, görünürlük politikası, atama, kalite kontrol, freelancer/ajans yönetimi |
-| **Ajans & Freelancer Paneli** | `platform/` | İş talebi, iş havuzu, teslim, mesajlaşma, kazançlar |
+| **İş Platformu (yönetici)** | `modules/platform` | İş merkezi, hizmet kataloğu, termin ve seviye kuralları, teklif kabul/ret, kişiye özel yazışma, kalite kontrol, performans karneleri, kalıcı silme |
+| **Ajans & Freelancer Paneli** | `platform/` | Katalog siparişi, sipariş düzenleme, iş havuzu, teklif, teslim, performans karnesi, kazançlar |
 
 ## Kurulum
 

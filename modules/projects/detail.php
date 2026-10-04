@@ -37,12 +37,12 @@ try {
 }
 
 const WORKFLOW_MODELS = [
-    'internal_full'       => ['label' => '🏢 Ajans İçi Tam Prodüksiyon (Çekim + Kurgu)', 'color' => 'bg-emerald-50 text-emerald-800 border-emerald-300'],
-    'external_edit_only'  => ['label' => '✂️ Yalnızca Kurgu / Edit Hizmeti (Çekim Müşteriden)', 'color' => 'bg-purple-50 text-purple-800 border-purple-300'],
-    'external_shoot_only' => ['label' => '🎬 Yalnızca Çekim Hizmeti (Kurgu Müşteride)', 'color' => 'bg-blue-50 text-blue-800 border-blue-300'],
-    'outsource_full'      => ['label' => '🤝 Dış Ekip / Taşeron Prodüksiyon (Dış Çekim & Dış Edit)', 'color' => 'bg-amber-50 text-amber-800 border-amber-300'],
-    'outsource_edit'      => ['label' => '👥 Çekim Bizden, Edit Dış Kurgucudan (Taşeron Edit)', 'color' => 'bg-cyan-50 text-cyan-800 border-cyan-300'],
-    'outsource_shoot'     => ['label' => '🎥 Çekim Dış Ekipten, Edit Bizden (Taşeron Çekim)', 'color' => 'bg-rose-50 text-rose-800 border-rose-300']
+    'internal_full'       => ['label' => 'Ajans İçi Tam Prodüksiyon (Çekim + Kurgu)', 'color' => 'bg-emerald-50 text-emerald-800 border-emerald-300'],
+    'external_edit_only'  => ['label' => 'Yalnızca Kurgu / Edit Hizmeti (Çekim Müşteriden)', 'color' => 'bg-purple-50 text-purple-800 border-purple-300'],
+    'external_shoot_only' => ['label' => 'Yalnızca Çekim Hizmeti (Kurgu Müşteride)', 'color' => 'bg-blue-50 text-blue-800 border-blue-300'],
+    'outsource_full'      => ['label' => 'Dış Ekip / Taşeron Prodüksiyon (Dış Çekim & Dış Edit)', 'color' => 'bg-amber-50 text-amber-800 border-amber-300'],
+    'outsource_edit'      => ['label' => 'Çekim Bizden, Edit Dış Kurgucudan (Taşeron Edit)', 'color' => 'bg-cyan-50 text-cyan-800 border-cyan-300'],
+    'outsource_shoot'     => ['label' => 'Çekim Dış Ekipten, Edit Bizden (Taşeron Çekim)', 'color' => 'bg-rose-50 text-rose-800 border-rose-300']
 ];
 
 // Projeyi Getir
@@ -924,7 +924,7 @@ require_once __DIR__ . '/../../includes/header.php';
 
                                 <!-- Onay Durumu -->
                                 <?php if ($rev['status'] === 'approved'): ?>
-                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">✓ ONAYLANDI</span>
+                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">ONAYLANDI</span>
                                 <?php elseif ($rev['status'] === 'revision_requested'): ?>
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300">Revizyon İstendi</span>
                                 <?php else: ?>
@@ -934,11 +934,11 @@ require_once __DIR__ . '/../../includes/header.php';
                                 <!-- Faturalandırma Durumu -->
                                 <?php if ($rev['billing_status'] === 'invoiced'): ?>
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
-                                        💼 Faturalandırıldı (<?= format_money($rev['billing_fee']) ?>)
+                                        Faturalandırıldı (<?= format_money($rev['billing_fee']) ?>)
                                     </span>
                                 <?php elseif ($rev['billing_status'] === 'debited'): ?>
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                                        📄 Borç Dekontu Yazıldı (<?= format_money($rev['billing_fee']) ?>)
+                                        Borç Dekontu Yazıldı (<?= format_money($rev['billing_fee']) ?>)
                                     </span>
                                 <?php endif; ?>
                             </div>
@@ -1086,9 +1086,9 @@ require_once __DIR__ . '/../../includes/header.php';
                                 <div class="flex flex-wrap items-center gap-2 mt-1.5 text-[11px]">
                                     <span class="px-2 py-0.5 rounded-full border font-bold <?= $ts['color'] ?>"><?= $ts['label'] ?></span>
                                     <span class="font-bold <?= $tp['color'] ?>">● <?= $tp['label'] ?></span>
-                                    <span class="text-slate-500">👤 <?= e($t['assignee_name'] ?? 'Atanmadı') ?></span>
+                                    <span class="text-slate-500"><?= e($t['assignee_name'] ?? 'Atanmadı') ?></span>
                                     <?php if (!empty($t['due_date'])): ?>
-                                        <span class="<?= $overdue ? 'text-rose-600 font-bold' : 'text-slate-500' ?>">📅 <?= format_date($t['due_date']) ?><?= $overdue ? ' (gecikti)' : '' ?></span>
+                                        <span class="<?= $overdue ? 'text-rose-600 font-bold' : 'text-slate-500' ?>"><?= format_date($t['due_date']) ?><?= $overdue ? ' (gecikti)' : '' ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -1246,7 +1246,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openBillEditModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
                     <button type="submit" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md">
-                        ✓ Müşteri Carisine Borç Yaz
+                        Müşteri Carisine Borç Yaz
                     </button>
                 </div>
             </form>
@@ -1400,7 +1400,7 @@ require_once __DIR__ . '/../../includes/header.php';
                         <option value="in_progress">Kurgu Sürüyor</option>
                         <option value="sent_to_client">Müşteriye Sunuldu</option>
                         <option value="revision_requested">Revizyon İstendi</option>
-                        <option value="approved">✓ Onaylandı</option>
+                        <option value="approved">Onaylandı</option>
                     </select>
                 </div>
 
@@ -1841,7 +1841,7 @@ require_once __DIR__ . '/../../includes/header.php';
 
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openInvoiceCompleteModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">Vazgeç</button>
-                    <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition">✓ Onayla ve Carileştir</button>
+                    <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition">Onayla ve Carileştir</button>
                 </div>
             </form>
         </div>

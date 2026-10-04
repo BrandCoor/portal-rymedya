@@ -85,107 +85,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 <!DOCTYPE html>
-<html lang="tr" class="h-full bg-slate-900">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Girişi | RY Medya</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <?php ui_head('Portal girişi'); ?>
 </head>
-<body class="h-full flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans antialiased text-slate-100">
-
-    <div class="w-full max-w-md">
-        <!-- Logo & Başlık -->
-        <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-xl shadow-indigo-600/30 mb-4 ring-4 ring-indigo-500/20">
-                <i data-lucide="clapperboard" class="w-8 h-8 text-white"></i>
-            </div>
-            <h1 class="text-2xl font-bold tracking-tight text-white">PORTAL GİRİŞİ</h1>
-            <p class="text-sm text-slate-400 mt-1">Müşteri · Ajans · Freelancer</p>
+<body>
+<div class="auth">
+    <aside class="auth-aside">
+        <div class="frame-lines"></div>
+        <div style="position:relative;display:flex;align-items:center;gap:10px">
+            <span class="brand-mark">RY</span>
+            <span style="font-weight:600;color:#F4F4F5"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
         </div>
+        <div style="position:relative">
+            <p class="eyebrow" style="color:#77767E;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span>Prodüksiyon platformu</p>
+            <p class="auth-quote">Siparişi verin, ekibi biz kuralım. <em>Teslime kadar</em> her adımı buradan izleyin.</p>
+        </div>
+        <div class="auth-points">
+            <div><i data-lucide="building-2"></i><span><b>Ajanslar</b> hizmetleri seçip anında fiyat görür, işi tek adımda sipariş eder.</span></div>
+            <div><i data-lucide="users-round"></i><span><b>Freelancer'lar</b> seviyelerine uygun işleri alır, teslim eder, kazancını takip eder.</span></div>
+            <div><i data-lucide="film"></i><span><b>Müşteriler</b> projelerini, kurgu versiyonlarını ve faturalarını görür.</span></div>
+        </div>
+    </aside>
 
-        <!-- Giriş Kartı -->
-        <div class="bg-slate-800/80 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-8 shadow-2xl">
-            
-            <?php if (!empty($error)): ?>
-                <div class="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center gap-3 text-sm text-rose-300">
-                    <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i>
-                    <span><?= e($error) ?></span>
-                </div>
-            <?php endif; ?>
+    <main class="auth-main">
+        <div class="auth-card">
+            <div class="lg:hidden" style="display:flex;align-items:center;gap:10px;margin-bottom:32px">
+                <span class="brand-mark">RY</span><span style="font-weight:600"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
+            </div>
+            <h1 class="h1">Portal girişi</h1>
+            <p class="small text-muted" style="margin-top:6px">Müşteri, ajans ve freelancer hesapları için ortak giriş.</p>
 
-            <?= display_flash() ?>
+            <div style="margin-top:24px">
+                <?php if (!empty($error)): ?>
+                    <div class="alert alert-danger" style="margin-bottom:16px"><i data-lucide="alert-circle"></i><span><?= e($error) ?></span></div>
+                <?php endif; ?>
+                <?= display_flash() ?>
 
-            <form method="POST" action="" class="space-y-5">
-                <?= csrf_field() ?>
-
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">E-Posta Adresi</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                            <i data-lucide="mail" class="w-5 h-5"></i>
-                        </div>
-                        <input type="email" name="email" required autofocus placeholder="musteri@sirket.com" 
-                            class="w-full pl-11 pr-4 py-3 bg-slate-900/70 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-sm">
+                <form method="POST" action="" class="stack">
+                    <?= csrf_field() ?>
+                    <div class="field">
+                        <label class="label" for="email">E-posta</label>
+                        <input class="input" id="email" type="email" name="email" required autofocus autocomplete="username" placeholder="ornek@sirket.com">
                     </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">Portal Şifresi</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                            <i data-lucide="lock" class="w-5 h-5"></i>
-                        </div>
-                        <input type="password" name="password" required placeholder="••••••••" 
-                            class="w-full pl-11 pr-4 py-3 bg-slate-900/70 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-sm">
+                    <div class="field">
+                        <label class="label" for="password">Şifre</label>
+                        <input class="input" id="password" type="password" name="password" required autocomplete="current-password">
                     </div>
-                </div>
-
-                <div class="pt-2">
-                    <button type="submit" 
-                        class="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg transition duration-200 cursor-pointer">
-                        <span>Portala Giriş Yap</span>
-                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                    </button>
-                </div>
-            </form>
+                    <button type="submit" class="btn btn-primary btn-lg btn-block">Giriş yap</button>
+                </form>
+            </div>
 
             <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>
-            <div class="mt-6 pt-6 border-t border-slate-700/60 space-y-2">
-                <p class="text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">Henüz hesabınız yok mu?</p>
-                <div class="grid grid-cols-2 gap-2">
-                    <?php if (platform_setting('platform_agency_signup') === '1'): ?>
-                    <a href="<?= BASE_URL ?>/platform/register.php?type=agency" class="flex flex-col items-center gap-1 py-3 px-2 bg-white/5 hover:bg-white/10 border border-slate-600 hover:border-indigo-400 rounded-xl text-center transition">
-                        <i data-lucide="building-2" class="w-5 h-5 text-indigo-300"></i>
-                        <span class="text-xs font-bold text-white">Ajans Kaydı</span>
-                        <span class="text-[10px] text-slate-400">İş yaptırmak istiyorum</span>
-                    </a>
-                    <?php endif; ?>
-                    <?php if (platform_setting('platform_freelancer_signup') === '1'): ?>
-                    <a href="<?= BASE_URL ?>/platform/register.php?type=freelancer" class="flex flex-col items-center gap-1 py-3 px-2 bg-white/5 hover:bg-white/10 border border-slate-600 hover:border-emerald-400 rounded-xl text-center transition">
-                        <i data-lucide="user-plus" class="w-5 h-5 text-emerald-300"></i>
-                        <span class="text-xs font-bold text-white">Freelancer Başvurusu</span>
-                        <span class="text-[10px] text-slate-400">İş almak istiyorum</span>
-                    </a>
-                    <?php endif; ?>
-                </div>
+            <div class="hairline" style="margin:28px 0 20px"></div>
+            <p class="small text-muted" style="margin-bottom:10px">Henüz hesabınız yok mu?</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <?php if (platform_setting('platform_agency_signup') === '1'): ?>
+                <a href="<?= BASE_URL ?>/platform/register.php?type=agency" class="card card-hover card-pad-sm" style="display:block">
+                    <i data-lucide="building-2" style="width:17px;height:17px"></i>
+                    <p class="small" style="font-weight:600;margin-top:8px">Ajans Kaydı</p>
+                    <p class="xsmall text-muted">İş yaptırmak istiyorum</p>
+                </a>
+                <?php endif; ?>
+                <?php if (platform_setting('platform_freelancer_signup') === '1'): ?>
+                <a href="<?= BASE_URL ?>/platform/register.php?type=freelancer" class="card card-hover card-pad-sm" style="display:block">
+                    <i data-lucide="user-plus" style="width:17px;height:17px"></i>
+                    <p class="small" style="font-weight:600;margin-top:8px">Freelancer Başvurusu</p>
+                    <p class="xsmall text-muted">İş almak istiyorum</p>
+                </a>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
+
+            <p class="xsmall text-muted" style="margin-top:24px;text-align:center"><a class="link" href="<?= BASE_URL ?>/modules/auth/login.php">RY Medya personeli girişi</a></p>
         </div>
-
-        <p class="text-center text-xs text-slate-400 mt-6">
-            <a href="<?= BASE_URL ?>/modules/auth/login.php" class="hover:text-white underline">RY Medya personeli girişi</a>
-        </p>
-
-        <p class="text-center text-xs text-slate-500 mt-4">
-            &copy; <?= date('Y') ?> RY Medya Prodüksiyon Müşteri Portalı.
-        </p>
-    </div>
-
-    <script>
-        lucide.createIcons();
-    </script>
+    </main>
+</div>
+<?php ui_icons_init(); ?>
 </body>
 </html>

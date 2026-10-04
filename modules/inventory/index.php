@@ -315,19 +315,19 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Depoda / Hazır</p>
             <p class="text-2xl font-black text-emerald-600 mt-1"><?= $in_office_cnt ?> Parça</p>
-            <span class="text-[10px] text-emerald-600 font-semibold block mt-1">✓ Sete Çıkmaya Hazır</span>
+            <span class="text-[10px] text-emerald-600 font-semibold block mt-1">Sete Çıkmaya Hazır</span>
         </div>
 
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sette / Kullanımda</p>
             <p class="text-2xl font-black text-indigo-600 mt-1"><?= $on_set_cnt ?> Parça</p>
-            <span class="text-[10px] text-indigo-600 font-semibold block mt-1">🎬 Aktif Çekimlerde</span>
+            <span class="text-[10px] text-indigo-600 font-semibold block mt-1">Aktif Çekimlerde</span>
         </div>
 
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dışarıya Kirada</p>
             <p class="text-2xl font-black text-purple-600 mt-1"><?= $rented_out_cnt ?> Parça</p>
-            <span class="text-[10px] text-purple-600 font-semibold block mt-1">💼 Müşteride Kirada</span>
+            <span class="text-[10px] text-purple-600 font-semibold block mt-1">Müşteride Kirada</span>
         </div>
 
         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
@@ -437,11 +437,11 @@ require_once __DIR__ . '/../../includes/header.php';
 
                                 <?php if ($eq['status'] === 'on_set' && !empty($eq['project_name'])): ?>
                                     <span class="text-[10px] font-bold text-indigo-600 block mt-1">
-                                        🎬 <?= e($eq['project_name']) ?>
+                                        <?= e($eq['project_name']) ?>
                                     </span>
                                 <?php elseif ($eq['status'] === 'rented_out' && !empty($eq['rental_client_name'])): ?>
                                     <span class="text-[10px] font-bold text-purple-700 block mt-1">
-                                        💼 <?= e($eq['rental_client_name']) ?> (<?= format_money($eq['rental_total_fee']) ?>)
+                                        <?= e($eq['rental_client_name']) ?> (<?= format_money($eq['rental_total_fee']) ?>)
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -472,7 +472,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                             <input type="hidden" name="action" value="return_to_office">
                                             <input type="hidden" name="equipment_id" value="<?= $eq['id'] ?>">
                                             <button type="submit" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold rounded-lg border border-emerald-200 transition text-[11px]">
-                                                ✓ Depoya Al
+                                                Depoya Al
                                             </button>
                                         </form>
                                     <?php elseif ($eq['status'] === 'rented_out'): ?>
@@ -481,7 +481,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                             <input type="hidden" name="action" value="return_from_rental">
                                             <input type="hidden" name="equipment_id" value="<?= $eq['id'] ?>">
                                             <button type="submit" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold rounded-lg border border-emerald-200 transition text-[11px]" title="Kiradan Depoya Teslim Al">
-                                                ✓ Kiradan Teslim Al
+                                                Kiradan Teslim Al
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -607,7 +607,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openRentModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
                     <button type="submit" class="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-md">
-                        💼 Kiraya Ver ve İşle
+                        Kiraya Ver ve İşle
                     </button>
                 </div>
             </form>
@@ -729,7 +729,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="pt-2 flex justify-end gap-2">
                     <button type="button" @click="openAssignModal = false" class="px-4 py-2 text-xs text-slate-500">İptal</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl text-xs shadow-md">🎬 Sete Çıkışını Onayla</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-xl text-xs shadow-md">Sete Çıkışını Onayla</button>
                 </div>
             </form>
         </div>

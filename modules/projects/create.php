@@ -25,12 +25,12 @@ try {
 
 // Operasyon Modelleri
 const WORKFLOW_MODELS = [
-    'internal_full'       => ['label' => '🏢 Ajans İçi Tam Prodüksiyon (Çekim + Kurgu Bizden)', 'color' => 'bg-emerald-50 text-emerald-800'],
-    'external_edit_only'  => ['label' => '✂️ Yalnızca Kurgu / Edit Hizmeti (Çekim Müşteriden)', 'color' => 'bg-purple-50 text-purple-800'],
-    'external_shoot_only' => ['label' => '🎬 Yalnızca Çekim Hizmeti (Kurgu Müşteride)', 'color' => 'bg-blue-50 text-blue-800'],
-    'outsource_full'      => ['label' => '🤝 Dış Ekip / Taşeron Prodüksiyon (Dış Çekim & Dış Edit)', 'color' => 'bg-amber-50 text-amber-800'],
-    'outsource_edit'      => ['label' => '👥 Çekim Bizden, Edit Dış Kurgucudan (Taşeron Edit)', 'color' => 'bg-cyan-50 text-cyan-800'],
-    'outsource_shoot'     => ['label' => '🎥 Çekim Dış Ekipten, Edit Bizden (Taşeron Çekim)', 'color' => 'bg-rose-50 text-rose-800']
+    'internal_full'       => ['label' => 'Ajans İçi Tam Prodüksiyon (Çekim + Kurgu Bizden)', 'color' => 'bg-emerald-50 text-emerald-800'],
+    'external_edit_only'  => ['label' => 'Yalnızca Kurgu / Edit Hizmeti (Çekim Müşteriden)', 'color' => 'bg-purple-50 text-purple-800'],
+    'external_shoot_only' => ['label' => 'Yalnızca Çekim Hizmeti (Kurgu Müşteride)', 'color' => 'bg-blue-50 text-blue-800'],
+    'outsource_full'      => ['label' => 'Dış Ekip / Taşeron Prodüksiyon (Dış Çekim & Dış Edit)', 'color' => 'bg-amber-50 text-amber-800'],
+    'outsource_edit'      => ['label' => 'Çekim Bizden, Edit Dış Kurgucudan (Taşeron Edit)', 'color' => 'bg-cyan-50 text-cyan-800'],
+    'outsource_shoot'     => ['label' => 'Çekim Dış Ekipten, Edit Bizden (Taşeron Çekim)', 'color' => 'bg-rose-50 text-rose-800']
 ];
 
 // ====================================================================
@@ -217,7 +217,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div class="flex items-center justify-between mb-1.5">
                         <label class="block text-xs font-bold uppercase text-slate-600">Prodüksiyon Türü *</label>
                         <button type="button" @click="openTypeModal = true" class="text-[11px] font-bold text-brand-600 hover:text-brand-800 transition">
-                            ⚙️ Tür Ekle / Sil
+                            Tür Ekle / Sil
                         </button>
                     </div>
                     <select name="project_type" class="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-brand-500">

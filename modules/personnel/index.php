@@ -417,7 +417,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                         </button>
                                     <?php else: ?>
                                         <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                            ✓ Bu Ay Ödendi
+                                            Bu Ay Ödendi
                                         </span>
                                     <?php endif; ?>
 
@@ -502,7 +502,7 @@ require_once __DIR__ . '/../../includes/header.php';
                             <td class="py-3 px-4 text-right font-black text-slate-900 text-sm"><?= format_money($pay['net_paid']) ?></td>
                             <td class="py-3 px-4 text-center">
                                 <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    ✓ ÖDENDİ
+                                    ÖDENDİ
                                 </span>
                             </td>
                             <td class="py-3 px-4 text-right">
@@ -577,7 +577,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="delete_advance">
                                     <input type="hidden" name="advance_id" value="<?= $adv['id'] ?>">
-                                    <button type="submit" class="p-1 text-slate-300 hover:text-rose-600">✕ Sil</button>
+                                    <button type="submit" class="p-1 text-slate-300 hover:text-rose-600">Sil</button>
                                 </form>
                             </td>
                         </tr>
@@ -662,7 +662,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-2">
                     <button type="button" @click="openPaySalaryModal = false" class="px-4 py-2 text-xs font-semibold text-slate-500">İptal</button>
                     <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition">
-                        ✓ Maaş Ödemesini Onayla & Kasadan Düş
+                        Maaş Ödemesini Onayla & Kasadan Düş
                     </button>
                 </div>
             </form>

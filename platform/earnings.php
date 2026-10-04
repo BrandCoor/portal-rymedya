@@ -1,7 +1,7 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - KAZANÇLARIM (FREELANCER)
+ * RY MEDYA PLATFORM - KAZANÇ (FREELANCER)
  * ====================================================================
  * Tamamlanan her iş için oluşan hakediş (alış faturası) ve ödeme durumu.
  */
@@ -32,53 +32,80 @@ $pending = $total - $paid;
 $in_progress = $db->prepare("SELECT COALESCE(SUM(freelancer_fee), 0) FROM platform_jobs WHERE assigned_user_id = ? AND status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "')");
 $in_progress->execute([$uid]);
 
+// Aylık hakediş (son 6 ay)
+$monthly = [];
+for ($m = 5; $m >= 0; $m--) {
+    $monthly[date('Y-m', strtotime("first day of -{$m} month"))] = 0.0;
+}
+foreach ($rows as $r) {
+    $k = substr((string)$r['completed_at'], 0, 7);
+    if (isset($monthly[$k])) $monthly[$k] += (float)($r['grand_total'] ?? $r['freelancer_fee']);
+}
+$month_max = max(1, max($monthly));
+$in_progress_total = (float)$in_progress->fetchColumn();
+
 $c = $db->prepare("SELECT iban FROM contacts WHERE id = ?");
 $c->execute([(int)$_SESSION['client_contact_id']]);
 $iban = $c->fetchColumn();
 
-platform_header('Kazançlarım', 'earnings');
+platform_header('Kazanç', 'earnings');
+$tr_months = ['01' => 'Oca', '02' => 'Şub', '03' => 'Mar', '04' => 'Nis', '05' => 'May', '06' => 'Haz', '07' => 'Tem', '08' => 'Ağu', '09' => 'Eyl', '10' => 'Eki', '11' => 'Kas', '12' => 'Ara'];
+$pay_status = ['paid' => ['Ödendi', 'success'], 'partial' => ['Kısmi ödendi', 'warning'], 'unpaid' => ['Ödeme bekliyor', 'neutral']];
 ?>
-<h1 class="text-2xl font-black text-slate-900 mb-5">Kazançlarım</h1>
-
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-    <?php foreach ([
-        ['Toplam Hakediş', $total, 'text-slate-900'],
-        ['Ödenen', $paid, 'text-emerald-600'],
-        ['Ödeme Bekleyen', $pending, 'text-amber-600'],
-        ['Devam Eden İşlerden', (float)$in_progress->fetchColumn(), 'text-cyan-600'],
-    ] as [$l, $v, $cls]): ?>
-    <div class="bg-white p-4 rounded-2xl border border-slate-200">
-        <p class="text-[11px] font-bold text-slate-400 uppercase"><?= $l ?></p>
-        <p class="text-xl font-black mt-1 <?= $cls ?>"><?= format_money($v) ?></p>
+<div class="page-head">
+    <div>
+        <h1 class="h1">Kazanç</h1>
+        <p class="sub">Tamamlanan her iş için hakediş kaydı oluşur; ödemeler IBAN'ınıza yapılır.</p>
     </div>
-    <?php endforeach; ?>
 </div>
 
 <?php if (empty($iban)): ?>
-    <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">Ödemelerinizin yapılabilmesi için <a href="<?= BASE_URL ?>/platform/profile.php" class="font-bold underline">profilinize IBAN</a> ekleyin.</div>
+    <div class="alert alert-warning" style="margin-bottom:20px"><i data-lucide="landmark"></i><div>Ödemelerinizin yapılabilmesi için <a href="<?= BASE_URL ?>/platform/profile.php" class="link">profilinize IBAN</a> ekleyin.</div></div>
 <?php endif; ?>
 
-<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-    <table class="w-full text-xs">
-        <thead><tr class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
-            <th class="py-3 px-4 text-left">İş</th><th class="py-3 px-4 text-left">Tamamlanma</th><th class="py-3 px-4 text-right">Hakediş</th><th class="py-3 px-4 text-right">Ödenen</th><th class="py-3 px-4 text-center">Durum</th>
-        </tr></thead>
-        <tbody class="divide-y divide-slate-100">
-            <?php if (!$rows): ?>
-                <tr><td colspan="5" class="py-10 text-center text-slate-400">Henüz tamamlanan işiniz yok.</td></tr>
-            <?php else: foreach ($rows as $r):
-                $ps = ['paid' => ['Ödendi', 'bg-emerald-100 text-emerald-800'], 'partial' => ['Kısmi Ödendi', 'bg-amber-100 text-amber-800'], 'unpaid' => ['Ödeme Bekliyor', 'bg-slate-100 text-slate-700']][$r['payment_status'] ?? 'unpaid'] ?? ['-', ''];
-            ?>
-            <tr>
-                <td class="py-3 px-4"><a href="<?= BASE_URL ?>/platform/job.php?id=<?= (int)$r['id'] ?>" class="font-bold text-slate-900 hover:text-emerald-600"><span class="font-mono text-[10px] text-slate-400"><?= e($r['job_code']) ?></span> <?= e($r['title']) ?></a>
-                    <?php if ($r['freelancer_rating']): ?><div class="text-[10px]"><?= render_stars((float)$r['freelancer_rating']) ?></div><?php endif; ?></td>
-                <td class="py-3 px-4 text-slate-600"><?= format_date($r['completed_at']) ?></td>
-                <td class="py-3 px-4 text-right font-bold"><?= format_money((float)($r['grand_total'] ?? $r['freelancer_fee']), $r['currency']) ?></td>
-                <td class="py-3 px-4 text-right text-emerald-700"><?= format_money((float)($r['paid_amount'] ?? 0), $r['currency']) ?></td>
-                <td class="py-3 px-4 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $ps[1] ?>"><?= $ps[0] ?></span></td>
-            </tr>
-            <?php endforeach; endif; ?>
-        </tbody>
-    </table>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6" style="margin-bottom:24px">
+    <div class="card lg:col-span-2">
+        <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+            <div class="kpi"><div class="kpi-label">Toplam hakediş</div><div class="kpi-value"><?= format_money($total) ?></div><div class="kpi-meta"><?= count($rows) ?> tamamlanan iş</div></div>
+            <div class="kpi"><div class="kpi-label">Ödenen</div><div class="kpi-value" style="color:var(--success)"><?= format_money($paid) ?></div><div class="kpi-meta">hesabınıza aktarılan</div></div>
+            <div class="kpi"><div class="kpi-label">Ödeme bekleyen</div><div class="kpi-value"><?= format_money(max(0, $pending)) ?></div><div class="kpi-meta">onaylanmış hakediş</div></div>
+            <div class="kpi"><div class="kpi-label">Devam eden işlerden</div><div class="kpi-value text-muted"><?= format_money($in_progress_total) ?></div><div class="kpi-meta">teslim ve onay sonrası</div></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><p class="card-title">Son 6 ay</p></div>
+        <div class="card-pad" style="display:flex;align-items:flex-end;gap:10px;height:170px">
+            <?php foreach ($monthly as $ym => $v): ?>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end" title="<?= e(format_money($v)) ?>">
+                    <div style="width:100%;max-width:28px;border-radius:4px 4px 0 0;background:<?= $ym === date('Y-m') ? 'var(--accent)' : 'var(--ink)' ?>;height:<?= max(2, round($v / $month_max * 100)) ?>%;opacity:<?= $v > 0 ? 1 : .15 ?>"></div>
+                    <span class="xsmall text-muted"><?= $tr_months[substr($ym, 5, 2)] ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
 </div>
+
+<section class="card">
+    <div class="card-head"><p class="card-title">Hakedişler</p></div>
+    <?php if (!$rows): ?>
+        <?= ui_empty('Henüz tamamlanan işiniz yok', 'İlk işinizi tamamladığınızda hakedişiniz burada görünür.', 'wallet', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzu</a>') ?>
+    <?php else: ?>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>İş</th><th>Tamamlanma</th><th class="r">Hakediş</th><th class="r">Ödenen</th><th>Durum</th></tr></thead>
+            <tbody>
+            <?php foreach ($rows as $r): [$pl, $pt] = $pay_status[$r['payment_status'] ?? 'unpaid'] ?? ['—', 'neutral']; ?>
+                <tr class="row-link" onclick="location.href='<?= BASE_URL ?>/platform/job.php?id=<?= (int)$r['id'] ?>'">
+                    <td><span class="code-tag"><?= e($r['job_code']) ?></span><div style="font-weight:500"><?= e($r['title']) ?></div><?php if ($r['freelancer_rating']): ?><div style="margin-top:2px"><?= render_stars((float)$r['freelancer_rating']) ?></div><?php endif; ?></td>
+                    <td class="small"><?= format_date($r['completed_at']) ?></td>
+                    <td class="r money"><?= format_money((float)($r['grand_total'] ?? $r['freelancer_fee']), $r['currency']) ?></td>
+                    <td class="r num" style="color:var(--success)"><?= format_money((float)($r['paid_amount'] ?? 0), $r['currency']) ?></td>
+                    <td><?= ui_badge($pl, $pt, true) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+</section>
 <?php platform_footer();

@@ -308,7 +308,7 @@ require_once __DIR__ . '/../../includes/header.php';
             <div class="pt-4 border-t border-slate-100 flex justify-end gap-3">
                 <a href="<?= BASE_URL ?>/modules/proposals/index.php" class="px-5 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-700">İptal</a>
                 <button type="submit" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition">
-                    <?= $proposal ? '✓ Değişiklikleri Kaydet' : '✓ Teklifi Oluştur & Kaydet' ?>
+                    <?= $proposal ? 'Değişiklikleri Kaydet' : 'Teklifi Oluştur & Kaydet' ?>
                 </button>
             </div>
         </form>

@@ -138,8 +138,8 @@ $qs = function (array $over) use ($scope, $status, $assignee) {
                     <?= !empty($t['client_name']) ? ' · ' . e($t['client_name']) : '' ?>
                 </p>
                 <p class="text-[11px] mt-1 <?= $overdue ? 'text-rose-600 font-bold' : 'text-slate-400' ?>">
-                    👤 <?= e($t['assignee_name'] ?? 'Atanmadı') ?>
-                    <?= !empty($t['due_date']) ? ' · 📅 ' . format_date($t['due_date']) . ($overdue ? ' (gecikti)' : '') : '' ?>
+                    <?= e($t['assignee_name'] ?? 'Atanmadı') ?>
+                    <?= !empty($t['due_date']) ? ' · ' . format_date($t['due_date']) . ($overdue ? ' (gecikti)' : '') : '' ?>
                 </p>
             </div>
             <?php if ($can_toggle): ?>

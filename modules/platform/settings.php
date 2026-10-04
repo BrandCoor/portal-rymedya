@@ -1,7 +1,7 @@
 <?php
 /**
  * ====================================================================
- * PLATFORM YÖNETİMİ - POLİTİKA AYARLARI (PAZARLAMA KURALLARI)
+ * PLATFORM YÖNETİMİ - KURALLAR (İŞ AKIŞI & PAZARLAMA POLİTİKASI)
  * ====================================================================
  */
 
@@ -12,69 +12,131 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_staff_login();
 require_module_permission('platform.manage');
 
-$fields = [
-    'platform_pool_enabled'          => ['bool', 'Freelancer iş havuzu açık', 'Kapalıyken freelancer\'lar havuzu göremez; yalnızca doğrudan atadığınız işleri görürler.'],
-    'platform_freelancer_signup'     => ['bool', 'Freelancer başvurusu açık', 'Giriş sayfasında "Freelancer Başvurusu" butonu görünür.'],
-    'platform_agency_signup'         => ['bool', 'Ajans kaydı açık', 'Giriş sayfasında "Ajans Kaydı" butonu görünür.'],
-    'platform_show_agency_name'      => ['bool', 'Freelancer ajans adını görsün', 'Kapalıyken freelancer işin hangi ajansa ait olduğunu bilmez (müşteri koruması).'],
-    'platform_qa_required'           => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Açıkken teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
-    'platform_auto_invoice'          => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
-    'platform_max_active_jobs'       => ['int', 'Freelancer başına eşzamanlı iş limiti', 'Bir freelancer aynı anda en fazla bu kadar iş alabilir.'],
-    'platform_default_margin'        => ['int', 'Varsayılan platform marjı (%)', 'Freelancer ücreti önerisi bu marja göre hesaplanır.'],
-    'platform_default_priority_hours'=> ['int', 'Yeni işlerde öncelikli erişim süresi (saat)', 'İşe öncelikli seviye seçildiğinde, diğer seviyeler bu süre dolunca işi görür.'],
-    'platform_max_revisions'         => ['int', 'Ücretsiz revizyon hakkı', 'Ajansa gösterilir; aşıldığında ek ücret uyarısı çıkar.'],
-    'platform_freelancer_vat'        => ['int', 'Freelancer hakediş KDV oranı (%)', 'Şahıs freelancer\'lar için genellikle 0.'],
+// [tip, etiket, açıklama, (int için) min, max, birim]
+$sections = [
+    'Sipariş akışı' => [
+        'platform_auto_publish'      => ['bool', 'Katalog siparişleri onaysız yayına alınsın', 'Ajans katalogdan sipariş verdiğinde iş doğrudan havuza düşer. Kapalıyken her sipariş önce sizin onayınızı bekler. Özel talepler her durumda fiyat teklifi bekler.'],
+        'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
+        'platform_auto_invoice'      => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
+        'platform_max_revisions'     => ['int', 'Ücretsiz revizyon hakkı', 'Ajansa gösterilir; aşıldığında ek ücret uyarısı çıkar.', 0, 20, 'adet'],
+        'platform_default_margin'    => ['int', 'Özel tekliflerde varsayılan marj', 'Freelancer ücreti önerisi bu marja göre hesaplanır.', 0, 90, '%'],
+        'platform_freelancer_vat'    => ['int', 'Freelancer hakediş KDV oranı', 'Şahıs freelancer\'lar için genellikle 0.', 0, 30, '%'],
+    ],
+    'Termin ve acil işler' => [
+        'platform_block_same_day'        => ['bool', 'Aynı gün başlayan işler alınmasın', 'Başlangıç (çekim) tarihi bugün olan siparişler reddedilir.'],
+        'platform_min_lead_hours'        => ['int', 'En kısa sipariş süresi', 'Başlangıca bu süreden az kalan siparişler alınmaz. Hizmet bazında daha uzun süre katalogdan tanımlanabilir.', 0, 720, 'saat'],
+        'platform_warn_lead_hours'       => ['int', 'Acil iş eşiği', 'Başlangıca bu süreden az kalan siparişler acil sayılır; ajans uyarılır ve onay ister.', 0, 720, 'saat'],
+        'platform_rush_fee_percent'      => ['int', 'Acil iş farkı', 'Acil siparişlerin tutarına eklenir. 0 ise fark alınmaz.', 0, 200, '%'],
+        'platform_rush_freelancer_share' => ['int', 'Acil farkından freelancer payı', 'Acil iş farkının bu kadarı freelancer hakedişine prim olarak eklenir.', 0, 100, '%'],
+    ],
+    'Freelancer seviyeleri ve kapasite' => [
+        'platform_auto_tier'      => ['bool', 'Seviyeler performansa göre otomatik güncellensin', 'Her tamamlanan iş ve değerlendirme sonrası puan hesaplanır; seviye kurallarına göre yükselir veya düşer. Elle sabitlenen seviyeler etkilenmez.'],
+        'platform_limit_standard' => ['int', 'Standart · eşzamanlı aktif iş', 'Atanmış, üretimde, kalite kontrolde, revizyonda veya ajans onayında olan işler sayılır.', 1, 50, 'iş'],
+        'platform_limit_silver'   => ['int', 'Silver · eşzamanlı aktif iş', '', 1, 50, 'iş'],
+        'platform_limit_gold'     => ['int', 'Gold · eşzamanlı aktif iş', '', 1, 50, 'iş'],
+        'platform_limit_elite'    => ['int', 'Elite · eşzamanlı aktif iş', '', 1, 50, 'iş'],
+    ],
+    'Görünürlük (pazarlama politikası)' => [
+        'platform_pool_enabled'           => ['bool', 'Freelancer iş havuzu açık', 'Kapalıyken freelancer\'lar havuzu göremez; yalnızca doğrudan atadığınız işleri görür.'],
+        'platform_default_priority_tier'  => ['tier', 'Yeni siparişlerde öncelikli seviye', 'Seçilirse yeni işler önce bu seviye ve üstüne açılır.'],
+        'platform_default_priority_hours' => ['int', 'Öncelikli erişim süresi', 'Süre dolunca iş diğer uygun seviyelere de açılır.', 0, 720, 'saat'],
+        'platform_show_agency_name'       => ['bool', 'Freelancer ajans adını görsün', 'Kapalıyken freelancer işin hangi ajansa ait olduğunu bilmez.'],
+    ],
+    'Kayıt' => [
+        'platform_agency_signup'     => ['bool', 'Ajans kaydı açık', 'Giriş sayfasında "Ajans kaydı" bağlantısı görünür.'],
+        'platform_freelancer_signup' => ['bool', 'Freelancer başvurusu açık', 'Giriş sayfasında "Freelancer başvurusu" bağlantısı görünür.'],
+    ],
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES (?, ?, 'platform') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
-    foreach ($fields as $key => [$type]) {
-        $val = $type === 'bool' ? (isset($_POST[$key]) ? '1' : '0') : (string)max(0, min(1000, (int)($_POST[$key] ?? 0)));
-        $stmt->execute([$key, $val]);
+    $vals = [];
+    foreach ($sections as $fields) {
+        foreach ($fields as $key => $def) {
+            $type = $def[0];
+            if ($type === 'bool') {
+                $vals[$key] = isset($_POST[$key]) ? '1' : '0';
+            } elseif ($type === 'tier') {
+                $vals[$key] = array_key_exists($_POST[$key] ?? '', FREELANCER_TIERS) ? $_POST[$key] : '';
+            } else {
+                $vals[$key] = (string)max($def[3], min($def[4], (int)($_POST[$key] ?? 0)));
+            }
+        }
     }
-    log_activity('platform', 'Platform politika ayarları güncellendi', null, null, '/modules/platform/settings.php');
-    set_flash('success', 'Platform politikası kaydedildi.');
+    // Acil eşiği en kısa sipariş süresinden kısa olamaz
+    if ((int)$vals['platform_warn_lead_hours'] < (int)$vals['platform_min_lead_hours']) {
+        $vals['platform_warn_lead_hours'] = $vals['platform_min_lead_hours'];
+    }
+    // Üst seviyenin limiti alt seviyeden az olamaz
+    $prev = 0;
+    foreach (array_keys(FREELANCER_TIERS) as $t) {
+        $k = "platform_limit_{$t}";
+        $vals[$k] = (string)max($prev, (int)$vals[$k]);
+        $prev = (int)$vals[$k];
+    }
+    foreach ($vals as $k => $v) {
+        $stmt->execute([$k, $v]);
+    }
+    log_activity('platform', 'Platform kuralları güncellendi', null, null, '/modules/platform/settings.php');
+    set_flash('success', 'Platform kuralları kaydedildi.');
     redirect(BASE_URL . '/modules/platform/settings.php');
 }
 
-$page_title = 'Platform Politika Ayarları';
+$page_title = 'Platform kuralları';
 require_once __DIR__ . '/../../includes/header.php';
 ?>
-<div class="max-w-3xl mx-auto">
-    <a href="<?= BASE_URL ?>/modules/platform/index.php" class="text-xs font-semibold text-slate-500">← İş Platformu</a>
-    <h1 class="text-2xl font-black text-slate-900">Platform Politika Ayarları</h1>
-    <p class="text-xs text-slate-500 mb-5">Genel kurallar. İş bazında görünürlük (seviye, öncelik, seçili freelancer'lar) her işin kendi sayfasından ayrıca ayarlanır.</p>
-
-    <form method="POST" action="" class="bg-white border border-slate-200 rounded-3xl divide-y divide-slate-100">
-        <?= csrf_field() ?>
-        <?php foreach ($fields as $key => [$type, $label, $help]): ?>
-        <div class="p-5 flex items-center justify-between gap-4">
-            <div>
-                <p class="text-sm font-bold text-slate-900"><?= e($label) ?></p>
-                <p class="text-xs text-slate-500"><?= e($help) ?></p>
-            </div>
-            <?php if ($type === 'bool'): ?>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                    <input type="checkbox" name="<?= $key ?>" value="1" <?= platform_setting($key) === '1' ? 'checked' : '' ?> class="sr-only peer">
-                    <div class="w-11 h-6 bg-slate-200 rounded-full peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                </label>
-            <?php else: ?>
-                <input type="number" name="<?= $key ?>" value="<?= e(platform_setting($key)) ?>" min="0" class="w-24 py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-right font-bold flex-shrink-0">
-            <?php endif; ?>
-        </div>
-        <?php endforeach; ?>
-        <div class="p-5 flex justify-end"><button class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl">Kaydet</button></div>
-    </form>
-
-    <div class="mt-6 p-5 bg-slate-900 text-slate-200 rounded-3xl text-xs space-y-2">
-        <p class="font-bold text-white text-sm">Pazarlama politikası nasıl uygulanır?</p>
-        <p>• <strong>Seviye (tier):</strong> Freelancer'lara Standart / Silver / Gold / Elite seviyesi verin. İşlerde "asgari seviye" seçerek değerli işleri yalnızca üst seviyelere açın.</p>
-        <p>• <strong>Öncelikli erişim:</strong> Bir işi örneğin ilk 24 saat yalnızca Gold+ seviyeye gösterin; süre dolunca diğerlerine açılır. Bu, iyi çalışanları ödüllendirir.</p>
-        <p>• <strong>Seçili liste:</strong> Bir işi yalnızca güvendiğiniz birkaç kişiye özel yayınlayın.</p>
-        <p>• <strong>Gizli (ekibe özel):</strong> İş hiçbir freelancer'a görünmez; siz üstlenir veya doğrudan atarsınız.</p>
-        <p>• <strong>Uzmanlık / şehir eşleşmesi:</strong> Çekim işlerini sadece o şehirdeki kameramanlara gösterin.</p>
-        <p>• İş sayfasındaki <strong>"Bu işi kimler görüyor?"</strong> listesinden kuralların etkisini anında görebilirsiniz.</p>
+<div style="max-width:880px">
+<div class="page-head">
+    <div>
+        <div class="crumb"><a href="<?= BASE_URL ?>/modules/platform/index.php">İş merkezi</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Kurallar</span></div>
+        <h1 class="h1">Platform kuralları</h1>
+        <p class="sub">Genel kurallar. İş bazında görünürlük (seviye, öncelik, seçili kişiler) her işin kendi sayfasından ayrıca ayarlanır.</p>
     </div>
+    <?php if (can_access_module('platform.pricing')): ?><a href="<?= BASE_URL ?>/modules/platform/catalog.php" class="btn btn-secondary"><i data-lucide="tag"></i>Hizmet kataloğu</a><?php endif; ?>
+</div>
+
+<form method="POST" action="" class="stack-lg">
+    <?= csrf_field() ?>
+    <?php foreach ($sections as $title => $fields): ?>
+    <section class="card">
+        <div class="card-head"><p class="card-title"><?= e($title) ?></p></div>
+        <div class="divide">
+            <?php foreach ($fields as $key => $def): [$type, $label, $help] = $def; ?>
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;align-items:center;gap:20px">
+                <div style="min-width:0">
+                    <p class="small" style="font-weight:500"><?= e($label) ?></p>
+                    <?php if ($help !== ''): ?><p class="xsmall text-muted" style="margin-top:2px;max-width:560px"><?= e($help) ?></p><?php endif; ?>
+                </div>
+                <?php if ($type === 'bool'): ?>
+                    <label class="switch"><input type="checkbox" name="<?= $key ?>" value="1" <?= platform_setting($key) === '1' ? 'checked' : '' ?>><span></span></label>
+                <?php elseif ($type === 'tier'): ?>
+                    <select class="select" name="<?= $key ?>" style="width:150px;flex-shrink:0">
+                        <option value="">Yok</option>
+                        <?php foreach (FREELANCER_TIERS as $tk => $tv): if ($tk === 'standard') continue; ?><option value="<?= $tk ?>" <?= platform_setting($key) === $tk ? 'selected' : '' ?>><?= e($tv['label']) ?>+</option><?php endforeach; ?>
+                    </select>
+                <?php else: ?>
+                    <div class="input-group" style="width:150px;flex-shrink:0">
+                        <input class="input" type="number" name="<?= $key ?>" value="<?= e(platform_setting($key)) ?>" min="<?= $def[3] ?>" max="<?= $def[4] ?>" style="text-align:right">
+                        <span class="addon"><?= e($def[5]) ?></span>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($title === 'Freelancer seviyeleri ve kapasite'): ?>
+        <div class="card-foot">
+            <p class="xsmall text-muted" style="margin-bottom:8px">Otomatik seviye kuralları (puan 0–100: %35 değerlendirme, %25 zamanında teslim, %20 kalite kontrol, %10 revizyon, %10 güvenilirlik):</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <?php foreach (FREELANCER_TIER_RULES as $tk => $rule): ?>
+                    <span class="panel xsmall" style="padding:6px 10px;display:inline-flex;gap:8px;align-items:center"><?= tier_badge($tk) ?> puan <?= $rule['score'] ?>+ · <?= $rule['jobs'] ?>+ tamamlanan iş</span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </section>
+    <?php endforeach; ?>
+    <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary">Kuralları kaydet</button></div>
+</form>
 </div>
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

@@ -1,83 +1,112 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - İŞ PAZARYERİ ÇEKİRDEĞİ
+ * RY MEDYA PLATFORM - İŞ PAZARYERİ ÇEKİRDEĞİ (v2)
  * ====================================================================
- * Roller:
- *   - Platform yöneticisi (RY Medya personeli, platform.manage izni)
- *   - Ajans (iş veren)      : iş talebi girer, fiyatı onaylar, teslimi onaylar
- *   - Freelancer (iş alan)  : görünür işleri alır / başvurur, teslim eder
+ * Roller
+ *   Platform yöneticisi : RY Medya personeli (platform.manage)
+ *   Ajans               : katalogdan sipariş verir veya özel teklif ister
+ *   Freelancer          : görünür kılınan işleri alır / teklif verir, teslim eder
  *
- * İş akışı:
- *   submitted → (quote_sent) → open → assigned → in_progress
- *     → qa_review → delivered → completed
- *   (revision: teslimden sonra geri dönüş; cancelled: iptal)
+ * Sipariş akışı (katalog)
+ *   Ajans hizmetleri seçer → fiyat anında hesaplanır → sipariş verir
+ *   → (otomatik yayın veya yönetici onayı) → havuz → atama → üretim
+ *   → kalite kontrol → teslim → ajans onayı → kapanış (fatura + hakediş)
  *
- * Ajans ile freelancer birbirini görmez. Ajansın ödediği tutar
- * (agency_price) ile freelancer'a ödenen ücret (freelancer_fee) ayrıdır.
+ * Özel iş akışı (katalog dışı)
+ *   Ajans özel talep girer → yönetici fiyatlar → ajans onaylar → havuz ...
+ *
+ * Kurallar
+ *   - Ajans ve freelancer birbirini görmez; freelancer ajans fiyatını görmez.
+ *   - Termin: aynı gün / çok yakın tarihli işler engellenir veya acil
+ *     ücretiyle kabul edilir (ayarlanabilir).
+ *   - Freelancer'ın aynı anda alabileceği iş sayısı seviyesine bağlıdır.
+ *   - Seviye, performans puanına göre otomatik hesaplanabilir.
  */
 
 const JOB_CATEGORIES = [
-    'shooting'        => ['label' => 'Çekim / Kameraman',          'icon' => 'video'],
-    'editing'         => ['label' => 'Kurgu / Montaj',             'icon' => 'scissors'],
-    'color'           => ['label' => 'Color Grading',              'icon' => 'palette'],
-    'sound'           => ['label' => 'Ses Kayıt / Miksaj',          'icon' => 'mic'],
-    'motion'          => ['label' => 'Motion Graphics / Animasyon', 'icon' => 'sparkles'],
-    'drone'           => ['label' => 'Drone Çekimi',               'icon' => 'navigation'],
-    'photo'           => ['label' => 'Fotoğraf Çekimi',            'icon' => 'camera'],
-    'social'          => ['label' => 'Sosyal Medya İçerik',        'icon' => 'smartphone'],
-    'full_production' => ['label' => 'Komple Prodüksiyon',         'icon' => 'clapperboard'],
-    'other'           => ['label' => 'Diğer',                      'icon' => 'package'],
+    'shooting'        => ['label' => 'Çekim / Kamera',              'icon' => 'video',        'onsite' => true],
+    'drone'           => ['label' => 'Drone Çekimi',                'icon' => 'navigation',   'onsite' => true],
+    'photo'           => ['label' => 'Fotoğraf',                    'icon' => 'camera',       'onsite' => true],
+    'editing'         => ['label' => 'Kurgu / Montaj',              'icon' => 'scissors',     'onsite' => false],
+    'color'           => ['label' => 'Color Grading',               'icon' => 'palette',      'onsite' => false],
+    'sound'           => ['label' => 'Ses Kayıt / Miksaj',          'icon' => 'audio-lines',  'onsite' => false],
+    'motion'          => ['label' => 'Motion Graphics',             'icon' => 'shapes',       'onsite' => false],
+    'social'          => ['label' => 'Sosyal Medya İçerik',         'icon' => 'smartphone',   'onsite' => false],
+    'full_production' => ['label' => 'Komple Prodüksiyon',          'icon' => 'clapperboard', 'onsite' => true],
+    'other'           => ['label' => 'Diğer',                       'icon' => 'package',      'onsite' => false],
 ];
+
+const SERVICE_UNITS = ['gün' => 'Gün', 'yarım gün' => 'Yarım gün', 'saat' => 'Saat', 'adet' => 'Adet', 'dakika' => 'Dakika', 'paket' => 'Paket', 'proje' => 'Proje'];
 
 const FREELANCER_TIERS = [
-    'standard' => ['label' => 'Standart', 'rank' => 1, 'color' => 'bg-slate-100 text-slate-700 border-slate-300'],
-    'silver'   => ['label' => 'Silver',   'rank' => 2, 'color' => 'bg-zinc-200 text-zinc-800 border-zinc-400'],
-    'gold'     => ['label' => 'Gold',     'rank' => 3, 'color' => 'bg-amber-100 text-amber-800 border-amber-400'],
-    'elite'    => ['label' => 'Elite',    'rank' => 4, 'color' => 'bg-violet-100 text-violet-800 border-violet-400'],
+    'standard' => ['label' => 'Standart', 'rank' => 1, 'tone' => 'neutral'],
+    'silver'   => ['label' => 'Silver',   'rank' => 2, 'tone' => 'info'],
+    'gold'     => ['label' => 'Gold',     'rank' => 3, 'tone' => 'warning'],
+    'elite'    => ['label' => 'Elite',    'rank' => 4, 'tone' => 'violet'],
 ];
 
-// Her durum için: yönetici / ajans / freelancer gözünden etiket ve renk
+// Otomatik seviye için asgari performans puanı ve tamamlanan iş sayısı
+const FREELANCER_TIER_RULES = [
+    'silver' => ['score' => 65, 'jobs' => 3],
+    'gold'   => ['score' => 78, 'jobs' => 8],
+    'elite'  => ['score' => 90, 'jobs' => 15],
+];
+
+// Her durum: yönetici / ajans / freelancer gözünden etiket ve renk tonu
 const JOB_STATUSES = [
-    'submitted'   => ['staff' => 'Yeni Talep (İnceleme)',        'agency' => 'İnceleniyor',                    'freelancer' => '—',                         'color' => 'bg-sky-100 text-sky-800 border-sky-300'],
-    'quote_sent'  => ['staff' => 'Fiyat Onayı Bekleniyor',       'agency' => 'Fiyat Onayınız Bekleniyor',      'freelancer' => '—',                         'color' => 'bg-amber-100 text-amber-800 border-amber-300'],
-    'open'        => ['staff' => 'Havuzda / Atama Bekliyor',     'agency' => 'Ekip Atanıyor',                  'freelancer' => 'Alınabilir',                'color' => 'bg-indigo-100 text-indigo-800 border-indigo-300'],
-    'assigned'    => ['staff' => 'Atandı',                       'agency' => 'Ekip Atandı',                    'freelancer' => 'Size Atandı - Başlamayı Bekliyor', 'color' => 'bg-blue-100 text-blue-800 border-blue-300'],
-    'in_progress' => ['staff' => 'Çalışılıyor',                  'agency' => 'Çalışılıyor',                    'freelancer' => 'Çalışıyorsunuz',            'color' => 'bg-cyan-100 text-cyan-800 border-cyan-300'],
-    'qa_review'   => ['staff' => 'Kalite Kontrolde',             'agency' => 'Teslime Hazırlanıyor',           'freelancer' => 'Kalite Kontrolde',          'color' => 'bg-purple-100 text-purple-800 border-purple-300'],
-    'revision'    => ['staff' => 'Revizyonda',                   'agency' => 'Revizyonda',                     'freelancer' => 'Revizyon İstendi',          'color' => 'bg-orange-100 text-orange-800 border-orange-300'],
-    'delivered'   => ['staff' => 'Ajans Onayı Bekleniyor',       'agency' => 'Teslim Edildi - Onayınız Bekleniyor', 'freelancer' => 'Müşteri Onayında',     'color' => 'bg-teal-100 text-teal-800 border-teal-300'],
-    'completed'   => ['staff' => 'Tamamlandı',                   'agency' => 'Tamamlandı',                     'freelancer' => 'Tamamlandı',                'color' => 'bg-emerald-100 text-emerald-800 border-emerald-300'],
-    'cancelled'   => ['staff' => 'İptal',                        'agency' => 'İptal Edildi',                   'freelancer' => 'İptal',                     'color' => 'bg-rose-100 text-rose-800 border-rose-300'],
+    'submitted'   => ['staff' => 'Onay bekliyor',        'agency' => 'İnceleniyor',              'freelancer' => '—',                   'tone' => 'info'],
+    'quote_sent'  => ['staff' => 'Teklif ajansta',       'agency' => 'Fiyat onayınızda',         'freelancer' => '—',                   'tone' => 'warning'],
+    'open'        => ['staff' => 'Havuzda',              'agency' => 'Ekip atanıyor',            'freelancer' => 'Alınabilir',          'tone' => 'accent'],
+    'assigned'    => ['staff' => 'Atandı',               'agency' => 'Ekip atandı',              'freelancer' => 'Başlamanız bekleniyor', 'tone' => 'info'],
+    'in_progress' => ['staff' => 'Üretimde',             'agency' => 'Üretimde',                 'freelancer' => 'Üretimde',            'tone' => 'info'],
+    'qa_review'   => ['staff' => 'Kalite kontrolde',     'agency' => 'Teslime hazırlanıyor',     'freelancer' => 'Kalite kontrolde',    'tone' => 'violet'],
+    'revision'    => ['staff' => 'Revizyonda',           'agency' => 'Revizyonda',               'freelancer' => 'Revizyon istendi',    'tone' => 'warning'],
+    'delivered'   => ['staff' => 'Ajans onayında',       'agency' => 'Teslim edildi',            'freelancer' => 'Müşteri onayında',    'tone' => 'violet'],
+    'completed'   => ['staff' => 'Tamamlandı',           'agency' => 'Tamamlandı',               'freelancer' => 'Tamamlandı',          'tone' => 'success'],
+    'cancelled'   => ['staff' => 'İptal',                'agency' => 'İptal edildi',             'freelancer' => 'İptal',               'tone' => 'danger'],
 ];
 
-// Freelancer üzerinde "aktif" sayılan durumlar (eşzamanlı iş limiti için)
 const JOB_ACTIVE_STATUSES = ['assigned', 'in_progress', 'qa_review', 'revision', 'delivered'];
 
 const JOB_VISIBILITY = [
-    'pool'     => 'Havuz (kurallara uyan tüm onaylı freelancer\'lar)',
-    'selected' => 'Sadece seçtiğim freelancer\'lar',
-    'internal' => 'Gizli - Sadece ekibim (freelancer görmez)',
+    'pool'     => 'Havuz — kurallara uyan onaylı freelancer\'lar',
+    'selected' => 'Seçili freelancer\'lar',
+    'internal' => 'Ekibe özel — freelancer görmez',
 ];
 
 const JOB_DISPATCH = [
-    'first_come'  => 'İlk alan alır (anında atama)',
-    'application' => 'Başvuru topla, ben seçeyim',
+    'first_come'  => 'İlk alan alır',
+    'application' => 'Teklif topla, ben seçeyim',
 ];
 
 // Platform politikası varsayılanları (Platform Ayarları ekranından değiştirilir)
 const PLATFORM_DEFAULTS = [
-    'platform_pool_enabled'          => '1',  // Freelancer iş havuzu açık mı?
-    'platform_freelancer_signup'     => '1',  // Freelancer kaydı açık mı?
-    'platform_agency_signup'         => '1',  // Ajans kaydı açık mı?
-    'platform_show_agency_name'      => '0',  // Freelancer ajans adını görsün mü?
-    'platform_qa_required'           => '1',  // Freelancer teslimleri önce kalite kontrole mi düşsün?
-    'platform_max_active_jobs'       => '3',  // Freelancer başına eşzamanlı iş limiti
-    'platform_default_margin'        => '25', // Freelancer ücreti önerisi için varsayılan platform marjı (%)
-    'platform_default_priority_hours'=> '0',  // Yeni işlerde üst seviyelere öncelik süresi (saat)
-    'platform_auto_invoice'          => '1',  // İş tamamlanınca ajansa satış faturası otomatik kesilsin mi?
-    'platform_freelancer_vat'        => '0',  // Freelancer alış faturası KDV oranı
-    'platform_max_revisions'         => '2',  // Ücretsiz revizyon hakkı
+    'platform_pool_enabled'          => '1',
+    'platform_freelancer_signup'     => '1',
+    'platform_agency_signup'         => '1',
+    'platform_show_agency_name'      => '0',
+    'platform_qa_required'           => '1',
+    'platform_auto_invoice'          => '1',
+    'platform_auto_publish'          => '1',  // Katalog siparişleri yönetici onayı beklemeden havuza düşsün
+    'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
+    'platform_default_margin'        => '25',
+    'platform_default_priority_tier' => '',   // Yeni siparişlerde öncelikli seviye (boş = yok)
+    'platform_default_priority_hours'=> '0',
+    'platform_max_revisions'         => '2',
+    'platform_freelancer_vat'        => '0',
+    // Termin kuralları
+    'platform_block_same_day'        => '1',  // Aynı gün başlayan işler alınmasın
+    'platform_min_lead_hours'        => '24', // Bundan kısa sürede başlayan işler engellenir
+    'platform_warn_lead_hours'       => '72', // Bundan kısa sürede başlayan işler "acil" sayılır
+    'platform_rush_fee_percent'      => '25', // Acil iş ek ücreti (%) — 0 ise acil iş ücretsiz kabul edilir
+    'platform_rush_freelancer_share' => '60', // Acil ücretinin freelancer'a aktarılan payı (%)
+    // Seviye bazlı eşzamanlı iş limitleri
+    'platform_limit_standard'        => '1',
+    'platform_limit_silver'          => '2',
+    'platform_limit_gold'            => '3',
+    'platform_limit_elite'           => '5',
+    'platform_catalog_reviewed'      => '0',
 ];
 
 function platform_setting(string $key): string {
@@ -88,18 +117,39 @@ function tier_rank(?string $tier): int {
     return FREELANCER_TIERS[$tier ?? 'standard']['rank'] ?? 1;
 }
 
+function tier_label(?string $tier): string {
+    return FREELANCER_TIERS[$tier ?? 'standard']['label'] ?? 'Standart';
+}
+
+function tier_job_limit(?string $tier): int {
+    return max(0, (int)platform_setting('platform_limit_' . ($tier ?: 'standard')));
+}
+
+function job_status_label(string $status, string $perspective = 'staff'): string {
+    return JOB_STATUSES[$status][$perspective] ?? JOB_STATUSES[$status]['staff'] ?? $status;
+}
+
 function job_status_badge(string $status, string $perspective = 'staff'): string {
-    $s = JOB_STATUSES[$status] ?? ['staff' => $status, 'agency' => $status, 'freelancer' => $status, 'color' => 'bg-slate-100 text-slate-700 border-slate-300'];
-    return '<span class="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold border ' . $s['color'] . '">' . e($s[$perspective] ?? $s['staff']) . '</span>';
+    $tone = JOB_STATUSES[$status]['tone'] ?? 'neutral';
+    return ui_badge(job_status_label($status, $perspective), $tone, true);
+}
+
+function tier_badge(?string $tier): string {
+    $t = FREELANCER_TIERS[$tier ?? 'standard'] ?? FREELANCER_TIERS['standard'];
+    return ui_badge($t['label'], $t['tone']);
 }
 
 function job_category_label(?string $key): string {
     return JOB_CATEGORIES[$key]['label'] ?? ($key ?: '-');
 }
 
+function job_category_icon(?string $key): string {
+    return JOB_CATEGORIES[$key]['icon'] ?? 'package';
+}
+
 /**
  * ====================================================================
- * MIGRATION (v3) - platform tabloları
+ * MIGRATION (v3)
  * ====================================================================
  */
 function run_platform_migrations(): void {
@@ -240,6 +290,127 @@ function run_platform_migrations(): void {
     get_role_id_by_slug('freelancer', 'Freelancer (Platform İş Alan)', 'Platformdan iş alan serbest çalışan hesapları');
 }
 
+/**
+ * ====================================================================
+ * MIGRATION (v4) - katalog, sipariş kalemleri, değişiklik günlüğü,
+ * performans metrikleri, yazışma başlıkları
+ * ====================================================================
+ */
+function run_platform_migrations_v4(): void {
+    global $db;
+
+    $db->query("CREATE TABLE IF NOT EXISTS `platform_services` (
+          `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          `category` VARCHAR(30) NOT NULL,
+          `name` VARCHAR(150) NOT NULL,
+          `description` VARCHAR(500) NULL,
+          `unit` VARCHAR(20) NOT NULL DEFAULT 'adet',
+          `agency_price` DECIMAL(15,2) NOT NULL DEFAULT 0,
+          `freelancer_fee` DECIMAL(15,2) NOT NULL DEFAULT 0,
+          `min_tier` VARCHAR(20) NOT NULL DEFAULT 'standard',
+          `min_lead_hours` INT NOT NULL DEFAULT 0,
+          `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+          `sort_order` INT NOT NULL DEFAULT 0,
+          `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $db->query("CREATE TABLE IF NOT EXISTS `platform_job_items` (
+          `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          `job_id` INT UNSIGNED NOT NULL,
+          `service_id` INT UNSIGNED NULL,
+          `name` VARCHAR(150) NOT NULL,
+          `unit` VARCHAR(20) NOT NULL,
+          `quantity` DECIMAL(10,2) NOT NULL DEFAULT 1,
+          `agency_unit_price` DECIMAL(15,2) NOT NULL DEFAULT 0,
+          `freelancer_unit_fee` DECIMAL(15,2) NOT NULL DEFAULT 0,
+          KEY `idx_job` (`job_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $db->query("CREATE TABLE IF NOT EXISTS `platform_job_changes` (
+          `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          `job_id` INT UNSIGNED NOT NULL,
+          `user_id` INT UNSIGNED NULL,
+          `actor` VARCHAR(20) NOT NULL,
+          `field_label` VARCHAR(100) NOT NULL,
+          `old_value` TEXT NULL,
+          `new_value` TEXT NULL,
+          `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          KEY `idx_job` (`job_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $add = function (string $table, string $column, string $ddl) use ($db) {
+        if (!column_exists($table, $column)) {
+            $db->query("ALTER TABLE `{$table}` ADD COLUMN {$ddl}");
+        }
+    };
+    $add('platform_jobs', 'pricing_source', "`pricing_source` VARCHAR(20) NOT NULL DEFAULT 'custom'");
+    $add('platform_jobs', 'is_rush', "`is_rush` TINYINT(1) NOT NULL DEFAULT 0");
+    $add('platform_jobs', 'rush_fee', "`rush_fee` DECIMAL(15,2) NOT NULL DEFAULT 0");
+    $add('platform_jobs', 'first_delivered_at', "`first_delivered_at` DATETIME NULL");
+    $add('platform_jobs', 'agency_notes', "`agency_notes` TEXT NULL");
+    $add('platform_messages', 'thread_user_id', "`thread_user_id` INT UNSIGNED NULL");
+    $add('platform_applications', 'reject_reason', "`reject_reason` TEXT NULL");
+    $add('platform_applications', 'available_from', "`available_from` DATE NULL");
+    $add('platform_applications', 'reviewed_at', "`reviewed_at` DATETIME NULL");
+    foreach ([
+        'score' => "`score` DECIMAL(5,2) NULL",
+        'on_time_rate' => "`on_time_rate` DECIMAL(5,2) NULL",
+        'qa_pass_rate' => "`qa_pass_rate` DECIMAL(5,2) NULL",
+        'avg_revisions' => "`avg_revisions` DECIMAL(5,2) NULL",
+        'agency_rating_avg' => "`agency_rating_avg` DECIMAL(3,2) NULL",
+        'releases_count' => "`releases_count` INT NOT NULL DEFAULT 0",
+        'removed_count' => "`removed_count` INT NOT NULL DEFAULT 0",
+        'late_count' => "`late_count` INT NOT NULL DEFAULT 0",
+        'tier_locked' => "`tier_locked` TINYINT(1) NOT NULL DEFAULT 0",
+        'metrics_updated_at' => "`metrics_updated_at` DATETIME NULL",
+    ] as $col => $ddl) {
+        $add('freelancer_profiles', $col, $ddl);
+    }
+
+    // Eski freelancer mesajları atanan kişinin başlığına taşınır
+    $db->query("UPDATE platform_messages m JOIN platform_jobs j ON j.id = m.job_id SET m.thread_user_id = j.assigned_user_id WHERE m.channel = 'freelancer' AND m.thread_user_id IS NULL");
+
+    // Örnek hizmet kataloğu (yönetici fiyatları güncellemeli)
+    if ((int)$db->query("SELECT COUNT(*) FROM platform_services")->fetchColumn() === 0) {
+        $seed = [
+            ['shooting', 'Kameraman — tam gün (10 saat)', 'Kamera, temel lens seti ve operatör dahil', 'gün', 9000, 6500, 'standard', 48],
+            ['shooting', 'Kameraman — yarım gün (5 saat)', 'Kısa röportaj, etkinlik veya ürün çekimi', 'yarım gün', 5500, 4000, 'standard', 48],
+            ['shooting', 'Işık & ses ekipman paketi', 'LED ışık seti, yaka ve boom mikrofon', 'gün', 4000, 3000, 'standard', 48],
+            ['drone', 'Drone çekimi', 'Lisanslı pilot; uçuş izni için en az 72 saat gerekir', 'gün', 8000, 6000, 'silver', 72],
+            ['photo', 'Fotoğraf çekimi — yarım gün', 'Retuşlu 20 kare teslim', 'yarım gün', 5000, 3600, 'standard', 48],
+            ['editing', 'Kurgu — kısa video (60 sn\'ye kadar)', '2 revizyon dahil', 'adet', 3500, 2500, 'standard', 48],
+            ['editing', 'Kurgu — uzun video (5 dk\'ya kadar)', '2 revizyon dahil', 'adet', 9000, 6500, 'silver', 72],
+            ['color', 'Color grading', '60 sn\'ye kadar, LUT ve teslim formatları dahil', 'adet', 2500, 1800, 'silver', 48],
+            ['sound', 'Ses miksajı & mastering', 'Müzik, VO ve efekt dengesi', 'adet', 2000, 1400, 'standard', 24],
+            ['motion', 'Motion graphics (30 sn\'ye kadar)', 'Logo animasyonu, alt yazı, grafik paket', 'adet', 6000, 4300, 'silver', 72],
+            ['social', 'Dikey video paketi (3 adet Reels/TikTok)', 'Mevcut görüntülerden 9:16 kurgu', 'paket', 7500, 5300, 'standard', 48],
+        ];
+        $ins = $db->prepare("INSERT INTO platform_services (category, name, description, unit, agency_price, freelancer_fee, min_tier, min_lead_hours, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)");
+        foreach ($seed as $i => $row) {
+            $ins->execute(array_merge($row, [$i]));
+        }
+    }
+
+    // İzinler: kalıcı silme ve katalog/fiyat yönetimi rol olarak atanabilir
+    ensure_permission('platform.delete', 'Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog)', 'platform', 'settings.manage');
+    ensure_permission('platform.pricing', 'Hizmet kataloğu ve fiyatları yönetme', 'platform', 'settings.manage');
+
+    ensure_permission('platform.manage', MODULE_PERMISSIONS['platform.manage']['description'], 'platform', 'projects.edit');
+
+    // Hazır rol: Platform Yöneticisi (iş merkezi + katalog + kalıcı silme). Roller sayfasından kişilere atanır.
+    $chk = $db->prepare("SELECT COUNT(*) FROM roles WHERE role_slug = 'platform_admin'");
+    $chk->execute();
+    if ((int)$chk->fetchColumn() === 0) {
+        $rid = get_role_id_by_slug('platform_admin', 'Platform Yöneticisi', 'İş merkezi, hizmet kataloğu ve platform kayıtlarını kalıcı silme yetkisi');
+        $perm = $db->prepare("SELECT id FROM permissions WHERE permission_key IN ('platform.manage', 'platform.delete', 'platform.pricing')");
+        $perm->execute();
+        $grant = $db->prepare("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)");
+        foreach ($perm->fetchAll(PDO::FETCH_COLUMN) as $pid) {
+            $grant->execute([$rid, (int)$pid]);
+        }
+    }
+}
+
 function get_role_id_by_slug(string $slug, string $name, string $description = ''): int {
     global $db;
     $st = $db->prepare("SELECT id FROM roles WHERE role_slug = ? LIMIT 1");
@@ -261,10 +432,6 @@ function portal_role(): string {
     return $_SESSION['client_user']['role'] ?? 'client';
 }
 
-/**
- * Ajans / freelancer sayfaları için giriş + rol + onay kontrolü.
- * Onaysız hesaplar yalnızca bekleme ekranını ve profilini görür.
- */
 function require_platform_role(string $role, bool $require_approved = true): array {
     global $db;
     require_client_login(['agency', 'freelancer']);
@@ -277,14 +444,13 @@ function require_platform_role(string $role, bool $require_approved = true): arr
     $st->execute([$uid]);
     $profile = $st->fetch();
     if (!$profile) {
-        // Profil kaydı yoksa (eski veri) bekleyen profil oluşturulur
         $db->prepare("INSERT INTO {$table} (user_id, contact_id, status) VALUES (?, ?, 'pending')")->execute([$uid, (int)$_SESSION['client_contact_id']]);
         $st->execute([$uid]);
         $profile = $st->fetch();
     }
     if ($profile['status'] === 'suspended') {
         unset($_SESSION['client_user_id'], $_SESSION['client_contact_id'], $_SESSION['client_user']);
-        set_flash('error', 'Hesabınız askıya alınmıştır. Lütfen platform yöneticisiyle iletişime geçiniz.');
+        set_flash('error', 'Hesabınız askıya alınmıştır. Platform ekibiyle iletişime geçin.');
         redirect(BASE_URL . '/client/login.php');
     }
     if ($require_approved && $profile['status'] !== 'approved') {
@@ -314,10 +480,6 @@ function notify_contact_users(?int $contact_id, string $message, string $link, ?
     }
 }
 
-/**
- * Personele duyuru: portal kullanıcısının yaptığı işlemler zaten "client"
- * aktörüyle yayınlanır. Personelin kendi işlemleri için ayrı bildirim gerekmez.
- */
 function notify_staff(string $message, int $job_id): void {
     log_activity('platform', $message, 'job', $job_id, "/modules/platform/job.php?id={$job_id}");
 }
@@ -336,6 +498,155 @@ function portal_notifications(int $user_id, int $limit = 8): array {
         $it['is_unread'] = (int)$it['id'] > $last;
     }
     return ['unread' => (int)$cnt->fetchColumn(), 'items' => $items];
+}
+
+/**
+ * ====================================================================
+ * HİZMET KATALOĞU & FİYATLAMA
+ * ====================================================================
+ */
+function catalog_services(bool $only_active = true): array {
+    global $db;
+    return $db->query("SELECT * FROM platform_services" . ($only_active ? " WHERE is_active = 1" : "") . " ORDER BY FIELD(category, '" . implode("','", array_keys(JOB_CATEGORIES)) . "'), sort_order, id")->fetchAll();
+}
+
+/**
+ * Formdan gelen [service_id => quantity] listesini doğrular ve kalemlere çevirir.
+ */
+function build_order_items(array $quantities): array {
+    global $db;
+    $items = [];
+    if (!$quantities) {
+        return $items;
+    }
+    $ids = array_map('intval', array_keys($quantities));
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $db->prepare("SELECT * FROM platform_services WHERE is_active = 1 AND id IN ({$in})");
+    $st->execute($ids);
+    foreach ($st->fetchAll() as $svc) {
+        $qty = round((float)str_replace(',', '.', (string)($quantities[$svc['id']] ?? 0)), 2);
+        if ($qty <= 0) {
+            continue;
+        }
+        $items[] = [
+            'service_id' => (int)$svc['id'], 'name' => $svc['name'], 'unit' => $svc['unit'], 'category' => $svc['category'],
+            'quantity' => min($qty, 999), 'agency_unit_price' => (float)$svc['agency_price'], 'freelancer_unit_fee' => (float)$svc['freelancer_fee'],
+            'min_tier' => $svc['min_tier'], 'min_lead_hours' => (int)$svc['min_lead_hours'],
+        ];
+    }
+    return $items;
+}
+
+/**
+ * Kalemlerden ajans fiyatı ve freelancer ücretini hesaplar (acil ücreti dahil).
+ */
+function price_order(array $items, bool $rush): array {
+    $subtotal = 0.0;
+    $fee = 0.0;
+    foreach ($items as $it) {
+        $subtotal += $it['quantity'] * $it['agency_unit_price'];
+        $fee      += $it['quantity'] * $it['freelancer_unit_fee'];
+    }
+    $rush_pct  = $rush ? (float)platform_setting('platform_rush_fee_percent') : 0;
+    $rush_fee  = round($subtotal * $rush_pct / 100, 2);
+    $fee_bonus = round($rush_fee * (float)platform_setting('platform_rush_freelancer_share') / 100, 2);
+    return [
+        'subtotal'       => round($subtotal, 2),
+        'rush_fee'       => $rush_fee,
+        'agency_price'   => round($subtotal + $rush_fee, 2),
+        'freelancer_fee' => round($fee + $fee_bonus, 2),
+        'rush_bonus'     => $fee_bonus,
+    ];
+}
+
+function save_job_items(int $job_id, array $items): void {
+    global $db;
+    $db->prepare("DELETE FROM platform_job_items WHERE job_id = ?")->execute([$job_id]);
+    $ins = $db->prepare("INSERT INTO platform_job_items (job_id, service_id, name, unit, quantity, agency_unit_price, freelancer_unit_fee) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    foreach ($items as $it) {
+        $ins->execute([$job_id, $it['service_id'] ?? null, $it['name'], $it['unit'], $it['quantity'], $it['agency_unit_price'], $it['freelancer_unit_fee']]);
+    }
+}
+
+function job_items(int $job_id): array {
+    global $db;
+    $st = $db->prepare("SELECT ji.*, ps.category, ps.min_tier, ps.min_lead_hours FROM platform_job_items ji LEFT JOIN platform_services ps ON ps.id = ji.service_id WHERE ji.job_id = ? ORDER BY ji.id");
+    $st->execute([$job_id]);
+    return $st->fetchAll();
+}
+
+/**
+ * Siparişin baskın kategorisi (en yüksek tutarlı kalem)
+ */
+function dominant_category(array $items, string $fallback = 'other'): string {
+    $best = null;
+    $max = -1;
+    foreach ($items as $it) {
+        $v = $it['quantity'] * $it['agency_unit_price'];
+        if ($v > $max) {
+            $max = $v;
+            $best = $it['category'] ?? null;
+        }
+    }
+    return $best ?: $fallback;
+}
+
+/**
+ * ====================================================================
+ * TERMİN KURALLARI (AYNI GÜN / ACİL İŞ)
+ * ====================================================================
+ * Referans tarih: çekim/başlangıç tarihi; yoksa teslim tarihi.
+ * Saat hesabı referans günün 09:00'u baz alınarak yapılır.
+ * level: ok | warn (acil, ek ücret) | block (kabul edilmez)
+ */
+function lead_time_rules(array $items = []): array {
+    $service_min = 0;
+    foreach ($items as $it) {
+        $service_min = max($service_min, (int)($it['min_lead_hours'] ?? 0));
+    }
+    $block = max((int)platform_setting('platform_min_lead_hours'), $service_min);
+    $warn  = max((int)platform_setting('platform_warn_lead_hours'), $block);
+    return [
+        'block_hours'    => $block,
+        'warn_hours'     => $warn,
+        'block_same_day' => platform_setting('platform_block_same_day') === '1',
+        'rush_percent'   => (float)platform_setting('platform_rush_fee_percent'),
+        'service_min'    => $service_min,
+    ];
+}
+
+function assess_lead_time(?string $start_date, ?string $deadline, array $items = []): array {
+    $rules = lead_time_rules($items);
+    $ref = $start_date ?: $deadline;
+    $base = ['level' => 'ok', 'hours' => null, 'message' => '', 'rules' => $rules];
+    if (!$ref) {
+        return $base;
+    }
+    $today = date('Y-m-d');
+    $hours = (strtotime($ref . ' 09:00:00') - time()) / 3600;
+    $base['hours'] = round($hours, 1);
+    $what = $start_date ? 'Başlangıç' : 'Teslim';
+
+    if ($ref < $today) {
+        return array_merge($base, ['level' => 'block', 'message' => "{$what} tarihi geçmiş bir gün olamaz."]);
+    }
+    if ($ref === $today && $rules['block_same_day']) {
+        return array_merge($base, ['level' => 'block', 'message' => "Aynı gün başlayan işler kabul edilmiyor. {$what} tarihini en erken " . format_date(date('Y-m-d', strtotime('+' . max(1, (int)ceil($rules['block_hours'] / 24)) . ' day'))) . " olarak seçin."]);
+    }
+    if ($hours < $rules['block_hours']) {
+        $why = $rules['service_min'] >= $rules['block_hours'] && $rules['service_min'] > (int)platform_setting('platform_min_lead_hours')
+            ? 'Seçtiğiniz hizmetler için en az ' . $rules['block_hours'] . ' saat önceden sipariş gerekir.'
+            : 'İşler en az ' . $rules['block_hours'] . ' saat önceden girilmelidir.';
+        return array_merge($base, ['level' => 'block', 'message' => $why]);
+    }
+    if ($hours < $rules['warn_hours']) {
+        $msg = 'Bu iş ' . $rules['warn_hours'] . ' saatten kısa sürede başlıyor ve acil iş olarak işlenecek.';
+        if ($rules['rush_percent'] > 0) {
+            $msg .= ' Fiyata %' . rtrim(rtrim(number_format($rules['rush_percent'], 1, ',', ''), '0'), ',') . ' acil iş farkı eklenir.';
+        }
+        return array_merge($base, ['level' => 'warn', 'message' => $msg]);
+    }
+    return $base;
 }
 
 /**
@@ -363,17 +674,40 @@ function get_job(int $job_id): ?array {
     return $job ?: null;
 }
 
-function job_messages(int $job_id, string $channel): array {
+/**
+ * Mesajlar. Ajans kanalı tektir; freelancer kanalı her freelancer için ayrı başlıktır.
+ */
+function job_messages(int $job_id, string $channel, ?int $thread_user_id = null): array {
     global $db;
-    $st = $db->prepare("SELECT * FROM platform_messages WHERE job_id = ? AND channel = ? ORDER BY id ASC");
-    $st->execute([$job_id, $channel]);
+    if ($channel === 'freelancer') {
+        $st = $db->prepare("SELECT * FROM platform_messages WHERE job_id = ? AND channel = 'freelancer' AND thread_user_id = ? ORDER BY id ASC");
+        $st->execute([$job_id, (int)$thread_user_id]);
+    } else {
+        $st = $db->prepare("SELECT * FROM platform_messages WHERE job_id = ? AND channel = ? ORDER BY id ASC");
+        $st->execute([$job_id, $channel]);
+    }
     return $st->fetchAll();
 }
 
-function add_job_message(int $job_id, string $channel, string $sender_type, ?int $user_id, string $sender_name, string $message): void {
+function add_job_message(int $job_id, string $channel, string $sender_type, ?int $user_id, string $sender_name, string $message, ?int $thread_user_id = null): void {
     global $db;
-    $db->prepare("INSERT INTO platform_messages (job_id, channel, sender_type, sender_user_id, sender_name, message, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
-       ->execute([$job_id, $channel, $sender_type, $user_id, $sender_name, mb_substr($message, 0, 5000)]);
+    $db->prepare("INSERT INTO platform_messages (job_id, channel, thread_user_id, sender_type, sender_user_id, sender_name, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())")
+       ->execute([$job_id, $channel, $thread_user_id, $sender_type, $user_id, $sender_name, mb_substr($message, 0, 5000)]);
+}
+
+/**
+ * Freelancer yazışma başlıkları (yönetici görünümü): kişi başına son mesaj
+ */
+function job_freelancer_threads(int $job_id): array {
+    global $db;
+    $st = $db->prepare("
+        SELECT m.thread_user_id, u.full_name, COUNT(*) AS cnt, MAX(m.id) AS last_id
+        FROM platform_messages m JOIN users u ON u.id = m.thread_user_id
+        WHERE m.job_id = ? AND m.channel = 'freelancer'
+        GROUP BY m.thread_user_id, u.full_name ORDER BY last_id DESC
+    ");
+    $st->execute([$job_id]);
+    return $st->fetchAll();
 }
 
 function job_deliveries(int $job_id, ?array $statuses = null): array {
@@ -389,6 +723,105 @@ function job_deliveries(int $job_id, ?array $statuses = null): array {
     return $st->fetchAll();
 }
 
+function job_changes(int $job_id, int $limit = 50): array {
+    global $db;
+    $st = $db->prepare("SELECT c.*, u.full_name FROM platform_job_changes c LEFT JOIN users u ON u.id = c.user_id WHERE c.job_id = ? ORDER BY c.id DESC LIMIT " . (int)$limit);
+    $st->execute([$job_id]);
+    return $st->fetchAll();
+}
+
+function log_job_change(int $job_id, string $actor, ?int $user_id, string $label, $old, $new): void {
+    global $db;
+    $db->prepare("INSERT INTO platform_job_changes (job_id, user_id, actor, field_label, old_value, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
+       ->execute([$job_id, $user_id, $actor, $label, $old === null ? null : (string)$old, $new === null ? null : (string)$new]);
+}
+
+const DELIVERY_STATUSES = [
+    'qa'          => ['Kalite kontrolde', 'violet'],
+    'sent'        => ['Ajans incelemesinde', 'info'],
+    'approved'    => ['Onaylandı', 'success'],
+    'revision'    => ['Revizyon istendi', 'warning'],
+    'qa_rejected' => ['Kalite kontrolden döndü', 'danger'],
+];
+
+function delivery_status_badge(string $status, string $perspective = 'staff'): string {
+    $d = DELIVERY_STATUSES[$status] ?? [$status, 'neutral'];
+    if ($perspective === 'agency' && $status === 'sent') {
+        $d = ['İncelemenizde', 'info'];
+    }
+    return ui_badge($d[0], $d[1], true);
+}
+
+const JOB_CHANGE_ACTORS = ['agency' => 'Ajans', 'staff' => 'Platform ekibi', 'freelancer' => 'Freelancer', 'system' => 'Sistem'];
+
+/**
+ * Fiyat içeren değişiklik satırları freelancer'a gösterilmez
+ */
+const JOB_CHANGE_PRICE_LABELS = ['Sipariş tutarı', 'Ajans fiyatı', 'Acil iş farkı'];
+
+/**
+ * Freelancer'a ilişkin satırlar (kimin atandığı, hakediş, dağıtım politikası) ajansa gösterilmez
+ */
+const JOB_CHANGE_INTERNAL_LABELS = ['Freelancer ücreti', 'Atama', 'Görünürlük politikası'];
+
+function render_job_changes(array $changes, string $perspective = 'staff'): string {
+    if (!$changes) {
+        return '<p class="small text-muted">Kayıtlı değişiklik yok.</p>';
+    }
+    $out = '<div class="timeline">';
+    $shown = 0;
+    foreach ($changes as $c) {
+        if ($perspective === 'freelancer' && in_array($c['field_label'], array_merge(JOB_CHANGE_PRICE_LABELS, ['Görünürlük politikası']), true)) {
+            continue;
+        }
+        if ($perspective === 'agency' && in_array($c['field_label'], JOB_CHANGE_INTERNAL_LABELS, true)) {
+            continue;
+        }
+        $who = JOB_CHANGE_ACTORS[$c['actor']] ?? $c['actor'];
+        if ($perspective === 'staff' && !empty($c['full_name'])) {
+            $who .= ' · ' . $c['full_name'];
+        }
+        $old = $c['old_value'] === null || $c['old_value'] === '' ? '—' : mb_strimwidth($c['old_value'], 0, 160, '…');
+        $new = $c['new_value'] === null || $c['new_value'] === '' ? '—' : mb_strimwidth($c['new_value'], 0, 160, '…');
+        $out .= '<div class="timeline-item' . ($c['actor'] === 'agency' ? ' is-client' : '') . '">'
+            . '<p class="small"><span style="font-weight:500">' . e($c['field_label']) . '</span> <span class="text-muted">· ' . e($who) . '</span></p>'
+            . '<p class="xsmall text-muted" style="margin-top:2px"><span style="text-decoration:line-through">' . e($old) . '</span> &rarr; <span class="text-ink">' . e($new) . '</span></p>'
+            . '<p class="xsmall text-faint" style="margin-top:2px">' . format_date($c['created_at'], true) . '</p></div>';
+        $shown++;
+    }
+    return $shown ? $out . '</div>' : '<p class="small text-muted">Kayıtlı değişiklik yok.</p>';
+}
+
+/**
+ * ====================================================================
+ * AJANSIN DÜZENLEYEBİLECEĞİ ALANLAR
+ * ====================================================================
+ * Atamadan önce   : başlık, brief, teslimatlar, referanslar, tarihler,
+ *                   lokasyon, hizmet kalemleri (fiyat yeniden hesaplanır)
+ * Üretim sürecinde: referanslar ve ek notlar; teslim tarihi yalnızca ileri alınabilir
+ * Teslimden sonra : düzenleme kapalı
+ */
+function agency_edit_scope(array $job): string {
+    if (in_array($job['status'], ['submitted', 'quote_sent', 'open'], true)) {
+        return 'full';
+    }
+    if (in_array($job['status'], ['assigned', 'in_progress', 'revision', 'qa_review'], true)) {
+        return 'limited';
+    }
+    return 'locked';
+}
+
+/**
+ * ====================================================================
+ * FREELANCER PERFORMANS KARNESİ & SEVİYE
+ * ====================================================================
+ * Puan (0-100):
+ *   %35 Puanlama   — ekip ve ajans puanlarının ortalaması
+ *   %25 Zamanında teslim oranı
+ *   %20 Kalite kontrolden ilk seferde geçme oranı
+ *   %10 Revizyon yükü (az revizyon = yüksek puan)
+ *   %10 Güvenilirlik (işi bırakma / atamadan alınma)
+ */
 function freelancer_active_job_count(int $user_id): int {
     global $db;
     $in = "'" . implode("','", JOB_ACTIVE_STATUSES) . "'";
@@ -397,18 +830,128 @@ function freelancer_active_job_count(int $user_id): int {
     return (int)$st->fetchColumn();
 }
 
+function recompute_freelancer_metrics(int $user_id): array {
+    global $db;
+    $st = $db->prepare("SELECT * FROM freelancer_profiles WHERE user_id = ?");
+    $st->execute([$user_id]);
+    $p = $st->fetch();
+    if (!$p) {
+        return [];
+    }
+
+    $jobs = $db->prepare("SELECT id, deadline, first_delivered_at, revision_count, freelancer_rating, agency_rating FROM platform_jobs WHERE assigned_user_id = ? AND assigned_type = 'freelancer' AND status = 'completed'");
+    $jobs->execute([$user_id]);
+    $rows = $jobs->fetchAll();
+    $completed = count($rows);
+
+    $on_time_total = 0; $on_time_ok = 0; $late = 0;
+    $rev_sum = 0; $staff_r = []; $agency_r = [];
+    foreach ($rows as $r) {
+        if ($r['deadline'] && $r['first_delivered_at']) {
+            $on_time_total++;
+            if (strtotime($r['first_delivered_at']) <= strtotime($r['deadline'] . ' 23:59:59')) {
+                $on_time_ok++;
+            } else {
+                $late++;
+            }
+        }
+        $rev_sum += (int)$r['revision_count'];
+        if ($r['freelancer_rating']) $staff_r[] = (int)$r['freelancer_rating'];
+        if ($r['agency_rating']) $agency_r[] = (int)$r['agency_rating'];
+    }
+
+    // Kalite kontrolden ilk seferde geçme: her işin ilk teslimi reddedilmemiş mi?
+    $qa = $db->prepare("
+        SELECT d.status FROM platform_deliveries d
+        JOIN (SELECT job_id, MIN(id) AS first_id FROM platform_deliveries WHERE submitted_by_type = 'freelancer' AND submitted_by_user_id = ? GROUP BY job_id) f ON f.first_id = d.id
+    ");
+    $qa->execute([$user_id]);
+    $firsts = $qa->fetchAll(PDO::FETCH_COLUMN);
+    $qa_pass = $firsts ? count(array_filter($firsts, fn($s) => $s !== 'qa_rejected')) / count($firsts) : null;
+
+    $on_time = $on_time_total ? $on_time_ok / $on_time_total : null;
+    $avg_rev = $completed ? $rev_sum / $completed : null;
+    $ratings = array_merge($staff_r, $agency_r);
+    $rating_c = $ratings ? array_sum($ratings) / count($ratings) / 5 : null;
+    $incidents = (int)$p['releases_count'] + (int)$p['removed_count'];
+    $reliability = max(0, 1 - ($incidents / max(1, $completed + $incidents)) * 2);
+
+    $score = null;
+    if ($completed > 0) {
+        $score = 100 * (
+            0.35 * ($rating_c ?? 0.8) +
+            0.25 * ($on_time ?? 1) +
+            0.20 * ($qa_pass ?? 1) +
+            0.10 * (1 - min(($avg_rev ?? 0) / 3, 1)) +
+            0.10 * $reliability
+        );
+        $score = round($score, 1);
+    }
+
+    $db->prepare("UPDATE freelancer_profiles SET score = ?, on_time_rate = ?, qa_pass_rate = ?, avg_revisions = ?, completed_jobs = ?, late_count = ?,
+                  rating_avg = ?, rating_count = ?, agency_rating_avg = ?, metrics_updated_at = NOW() WHERE user_id = ?")
+       ->execute([
+           $score, $on_time !== null ? round($on_time * 100, 1) : null, $qa_pass !== null ? round($qa_pass * 100, 1) : null,
+           $avg_rev !== null ? round($avg_rev, 2) : null, $completed, $late,
+           $staff_r ? round(array_sum($staff_r) / count($staff_r), 2) : null, count($staff_r),
+           $agency_r ? round(array_sum($agency_r) / count($agency_r), 2) : null, $user_id
+       ]);
+
+    // Otomatik seviye
+    if (platform_setting('platform_auto_tier') === '1' && (int)$p['tier_locked'] !== 1 && $score !== null) {
+        $suggested = suggested_tier($score, $completed);
+        if ($suggested !== $p['tier']) {
+            $db->prepare("UPDATE freelancer_profiles SET tier = ? WHERE user_id = ?")->execute([$suggested, $user_id]);
+            $up = tier_rank($suggested) > tier_rank($p['tier']);
+            notify_user($user_id, ($up ? 'Seviyeniz yükseldi: ' : 'Seviyeniz güncellendi: ') . tier_label($suggested) . '. Aynı anda alabileceğiniz iş sayısı: ' . tier_job_limit($suggested), '/platform/performance.php');
+        }
+    }
+
+    $st->execute([$user_id]);
+    return $st->fetch() ?: [];
+}
+
+function suggested_tier(?float $score, int $completed): string {
+    if ($score === null) {
+        return 'standard';
+    }
+    $result = 'standard';
+    foreach (FREELANCER_TIER_RULES as $tier => $rule) {
+        if ($score >= $rule['score'] && $completed >= $rule['jobs']) {
+            $result = $tier;
+        }
+    }
+    return $result;
+}
+
+/**
+ * Bir sonraki seviye için gereken puan ve iş sayısı (freelancer'a gösterilir)
+ */
+function next_tier_progress(array $profile): ?array {
+    $rank = tier_rank($profile['tier']);
+    foreach (FREELANCER_TIER_RULES as $tier => $rule) {
+        if (tier_rank($tier) === $rank + 1) {
+            return [
+                'tier' => $tier,
+                'need_score' => $rule['score'],
+                'need_jobs' => $rule['jobs'],
+                'score' => $profile['score'] !== null ? (float)$profile['score'] : 0,
+                'jobs' => (int)$profile['completed_jobs'],
+            ];
+        }
+    }
+    return null;
+}
+
 /**
  * ====================================================================
  * GÖRÜNÜRLÜK KURALLARI (PAZARLAMA POLİTİKASI)
  * ====================================================================
- * Bir freelancer havuzdaki bir işi görebilir mi? Görmüyorsa nedenini döner.
- * Sıra: havuz açık → profil onaylı → iş açık → görünürlük modu
- *       → seviye eşiği → öncelikli erişim süresi → uzmanlık → şehir
  */
 function job_visibility_reason(array $job, array $profile): ?string {
     global $db;
     if (platform_setting('platform_pool_enabled') !== '1') {
-        return 'İş havuzu şu an kapalı';
+        return 'İş havuzu kapalı';
     }
     if (($profile['status'] ?? '') !== 'approved') {
         return 'Profil onaylı değil';
@@ -417,27 +960,27 @@ function job_visibility_reason(array $job, array $profile): ?string {
         return 'İş havuzda değil';
     }
     if ($job['visibility'] === 'internal') {
-        return 'İş ekibe özel';
+        return 'Ekibe özel';
     }
     if ($job['visibility'] === 'selected') {
         $st = $db->prepare("SELECT COUNT(*) FROM platform_job_visible_to WHERE job_id = ? AND user_id = ?");
         $st->execute([$job['id'], $profile['user_id']]);
-        return (int)$st->fetchColumn() > 0 ? null : 'Seçili freelancer listesinde değil';
+        return (int)$st->fetchColumn() > 0 ? null : 'Seçili listede değil';
     }
     $rank = tier_rank($profile['tier']);
     if ($rank < tier_rank($job['min_tier'])) {
-        return 'Seviye yetersiz (en az ' . (FREELANCER_TIERS[$job['min_tier']]['label'] ?? $job['min_tier']) . ')';
+        return 'Seviye yetersiz (' . tier_label($job['min_tier']) . '+)';
     }
     if (!empty($job['priority_tier']) && (int)$job['priority_hours'] > 0 && !empty($job['published_at'])) {
         $open_to_all_at = strtotime($job['published_at']) + (int)$job['priority_hours'] * 3600;
         if (time() < $open_to_all_at && $rank < tier_rank($job['priority_tier'])) {
-            return 'Öncelikli erişim süresinde';
+            return 'Öncelik süresinde (' . tier_label($job['priority_tier']) . '+ görüyor)';
         }
     }
     if ((int)$job['skill_match_only'] === 1) {
         $skills = array_filter(explode(',', (string)$profile['skills']));
         if (!in_array($job['category'], $skills, true)) {
-            return 'Uzmanlık alanı eşleşmiyor';
+            return 'Uzmanlık eşleşmiyor';
         }
     }
     if ((int)$job['city_match_only'] === 1 && (int)$job['is_remote'] !== 1 && !empty($job['location_city'])) {
@@ -455,13 +998,41 @@ function freelancer_can_see_job(array $job, array $profile): bool {
     return job_visibility_reason($job, $profile) === null;
 }
 
-/**
- * Freelancer'ın görebildiği havuz işleri
- */
 function visible_pool_jobs(array $profile): array {
     global $db;
-    $jobs = $db->query("SELECT * FROM platform_jobs WHERE status = 'open' AND visibility != 'internal' ORDER BY published_at DESC, id DESC LIMIT 300")->fetchAll();
+    $jobs = $db->query("SELECT * FROM platform_jobs WHERE status = 'open' AND visibility != 'internal' ORDER BY is_rush DESC, published_at DESC, id DESC LIMIT 300")->fetchAll();
     return array_values(array_filter($jobs, fn($j) => job_visibility_reason($j, $profile) === null));
+}
+
+/**
+ * Freelancer'ın yeni iş alıp alamayacağı (limit, müsaitlik)
+ */
+function freelancer_capacity(array $profile): array {
+    $active = freelancer_active_job_count((int)$profile['user_id']);
+    $limit  = tier_job_limit($profile['tier']);
+    return ['active' => $active, 'limit' => $limit, 'can_take' => $active < $limit && (int)$profile['is_available'] === 1];
+}
+
+/**
+ * Yeni sipariş için varsayılan dağıtım politikası
+ */
+function default_job_policy(array $items, string $category, bool $is_remote): array {
+    $min = 'standard';
+    foreach ($items as $it) {
+        if (tier_rank($it['min_tier'] ?? 'standard') > tier_rank($min)) {
+            $min = $it['min_tier'];
+        }
+    }
+    $ptier = platform_setting('platform_default_priority_tier');
+    return [
+        'visibility'       => 'pool',
+        'dispatch_mode'    => 'first_come',
+        'min_tier'         => $min,
+        'priority_tier'    => array_key_exists($ptier, FREELANCER_TIERS) ? $ptier : null,
+        'priority_hours'   => array_key_exists($ptier, FREELANCER_TIERS) ? (int)platform_setting('platform_default_priority_hours') : 0,
+        'skill_match_only' => 1,
+        'city_match_only'  => (!$is_remote && (JOB_CATEGORIES[$category]['onsite'] ?? false)) ? 1 : 0,
+    ];
 }
 
 /**
@@ -476,20 +1047,16 @@ function job_publish(int $job_id): void {
     if (!$job) {
         return;
     }
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işiniz onaylandı, ekip ataması yapılıyor.", "/platform/job.php?id={$job_id}", $job_id);
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişiniz onaylandı; ekip ataması yapılıyor.", "/platform/job.php?id={$job_id}", $job_id);
     if ($job['visibility'] === 'selected') {
         $st = $db->prepare("SELECT user_id FROM platform_job_visible_to WHERE job_id = ?");
         $st->execute([$job_id]);
         foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $uid) {
-            notify_user((int)$uid, "Size özel yeni iş: {$job['job_code']} · {$job['title']}", "/platform/job.php?id={$job_id}", $job_id);
+            notify_user((int)$uid, "Size özel iş: {$job['job_code']} · {$job['title']}", "/platform/job.php?id={$job_id}", $job_id);
         }
     }
 }
 
-/**
- * Freelancer'a atama. $atomic=true ise "ilk alan alır" yarışında yalnızca
- * iş hâlâ açıksa atanır. Başarılıysa true döner.
- */
 function job_assign_freelancer(int $job_id, int $user_id, bool $atomic = false, ?float $fee = null): bool {
     global $db;
     $sql = "UPDATE platform_jobs SET status = 'assigned', assigned_type = 'freelancer', assigned_user_id = ?, assigned_at = NOW()"
@@ -501,16 +1068,14 @@ function job_assign_freelancer(int $job_id, int $user_id, bool $atomic = false, 
     if ($st->rowCount() === 0) {
         return false;
     }
-    $db->prepare("UPDATE platform_applications SET status = IF(user_id = ?, 'accepted', 'rejected') WHERE job_id = ? AND status = 'pending'")->execute([$user_id, $job_id]);
+    $db->prepare("UPDATE platform_applications SET status = IF(user_id = ?, 'accepted', 'rejected'), reviewed_at = NOW(), reject_reason = IF(user_id = ?, reject_reason, COALESCE(reject_reason, 'İş başka bir freelancer\'a atandı.')) WHERE job_id = ? AND status = 'pending'")
+       ->execute([$user_id, $user_id, $job_id]);
     $job = get_job($job_id);
-    notify_user($user_id, "İş size atandı: {$job['job_code']} · {$job['title']}. Başlamak için işi açın.", "/platform/job.php?id={$job_id}", $job_id);
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işinize ekip atandı.", "/platform/job.php?id={$job_id}", $job_id);
+    notify_user($user_id, "İş size atandı: {$job['job_code']} · {$job['title']}", "/platform/job.php?id={$job_id}", $job_id);
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişinize ekip atandı.", "/platform/job.php?id={$job_id}", $job_id);
     return true;
 }
 
-/**
- * İşi RY Medya ekibi üstlenir: ERP'de iç proje açılır ve işe bağlanır.
- */
 function job_take_internal(int $job_id, int $staff_user_id): ?int {
     global $db;
     $job = get_job($job_id);
@@ -520,61 +1085,79 @@ function job_take_internal(int $job_id, int $staff_user_id): ?int {
     $project_id = null;
     if (!empty($job['agency_contact_id'])) {
         $code = generate_project_code();
-        $type_map = ['editing' => 'other', 'social' => 'social_media', 'full_production' => 'commercial'];
+        $type_map = ['social' => 'social_media', 'full_production' => 'commercial'];
+        $items_txt = implode("\n", array_map(fn($i) => '- ' . $i['name'] . ' × ' . rtrim(rtrim(number_format((float)$i['quantity'], 2, ',', ''), '0'), ','), job_items($job_id)));
         $db->prepare("
             INSERT INTO projects (client_id, project_code, project_name, project_type, status, agreed_budget, currency, start_date, deadline, description, created_by, created_at)
             VALUES (?, ?, ?, ?, 'pre_production', ?, ?, ?, ?, ?, ?, NOW())
         ")->execute([
             $job['agency_contact_id'], $code, $job['title'], $type_map[$job['category']] ?? 'other',
             (float)($job['agency_price'] ?? $job['budget'] ?? 0), $job['currency'], $job['start_date'], $job['deadline'],
-            "Platform işi {$job['job_code']} ekibimiz tarafından üstlenildi.\n\n" . ($job['description'] ?? '') . "\n\nTeslimatlar:\n" . ($job['deliverables'] ?? ''),
+            "Platform işi {$job['job_code']}\n\n" . ($job['description'] ?? '') . ($items_txt ? "\n\nHizmetler:\n{$items_txt}" : '') . "\n\nTeslimatlar:\n" . ($job['deliverables'] ?? ''),
             $staff_user_id
         ]);
         $project_id = (int)$db->lastInsertId();
     }
     $db->prepare("UPDATE platform_jobs SET status = 'in_progress', assigned_type = 'internal', assigned_user_id = NULL, internal_project_id = ?, assigned_at = NOW(), published_at = COALESCE(published_at, NOW()) WHERE id = ?")
        ->execute([$project_id, $job_id]);
-    $db->prepare("UPDATE platform_applications SET status = 'rejected' WHERE job_id = ? AND status = 'pending'")->execute([$job_id]);
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işiniz üzerinde çalışılmaya başlandı.", "/platform/job.php?id={$job_id}", $job_id);
+    $db->prepare("UPDATE platform_applications SET status = 'rejected', reviewed_at = NOW(), reject_reason = COALESCE(reject_reason, 'İş ekibimiz tarafından üstlenildi.') WHERE job_id = ? AND status = 'pending'")->execute([$job_id]);
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişiniz üretime alındı.", "/platform/job.php?id={$job_id}", $job_id);
     return $project_id ?: 0;
 }
 
-function job_unassign(int $job_id, string $reason = ''): void {
+/**
+ * Atamayı kaldırır. $by: 'freelancer' (işi bıraktı) | 'staff' (yönetici aldı) | 'neutral'
+ * Güvenilirlik metriğine işlenir.
+ */
+function job_unassign(int $job_id, string $by = 'staff'): void {
     global $db;
     $job = get_job($job_id);
     if (!$job) {
         return;
     }
     $db->prepare("UPDATE platform_jobs SET status = 'open', assigned_type = NULL, assigned_user_id = NULL, assigned_at = NULL WHERE id = ?")->execute([$job_id]);
+    // Bırakan kişiye özel kabul edilmiş ücret geri alınır; katalog işinde ücret kalemlerden yeniden hesaplanır
+    if ($job['pricing_source'] === 'catalog') {
+        $items = array_map(fn($i) => ['quantity' => (float)$i['quantity'], 'agency_unit_price' => (float)$i['agency_unit_price'], 'freelancer_unit_fee' => (float)$i['freelancer_unit_fee']], job_items($job_id));
+        if ($items) {
+            $db->prepare("UPDATE platform_jobs SET freelancer_fee = ? WHERE id = ?")->execute([price_order($items, (int)$job['is_rush'] === 1)['freelancer_fee'], $job_id]);
+        }
+    }
+    // Yalnızca "başkasına atandı" gerekçesiyle kapanan teklifler yeniden teklif verebilsin
+    $reopen = $db->prepare("SELECT user_id FROM platform_applications WHERE job_id = ? AND status = 'rejected' AND reject_reason = 'İş başka bir freelancer\'a atandı.'");
+    $reopen->execute([$job_id]);
+    foreach ($reopen->fetchAll(PDO::FETCH_COLUMN) as $ru) {
+        notify_user((int)$ru, "{$job['job_code']} yeniden teklife açıldı.", "/platform/job.php?id={$job_id}", $job_id);
+    }
+    $db->prepare("UPDATE platform_applications SET status = 'withdrawn', reject_reason = NULL WHERE job_id = ? AND status = 'rejected' AND reject_reason = 'İş başka bir freelancer\'a atandı.'")->execute([$job_id]);
     if (!empty($job['assigned_user_id'])) {
         $db->prepare("UPDATE platform_applications SET status = 'withdrawn' WHERE job_id = ? AND user_id = ?")->execute([$job_id, $job['assigned_user_id']]);
+        // 'neutral': freelancer kaynaklı olmayan geri alma, güvenilirliğe işlenmez
+        if ($by !== 'neutral') {
+            $col = $by === 'freelancer' ? 'releases_count' : 'removed_count';
+            $db->prepare("UPDATE freelancer_profiles SET {$col} = {$col} + 1 WHERE user_id = ?")->execute([$job['assigned_user_id']]);
+        }
     }
 }
 
-/**
- * Teslimat: freelancer / ekip teslim eder.
- */
 function job_submit_delivery(array $job, string $url, string $note, string $by_type, ?int $user_id): void {
     global $db;
     $qa = $by_type === 'freelancer' && platform_setting('platform_qa_required') === '1';
     $db->prepare("INSERT INTO platform_deliveries (job_id, submitted_by_user_id, submitted_by_type, url, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
        ->execute([$job['id'], $user_id, $by_type, $url, $note, $qa ? 'qa' : 'sent']);
-    $db->prepare("UPDATE platform_jobs SET status = ?, delivered_at = ? WHERE id = ?")
+    $db->prepare("UPDATE platform_jobs SET status = ?, delivered_at = ?, first_delivered_at = COALESCE(first_delivered_at, NOW()) WHERE id = ?")
        ->execute([$qa ? 'qa_review' : 'delivered', $qa ? null : date('Y-m-d H:i:s'), $job['id']]);
     if (!$qa) {
-        notify_contact_users($job['agency_contact_id'], "📦 {$job['job_code']} işiniz teslim edildi. Lütfen inceleyip onaylayın.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }
 }
 
-/**
- * Kalite kontrol sonucu (yönetici)
- */
 function job_qa_decision(array $job, int $delivery_id, bool $approve, string $feedback = ''): void {
     global $db;
     if ($approve) {
         $db->prepare("UPDATE platform_deliveries SET status = 'sent', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback ?: null, $delivery_id, $job['id']]);
         $db->prepare("UPDATE platform_jobs SET status = 'delivered', delivered_at = NOW() WHERE id = ?")->execute([$job['id']]);
-        notify_contact_users($job['agency_contact_id'], "📦 {$job['job_code']} işiniz teslim edildi. Lütfen inceleyip onaylayın.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
         if (!empty($job['assigned_user_id'])) {
             notify_user((int)$job['assigned_user_id'], "Teslimatınız kalite kontrolden geçti ve müşteriye iletildi: {$job['job_code']}", "/platform/job.php?id={$job['id']}", (int)$job['id']);
         }
@@ -582,14 +1165,11 @@ function job_qa_decision(array $job, int $delivery_id, bool $approve, string $fe
         $db->prepare("UPDATE platform_deliveries SET status = 'qa_rejected', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback, $delivery_id, $job['id']]);
         $db->prepare("UPDATE platform_jobs SET status = 'revision' WHERE id = ?")->execute([$job['id']]);
         if (!empty($job['assigned_user_id'])) {
-            notify_user((int)$job['assigned_user_id'], "Kalite kontrol düzeltme istedi: {$job['job_code']} — \"" . mb_substr($feedback, 0, 140) . "\"", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+            notify_user((int)$job['assigned_user_id'], "Kalite kontrol düzeltme istedi ({$job['job_code']}): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
         }
     }
 }
 
-/**
- * Ajans revizyon ister
- */
 function job_request_revision(array $job, string $feedback): void {
     global $db;
     $last = job_deliveries((int)$job['id'], ['sent']);
@@ -598,13 +1178,10 @@ function job_request_revision(array $job, string $feedback): void {
     }
     $db->prepare("UPDATE platform_jobs SET status = 'revision', revision_count = revision_count + 1 WHERE id = ?")->execute([$job['id']]);
     if (!empty($job['assigned_user_id'])) {
-        notify_user((int)$job['assigned_user_id'], "✏️ Revizyon istendi: {$job['job_code']} — \"" . mb_substr($feedback, 0, 140) . "\"", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        notify_user((int)$job['assigned_user_id'], "Revizyon istendi ({$job['job_code']}): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }
 }
 
-/**
- * İşi kapatır: durum, puan, otomatik faturalar (ajansa satış, freelancer'dan alış).
- */
 function job_complete(array $job, ?int $agency_rating = null, string $agency_review = ''): void {
     global $db;
     $job_id = (int)$job['id'];
@@ -616,7 +1193,6 @@ function job_complete(array $job, ?int $agency_rating = null, string $agency_rev
     $db->prepare("UPDATE platform_jobs SET status = 'completed', completed_at = NOW(), agency_rating = COALESCE(?, agency_rating), agency_review = COALESCE(?, agency_review) WHERE id = ?")
        ->execute([$agency_rating, $agency_review !== '' ? $agency_review : null, $job_id]);
 
-    // 1. Ajansa satış faturası
     if (empty($job['sales_invoice_id']) && !empty($job['agency_contact_id']) && (float)$job['agency_price'] > 0 && platform_setting('platform_auto_invoice') === '1') {
         $vat = (float)get_setting('default_vat_rate', '20');
         $tax = calculate_tax_breakdown((float)$job['agency_price'], $vat, '0/10', 0);
@@ -629,7 +1205,6 @@ function job_complete(array $job, ?int $agency_rating = null, string $agency_rev
         recalculate_contact_balance((int)$job['agency_contact_id']);
     }
 
-    // 2. Freelancer hakediş (alış faturası)
     if ($job['assigned_type'] === 'freelancer' && empty($job['purchase_invoice_id']) && !empty($job['assignee_contact_id']) && (float)$job['freelancer_fee'] > 0) {
         $vat = (float)platform_setting('platform_freelancer_vat');
         $tax = calculate_tax_breakdown((float)$job['freelancer_fee'], $vat, '0/10', 0);
@@ -640,37 +1215,121 @@ function job_complete(array $job, ?int $agency_rating = null, string $agency_rev
         ")->execute([$no, $job['assignee_contact_id'], $job['internal_project_id'] ?: null, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'], "Platform işi hakedişi {$job['job_code']}: {$job['title']}"]);
         $db->prepare("UPDATE platform_jobs SET purchase_invoice_id = ? WHERE id = ?")->execute([(int)$db->lastInsertId(), $job_id]);
         recalculate_contact_balance((int)$job['assignee_contact_id']);
-        $db->prepare("UPDATE freelancer_profiles SET completed_jobs = completed_jobs + 1 WHERE user_id = ?")->execute([$job['assigned_user_id']]);
-        notify_user((int)$job['assigned_user_id'], "🎉 İş tamamlandı: {$job['job_code']}. Hakedişiniz (" . format_money((float)$job['freelancer_fee']) . ") kazançlarınıza eklendi.", "/platform/earnings.php", $job_id);
+        notify_user((int)$job['assigned_user_id'], "{$job['job_code']} tamamlandı. Hakedişiniz (" . format_money((float)$job['freelancer_fee']) . ") kazançlarınıza eklendi.", "/platform/earnings.php", $job_id);
+    }
+
+    if ($job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id'])) {
+        recompute_freelancer_metrics((int)$job['assigned_user_id']);
     }
 }
 
-/**
- * Freelancer puanı (yönetici verir) → profil ortalaması güncellenir
- */
 function rate_freelancer(array $job, int $rating): void {
     global $db;
     $rating = max(1, min(5, $rating));
     $db->prepare("UPDATE platform_jobs SET freelancer_rating = ? WHERE id = ?")->execute([$rating, $job['id']]);
     if (!empty($job['assigned_user_id'])) {
-        $st = $db->prepare("SELECT AVG(freelancer_rating), COUNT(freelancer_rating) FROM platform_jobs WHERE assigned_user_id = ? AND freelancer_rating IS NOT NULL");
-        $st->execute([$job['assigned_user_id']]);
-        [$avg, $cnt] = $st->fetch(PDO::FETCH_NUM);
-        $db->prepare("UPDATE freelancer_profiles SET rating_avg = ?, rating_count = ? WHERE user_id = ?")->execute([$avg, $cnt, $job['assigned_user_id']]);
+        recompute_freelancer_metrics((int)$job['assigned_user_id']);
     }
-}
-
-function render_stars(?float $rating): string {
-    if ($rating === null) {
-        return '<span class="text-slate-300">Puan yok</span>';
-    }
-    $full = (int)round($rating);
-    return '<span class="text-amber-500">' . str_repeat('★', $full) . '</span><span class="text-slate-300">' . str_repeat('★', 5 - $full) . '</span> <span class="text-slate-500">' . number_format($rating, 1, ',', '') . '</span>';
 }
 
 /**
- * Güvenli dış bağlantı kontrolü (yalnızca http/https)
+ * ====================================================================
+ * KALICI SİLME (platform.delete)
+ * ====================================================================
  */
+function platform_delete_job(int $job_id, bool $with_invoices = false): bool {
+    global $db;
+    $job = get_job($job_id);
+    if (!$job) {
+        return false;
+    }
+    if ($with_invoices) {
+        foreach (['sales_invoice_id', 'purchase_invoice_id'] as $col) {
+            if (!empty($job[$col])) {
+                delete_invoice_cascade((int)$job[$col]);
+            }
+        }
+    }
+    foreach (['platform_job_items', 'platform_applications', 'platform_messages', 'platform_deliveries', 'platform_job_visible_to', 'platform_job_changes'] as $t) {
+        $db->prepare("DELETE FROM {$t} WHERE job_id = ?")->execute([$job_id]);
+    }
+    $db->prepare("DELETE FROM activity_log WHERE entity_type = 'job' AND entity_id = ?")->execute([$job_id]);
+    $db->prepare("DELETE FROM platform_jobs WHERE id = ?")->execute([$job_id]);
+    if ($job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id'])) {
+        recompute_freelancer_metrics((int)$job['assigned_user_id']);
+    }
+    return true;
+}
+
+/**
+ * Ajans / freelancer hesabını siler.
+ * - Freelancer: aktif işleri havuza döner, başvuruları silinir.
+ * - Ajans: işleri varsa $cascade_jobs olmadan silinmez.
+ * Faturası/cari hareketi olan cari kart muhasebe geçmişi için korunur.
+ */
+function platform_delete_account(int $user_id, bool $cascade_jobs = false): array {
+    global $db;
+    $u = $db->prepare("SELECT u.*, r.role_slug FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?");
+    $u->execute([$user_id]);
+    $user = $u->fetch();
+    if (!$user || !in_array($user['role_slug'], ['agency', 'freelancer'], true)) {
+        return [false, 'Hesap bulunamadı.'];
+    }
+    $contact_id = (int)$user['contact_id'];
+
+    if ($user['role_slug'] === 'agency') {
+        $jobs = $db->prepare("SELECT id FROM platform_jobs WHERE agency_contact_id = ?");
+        $jobs->execute([$contact_id]);
+        $ids = $jobs->fetchAll(PDO::FETCH_COLUMN);
+        if ($ids && !$cascade_jobs) {
+            return [false, 'Bu ajansın ' . count($ids) . ' işi var. Önce işleri silin veya "işleriyle birlikte sil" seçeneğini kullanın.'];
+        }
+        foreach ($ids as $jid) {
+            platform_delete_job((int)$jid, false);
+        }
+        $db->prepare("DELETE FROM agency_profiles WHERE user_id = ?")->execute([$user_id]);
+    } else {
+        $active = $db->prepare("SELECT id FROM platform_jobs WHERE assigned_user_id = ? AND status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "')");
+        $active->execute([$user_id]);
+        foreach ($active->fetchAll(PDO::FETCH_COLUMN) as $jid) {
+            $db->prepare("UPDATE platform_jobs SET status = 'open', assigned_type = NULL, assigned_user_id = NULL, assigned_at = NULL WHERE id = ?")->execute([$jid]);
+            notify_staff('Freelancer hesabı silindiği için iş havuza döndü.', (int)$jid);
+        }
+        $db->prepare("UPDATE platform_jobs SET assigned_user_id = NULL WHERE assigned_user_id = ?")->execute([$user_id]);
+        $db->prepare("DELETE FROM platform_applications WHERE user_id = ?")->execute([$user_id]);
+        $db->prepare("DELETE FROM platform_job_visible_to WHERE user_id = ?")->execute([$user_id]);
+        $db->prepare("DELETE FROM freelancer_profiles WHERE user_id = ?")->execute([$user_id]);
+    }
+
+    $db->prepare("DELETE FROM user_notification_state WHERE user_id = ?")->execute([$user_id]);
+    $db->prepare("DELETE FROM activity_log WHERE target_user_id = ?")->execute([$user_id]);
+    $db->prepare("DELETE FROM users WHERE id = ?")->execute([$user_id]);
+
+    $has_ledger = (int)$db->query("SELECT (SELECT COUNT(*) FROM invoices WHERE contact_id = {$contact_id}) + (SELECT COUNT(*) FROM transactions WHERE contact_id = {$contact_id})")->fetchColumn();
+    if ($contact_id && !$has_ledger) {
+        $db->prepare("DELETE FROM contacts WHERE id = ?")->execute([$contact_id]);
+        return [true, 'Hesap ve cari kartı silindi.'];
+    }
+    return [true, 'Hesap silindi. Muhasebe kaydı olduğu için cari kartı korundu.'];
+}
+
+/**
+ * ====================================================================
+ * YARDIMCILAR
+ * ====================================================================
+ */
+function render_stars(?float $rating): string {
+    if ($rating === null) {
+        return '<span class="text-muted">—</span>';
+    }
+    $full = (int)round($rating);
+    return '<span class="stars" title="' . number_format($rating, 1, ',', '') . ' / 5">' . str_repeat('★', $full) . '<span class="stars-off">' . str_repeat('★', 5 - $full) . '</span></span> <span class="num text-muted">' . number_format($rating, 1, ',', '') . '</span>';
+}
+
 function is_safe_url(string $url): bool {
     return (bool)filter_var($url, FILTER_VALIDATE_URL) && (bool)preg_match('#^https?://#i', $url);
+}
+
+function qty_label(float $q): string {
+    return rtrim(rtrim(number_format($q, 2, ',', '.'), '0'), ',');
 }

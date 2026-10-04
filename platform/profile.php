@@ -61,7 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'change_password') {
         $cur = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
-        $hash = $db->query("SELECT password FROM users WHERE id = {$uid}")->fetchColumn();
+        $hs = $db->prepare("SELECT password FROM users WHERE id = ?");
+        $hs->execute([$uid]);
+        $hash = (string)$hs->fetchColumn();
         if (!password_verify($cur, $hash)) {
             set_flash('error', 'Mevcut şifreniz hatalı.');
         } elseif (strlen($new) < 8) {
@@ -75,78 +77,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $skills = array_filter(explode(',', (string)($profile['skills'] ?? '')));
-$in = 'w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm';
-$status_labels = ['pending' => ['Onay Bekliyor', 'bg-amber-100 text-amber-800'], 'approved' => ['Onaylı', 'bg-emerald-100 text-emerald-800'], 'suspended' => ['Askıda', 'bg-rose-100 text-rose-800']];
-$sl = $status_labels[$profile['status']] ?? [$profile['status'], 'bg-slate-100'];
+$status_badge = ['pending' => ['İnceleniyor', 'warning'], 'approved' => ['Onaylı hesap', 'success'], 'suspended' => ['Askıda', 'danger']][$profile['status']] ?? [$profile['status'], 'neutral'];
+$display_name = $role === 'agency' ? ($contact['company_title'] ?? '') : ($_SESSION['client_user']['full_name'] ?? '');
 
-platform_header('Profil', 'profile');
+platform_header('Hesap', $role === 'agency' ? 'profile' : '');
 ?>
-<div class="max-w-3xl mx-auto space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="text-2xl font-black text-slate-900">Profil</h1>
-        <div class="flex items-center gap-2 text-xs">
-            <span class="px-2.5 py-1 rounded-full font-bold <?= $sl[1] ?>"><?= $sl[0] ?></span>
-            <?php if ($role === 'freelancer'): $t = FREELANCER_TIERS[$profile['tier']] ?? FREELANCER_TIERS['standard']; ?>
-                <span class="px-2.5 py-1 rounded-full border font-bold <?= $t['color'] ?>"><?= $t['label'] ?> Seviye</span>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <form method="POST" action="" class="bg-white border border-slate-200 rounded-3xl p-6 space-y-4">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="save_profile">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <?php if ($role === 'agency'): ?>
-            <div class="sm:col-span-2"><label class="block text-xs font-bold text-slate-600 mb-1">Ajans / Firma Adı</label><input type="text" name="company_title" value="<?= e($contact['company_title']) ?>" class="<?= $in ?>"></div>
-            <?php endif; ?>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1"><?= $role === 'agency' ? 'Yetkili' : 'Ad Soyad' ?> *</label><input type="text" name="full_name" required value="<?= e($_SESSION['client_user']['full_name'] ?? '') ?>" class="<?= $in ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Telefon *</label><input type="text" name="phone" required value="<?= e($contact['phone'] ?? '') ?>" class="<?= $in ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">E-posta</label><input type="email" value="<?= e($contact['email'] ?? '') ?>" disabled class="<?= $in ?> opacity-60"><p class="text-[10px] text-slate-400 mt-1">Değişiklik için platform ekibine yazın.</p></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Şehir</label><input type="text" name="city" value="<?= e($role === 'freelancer' ? ($profile['city'] ?? '') : ($contact['city'] ?? '')) ?>" class="<?= $in ?>"></div>
-        </div>
-
-        <?php if ($role === 'agency'): ?>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Web Sitesi</label><input type="text" name="website" value="<?= e($profile['website'] ?? '') ?>" class="<?= $in ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Vergi Dairesi</label><input type="text" name="tax_office" value="<?= e($contact['tax_office'] ?? '') ?>" class="<?= $in ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Vergi No</label><input type="text" name="tax_number" value="<?= e($contact['tax_number'] ?? '') ?>" class="<?= $in ?>"></div>
-        </div>
-        <div><label class="block text-xs font-bold text-slate-600 mb-1">Fatura Adresi</label><textarea name="address" rows="2" class="<?= $in ?>"><?= e($contact['address'] ?? '') ?></textarea></div>
-        <?php else: ?>
-        <label class="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm font-bold text-emerald-900 cursor-pointer">
-            <input type="checkbox" name="is_available" value="1" <?= (int)$profile['is_available'] === 1 ? 'checked' : '' ?> class="rounded text-emerald-600"> Yeni iş almaya müsaitim
-        </label>
-        <div><label class="block text-xs font-bold text-slate-600 mb-1">Unvan</label><input type="text" name="title" value="<?= e($profile['title'] ?? '') ?>" class="<?= $in ?>"></div>
-        <div>
-            <label class="block text-xs font-bold text-slate-600 mb-2">Uzmanlık Alanları</label>
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <?php foreach (JOB_CATEGORIES as $ck => $cv): ?>
-                <label class="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs cursor-pointer">
-                    <input type="checkbox" name="skills[]" value="<?= $ck ?>" <?= in_array($ck, $skills, true) ? 'checked' : '' ?> class="rounded text-emerald-600"><?= e($cv['label']) ?>
-                </label>
-                <?php endforeach; ?>
+<div style="max-width:880px;margin:0 auto">
+    <div class="page-head">
+        <div style="display:flex;gap:14px;align-items:center">
+            <?= ui_avatar($display_name, 'lg') ?>
+            <div>
+                <h1 class="h1"><?= e($display_name) ?></h1>
+                <p class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <?= ui_badge($status_badge[0], $status_badge[1], true) ?>
+                    <?php if ($role === 'freelancer'): ?><?= tier_badge($profile['tier']) ?><?php endif; ?>
+                    <span><?= e($contact['email'] ?? '') ?></span>
+                </p>
             </div>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Portfolyo / Showreel</label><input type="url" name="portfolio_url" value="<?= e($profile['portfolio_url'] ?? '') ?>" class="<?= $in ?>"></div>
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">Günlük Ücret (₺)</label><input type="number" step="0.01" name="day_rate" value="<?= e((string)($profile['day_rate'] ?? '')) ?>" class="<?= $in ?>"></div>
-        </div>
-        <div><label class="block text-xs font-bold text-slate-600 mb-1">Ekipman</label><input type="text" name="equipment" value="<?= e($profile['equipment'] ?? '') ?>" class="<?= $in ?>"></div>
-        <div><label class="block text-xs font-bold text-slate-600 mb-1">Hakkımda</label><textarea name="bio" rows="3" class="<?= $in ?>"><?= e($profile['bio'] ?? '') ?></textarea></div>
-        <div><label class="block text-xs font-bold text-slate-600 mb-1">IBAN</label><input type="text" name="iban" value="<?= e($contact['iban'] ?? '') ?>" class="<?= $in ?> font-mono"></div>
+        <?php if ($role === 'freelancer'): ?><a href="<?= BASE_URL ?>/platform/performance.php" class="btn btn-secondary"><i data-lucide="gauge"></i>Performans karnesi</a><?php endif; ?>
+    </div>
+
+    <form method="POST" action="" class="stack-lg">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="save_profile">
+
+        <?php if ($role === 'freelancer'): ?>
+        <section class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;gap:16px">
+            <div>
+                <p style="font-weight:500">Yeni iş almaya müsaitim</p>
+                <p class="small text-muted">Kapalıyken işleri görebilir ama alamaz, teklif veremezsiniz.</p>
+            </div>
+            <label class="switch"><input type="checkbox" name="is_available" value="1" <?= (int)$profile['is_available'] === 1 ? 'checked' : '' ?>><span></span></label>
+        </section>
         <?php endif; ?>
-        <div class="flex justify-end"><button class="px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl">Kaydet</button></div>
+
+        <section class="card">
+            <div class="card-head"><p class="card-title"><?= $role === 'agency' ? 'Firma bilgileri' : 'Kişisel bilgiler' ?></p></div>
+            <div class="card-pad grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <?php if ($role === 'agency'): ?>
+                <div class="field sm:col-span-2"><label class="label">Ajans / firma adı</label><input class="input" type="text" name="company_title" value="<?= e($contact['company_title']) ?>"></div>
+                <?php endif; ?>
+                <div class="field"><label class="label"><?= $role === 'agency' ? 'Yetkili kişi' : 'Ad soyad' ?> <span class="req">*</span></label><input class="input" type="text" name="full_name" required value="<?= e($_SESSION['client_user']['full_name'] ?? '') ?>"></div>
+                <div class="field"><label class="label">Telefon <span class="req">*</span></label><input class="input" type="text" name="phone" required value="<?= e($contact['phone'] ?? '') ?>"></div>
+                <div class="field"><label class="label">E-posta</label><input class="input" type="email" value="<?= e($contact['email'] ?? '') ?>" disabled><span class="hint">Değişiklik için platform ekibine yazın.</span></div>
+                <div class="field"><label class="label">Şehir</label><input class="input" type="text" name="city" value="<?= e($role === 'freelancer' ? ($profile['city'] ?? '') : ($contact['city'] ?? '')) ?>"><?php if ($role === 'freelancer'): ?><span class="hint">Yerinde çekim işleri şehrinize göre listelenir.</span><?php endif; ?></div>
+            </div>
+        </section>
+
+        <?php if ($role === 'agency'): ?>
+        <section class="card">
+            <div class="card-head"><div><p class="card-title">Fatura bilgileri</p><p class="card-sub">Tamamlanan siparişlerin faturası bu bilgilerle kesilir.</p></div></div>
+            <div class="card-pad grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="field"><label class="label">Web sitesi</label><input class="input" type="text" name="website" value="<?= e($profile['website'] ?? '') ?>"></div>
+                <div class="field"><label class="label">Vergi dairesi</label><input class="input" type="text" name="tax_office" value="<?= e($contact['tax_office'] ?? '') ?>"></div>
+                <div class="field"><label class="label">Vergi no</label><input class="input" type="text" name="tax_number" value="<?= e($contact['tax_number'] ?? '') ?>"></div>
+                <div class="field sm:col-span-3"><label class="label">Fatura adresi</label><textarea class="textarea" name="address" rows="2"><?= e($contact['address'] ?? '') ?></textarea></div>
+            </div>
+        </section>
+        <?php else: ?>
+        <section class="card">
+            <div class="card-head"><div><p class="card-title">Uzmanlık</p><p class="card-sub">İş havuzunda yalnızca seçtiğiniz alanlardaki işleri görürsünüz.</p></div></div>
+            <div class="card-pad stack">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <?php foreach (JOB_CATEGORIES as $ck => $cv): ?>
+                    <label class="option-card" style="align-items:center;padding:10px 12px">
+                        <input type="checkbox" name="skills[]" value="<?= $ck ?>" <?= in_array($ck, $skills, true) ? 'checked' : '' ?>>
+                        <i data-lucide="<?= $cv['icon'] ?>" style="width:15px;height:15px;color:var(--muted)"></i><span class="small"><?= e($cv['label']) ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="field"><label class="label">Unvan</label><input class="input" type="text" name="title" value="<?= e($profile['title'] ?? '') ?>" placeholder="Görüntü yönetmeni, kurgucu"></div>
+                    <div class="field"><label class="label">Günlük ücret beklentisi</label><div class="input-group"><input class="input" type="text" inputmode="decimal" name="day_rate" value="<?= e((string)($profile['day_rate'] ?? '')) ?>"><span class="addon">TL</span></div></div>
+                    <div class="field"><label class="label">Portfolyo / showreel</label><input class="input" type="url" name="portfolio_url" value="<?= e($profile['portfolio_url'] ?? '') ?>" placeholder="https://"></div>
+                    <div class="field"><label class="label">Ekipman</label><input class="input" type="text" name="equipment" value="<?= e($profile['equipment'] ?? '') ?>" placeholder="FX3, DJI RS3, Aputure 300d"></div>
+                    <div class="field sm:col-span-2"><label class="label">Hakkımda</label><textarea class="textarea" name="bio" rows="3"><?= e($profile['bio'] ?? '') ?></textarea></div>
+                </div>
+            </div>
+        </section>
+        <section class="card">
+            <div class="card-head"><div><p class="card-title">Ödeme</p><p class="card-sub">Hakedişler bu hesaba aktarılır.</p></div></div>
+            <div class="card-pad"><div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= e($contact['iban'] ?? '') ?>" placeholder="TR00 0000 0000 0000 0000 0000 00"></div></div>
+        </section>
+        <?php endif; ?>
+
+        <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary">Değişiklikleri kaydet</button></div>
     </form>
 
-    <form method="POST" action="" class="bg-white border border-slate-200 rounded-3xl p-6 space-y-3">
+    <form method="POST" action="" class="card" style="margin-top:24px">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="change_password">
-        <h2 class="text-sm font-bold text-slate-900">Şifre Değiştir</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input type="password" name="current_password" required placeholder="Mevcut şifre" class="<?= $in ?>">
-            <input type="password" name="new_password" required minlength="8" placeholder="Yeni şifre (en az 8 karakter)" class="<?= $in ?>">
+        <div class="card-head"><p class="card-title">Şifre</p></div>
+        <div class="card-pad grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="field"><label class="label">Mevcut şifre</label><input class="input" type="password" name="current_password" required autocomplete="current-password"></div>
+            <div class="field"><label class="label">Yeni şifre</label><input class="input" type="password" name="new_password" required minlength="8" autocomplete="new-password"><span class="hint">En az 8 karakter.</span></div>
         </div>
-        <div class="flex justify-end"><button class="px-5 py-2.5 bg-white border border-slate-300 text-sm font-bold rounded-xl">Şifreyi Güncelle</button></div>
+        <div class="card-foot" style="display:flex;justify-content:flex-end"><button class="btn btn-secondary">Şifreyi güncelle</button></div>
     </form>
 </div>
 <?php platform_footer();

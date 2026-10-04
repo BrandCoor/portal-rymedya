@@ -72,5 +72,10 @@ Portal erişimini cari kartından **"Erişimi Kapat"** ile durdurabilirsiniz.
 | `reports.view` | Yönetim raporları (ilk kurulumda finans yetkisi olan rollere otomatik verilir) |
 | `proposals.manage`, `inventory.manage` | Teklifler, ekipman |
 | `personnel.manage`, `settings.manage` | Personel, ayarlar ve roller |
+| `platform.manage` | İş merkezi: siparişler, atama, teklifler, kalite kontrol, freelancer/ajans yönetimi |
+| `platform.pricing` | Hizmet kataloğu ve fiyatlar |
+| `platform.delete` | Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog kalemi) |
+
+Hazır **Platform Yöneticisi** rolü üç platform iznini birlikte içerir; Roller sayfasından kişiye atanır. Ayrıntılar: [PLATFORM.md](PLATFORM.md).
 
 Kurgucular kendilerine atanan görevleri, projeyi düzenleme yetkileri olmasa bile tamamlandı olarak işaretleyebilir.

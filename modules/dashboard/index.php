@@ -155,7 +155,7 @@ if (has_permission('finance.view') || has_permission('finance.invoices')) {
                 <?= e($user['role_name']) ?> MASASI
             </span>
         </div>
-        <h1 class="text-2xl font-black text-slate-900 tracking-tight">Merhaba, <?= e($user['full_name']) ?> 👋</h1>
+        <h1 class="text-2xl font-black text-slate-900 tracking-tight">Merhaba, <?= e($user['full_name']) ?> </h1>
         <p class="text-xs text-slate-500 mt-0.5">
             <?= $role_slug === 'editor' ? 'Kurgu revizyonları, teslim tarihleri ve video önizleme paneli.' : ($role_slug === 'director' ? 'Set planları, Call Sheet dökümleri ve kreatif briefler.' : 'Prodüksiyon, nakit akışı ve ajans operasyon merkezi.') ?>
         </p>
@@ -182,7 +182,7 @@ if (has_permission('finance.view') || has_permission('finance.invoices')) {
             <div>
                 <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Kasa & Banka Likidite</p>
                 <p class="text-2xl font-black text-slate-900 mt-1"><?= format_money($total_cash) ?></p>
-                <span class="text-[10px] text-emerald-600 font-semibold block mt-1">✓ Net Nakit Mevcudu</span>
+                <span class="text-[10px] text-emerald-600 font-semibold block mt-1">Net Nakit Mevcudu</span>
             </div>
             <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
                 <i data-lucide="wallet" class="w-6 h-6"></i>
@@ -469,7 +469,7 @@ if (has_permission('finance.view') || has_permission('finance.invoices')) {
             <a href="<?= BASE_URL ?>/modules/tasks/index.php" class="text-[11px] font-bold text-brand-600 hover:underline">Tümü →</a>
         </div>
         <?php if (empty($my_tasks)): ?>
-            <p class="text-xs text-slate-400 py-6 text-center">Size atanmış açık görev yok. 🎉</p>
+            <p class="text-xs text-slate-400 py-6 text-center">Size atanmış açık görev yok. </p>
         <?php else: ?>
             <div class="space-y-2">
                 <?php foreach ($my_tasks as $t): $late = !empty($t['due_date']) && $t['due_date'] < date('Y-m-d'); ?>
@@ -499,7 +499,7 @@ if (has_permission('finance.view') || has_permission('finance.invoices')) {
                         <div class="text-[9px] font-bold text-slate-400 uppercase"><?= turkish_month((int)date('n', strtotime($a['d'])), true) ?></div>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs font-bold text-slate-900 truncate"><?= $a['kind'] === 'shoot' ? '🎬 ' : '⏰ ' ?><?= !empty($a['start_time']) ? substr($a['start_time'], 0, 5) . ' · ' : '' ?><?= e($a['title']) ?></p>
+                        <p class="text-xs font-bold text-slate-900 truncate"><?= $a['kind'] === 'shoot' ? '' : '' ?><?= !empty($a['start_time']) ? substr($a['start_time'], 0, 5) . ' · ' : '' ?><?= e($a['title']) ?></p>
                         <p class="text-[10px] text-slate-500 truncate"><?= e($a['project_name']) ?></p>
                     </div>
                 </a>

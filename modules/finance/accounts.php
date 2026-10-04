@@ -288,7 +288,7 @@ require_once __DIR__ . '/../../includes/header.php';
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="delete_tx">
                                     <input type="hidden" name="transaction_id" value="<?= $tx['id'] ?>">
-                                    <button type="submit" class="p-1 text-slate-300 hover:text-rose-600">✕ Sil</button>
+                                    <button type="submit" class="p-1 text-slate-300 hover:text-rose-600">Sil</button>
                                 </form>
                             </td>
                         </tr>

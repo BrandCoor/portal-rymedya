@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
            ->execute([$response, $note ?: null, $prop_id]);
         log_activity(
             $response === 'approved' ? 'client_proposal_accepted' : 'client_proposal_rejected',
-            ($response === 'approved' ? '🎉 Müşteri teklifi KABUL etti: ' : '❌ Müşteri teklifi reddetti: ') . "{$prop['proposal_code']} · {$prop['title']}" . ($note ? " — \"" . mb_substr($note, 0, 160) . "\"" : ''),
+            ($response === 'approved' ? 'Müşteri teklifi KABUL etti: ' : 'Müşteri teklifi reddetti: ') . "{$prop['proposal_code']} · {$prop['title']}" . ($note ? " — \"" . mb_substr($note, 0, 160) . "\"" : ''),
             'proposal', $prop_id, '/modules/proposals/index.php'
         );
         set_flash('success', $response === 'approved'
@@ -139,13 +139,7 @@ $proposal_labels = [
 <!DOCTYPE html>
 <html lang="tr" class="h-full bg-slate-50">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Müşteri Portalı | <?= e($contact['company_title']) ?></title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <style>[x-cloak] { display: none !important; }</style>
+    <?php ui_head('Müşteri portalı'); ?>
 </head>
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
@@ -242,8 +236,8 @@ $proposal_labels = [
                             <p class="text-xs text-slate-500 mt-1">Tür: <strong><?= get_project_type_name($p['project_type']) ?></strong></p>
                             
                             <div class="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                                <span>🎬 <strong><?= $p['shoot_count'] ?></strong> Çekim Günü</span>
-                                <span>✂️ <strong><?= $p['rev_count'] ?></strong> Kurgu Versiyonu</span>
+                                <span><strong><?= $p['shoot_count'] ?></strong> Çekim Günü</span>
+                                <span><strong><?= $p['rev_count'] ?></strong> Kurgu Versiyonu</span>
                             </div>
                         </div>
 
