@@ -46,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($fields as $f) {
             $values[$f] = trim($_POST[$f] ?? '');
         }
+        $values['city'] = normalize_city($values['city']);
 
         $up = $db->prepare("UPDATE contacts SET type = ?, company_title = ?, authorized_person = ?, phone = ?, email = ?, tax_office = ?, tax_number = ?, id_number = ?, iban = ?, city = ?, district = ?, address = ? WHERE id = ?");
         $up->execute([$type, $company_title, $values['authorized_person'], $values['phone'], $values['email'], $values['tax_office'], $values['tax_number'], $values['id_number'], $values['iban'], $values['city'], $values['district'], $values['address'], $contact_id]);
@@ -688,6 +689,17 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">IBAN</label>
                     <input type="text" name="iban" value="<?= e($contact['iban'] ?? '') ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">İl</label>
+                        <?= city_select('city', $contact['city'] ?? '', ['class' => 'w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs']) ?>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">İlçe</label>
+                        <input type="text" name="district" value="<?= e($contact['district'] ?? '') ?>" class="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    </div>
                 </div>
 
                 <div>

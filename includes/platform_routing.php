@@ -76,7 +76,7 @@ function routing_facts(array $ctx): array {
         'services' => array_map(fn($i) => (int)($i['service_id'] ?? 0), $ctx['items'] ?? []),
         'category' => $ctx['category'],
         'remote'   => !empty($ctx['is_remote']),
-        'city'     => mb_strtolower(trim((string)($ctx['city'] ?? ''))),
+        'city'     => normalize_city($ctx['city'] ?? ''),
         'agency'   => $aid,
         'agency_jobs' => $aid ? $agency_cache[$aid]['jobs'] : 0,
         'overdue'  => $aid ? $agency_cache[$aid]['overdue'] : false,
@@ -122,8 +122,8 @@ function routing_match(array $rule, array $f): array {
     if (!empty($c['categories']) && !in_array($f['category'], (array)$c['categories'], true)) $fail[] = 'İş türü';
     if (!empty($c['services']) && !array_intersect(array_map('intval', (array)$c['services']), $f['services'])) $fail[] = 'Seçili hizmetlerden biri';
     if (!empty($c['agencies']) && !in_array($f['agency'], array_map('intval', (array)$c['agencies']), true)) $fail[] = 'Seçili ajanslar';
-    $cities = routing_list($c['cities'] ?? '');
-    if ($cities && ($f['remote'] || !in_array($f['city'], $cities, true))) $fail[] = 'Şehir';
+    $cities = array_filter(array_map('normalize_city', explode(',', (string)($c['cities'] ?? ''))));
+    if ($cities && ($f['remote'] || !in_array($f['city'], $cities, true))) $fail[] = 'İl';
     $words = routing_list($c['keywords'] ?? '');
     if ($words && !array_filter($words, fn($w) => str_contains($f['text'], $w))) $fail[] = 'Anahtar kelime';
     return [!$fail, $fail];

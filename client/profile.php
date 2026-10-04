@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_authorized_person = trim($_POST['authorized_person'] ?? '');
         $new_phone             = trim($_POST['phone'] ?? '');
         $new_email             = trim($_POST['email'] ?? '');
-        $new_city              = trim($_POST['city'] ?? '');
+        $new_city              = normalize_city($_POST['city'] ?? '');
         $new_district          = trim($_POST['district'] ?? '');
         $new_address           = trim($_POST['address'] ?? '');
         $new_password          = $_POST['new_password'] ?? '';
@@ -244,8 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Şehir</label>
-                        <input type="text" name="city" value="<?= e($contact['city']) ?>" placeholder="İstanbul"
-                               class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
+                        <?= city_select('city', $contact['city'] ?? '', ['class' => 'w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900']) ?>
                     </div>
 
                     <div>

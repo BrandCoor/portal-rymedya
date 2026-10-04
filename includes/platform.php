@@ -1080,7 +1080,7 @@ function job_visibility_reason(array $job, array $profile): ?string {
         }
     }
     if ((int)$job['city_match_only'] === 1 && (int)$job['is_remote'] !== 1 && !empty($job['location_city'])) {
-        if (mb_strtolower(trim((string)$profile['city'])) !== mb_strtolower(trim($job['location_city']))) {
+        if ((normalize_city($profile['city'] ?? '') ?: tr_lower((string)$profile['city'])) !== (normalize_city($job['location_city']) ?: tr_lower($job['location_city']))) {
             return 'Şehir eşleşmiyor';
         }
     }

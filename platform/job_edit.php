@@ -77,14 +77,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $start_date  = valid_date($_POST['start_date'] ?? '');
         $deadline    = valid_date($_POST['deadline'] ?? '');
         $is_remote   = isset($_POST['is_remote']) ? 1 : 0;
-        $city        = $is_remote ? null : trim($_POST['location_city'] ?? '');
+        $city        = $is_remote ? null : normalize_city($_POST['location_city'] ?? '');
         $detail      = trim($_POST['location_detail'] ?? '');
 
         if ($title === '') $errors[] = 'İş başlığı zorunlu.';
         if (mb_strlen($description) < 20) $errors[] = 'Brief en az birkaç cümle olmalı.';
         if (!$deadline) $errors[] = 'Teslim tarihi zorunlu.';
         if ($start_date && $deadline && $deadline < $start_date) $errors[] = 'Teslim tarihi başlangıçtan önce olamaz.';
-        if (!$is_remote && $city === '') $errors[] = 'Şehir girin veya "uzaktan yapılabilir" seçin.';
+        if (!$is_remote && $city === '') $errors[] = 'İl seçin veya "uzaktan yapılabilir" işaretleyin.';
 
         // Kalemler
         $items = null;
@@ -373,7 +373,7 @@ platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
                     <div class="panel" style="padding:14px 16px">
                         <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote"><span>Uzaktan yapılabilir</span></label>
                         <div x-show="!remote" class="grid grid-cols-1 sm:grid-cols-3 gap-3" style="margin-top:12px">
-                            <div class="field"><label class="label">Şehir <span class="req">*</span></label><input class="input" type="text" name="location_city" value="<?= $val('location_city') ?>"></div>
+                            <div class="field"><label class="label">Şehir <span class="req">*</span></label><?= city_select('location_city', is_string($src['location_city'] ?? null) ? $src['location_city'] : '') ?></div>
                             <div class="field sm:col-span-2"><label class="label">Lokasyon</label><input class="input" type="text" name="location_detail" value="<?= $val('location_detail') ?>"></div>
                         </div>
                     </div>

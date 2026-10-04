@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'TRY', 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ")->execute([
             $code, $agency, $user['id'], $title, $category, trim($_POST['description'] ?? ''), trim($_POST['deliverables'] ?? ''),
-            $remote ? null : (trim($_POST['location_city'] ?? '') ?: null), $remote, $start, $deadline, $price, $fee,
+            $remote ? null : (normalize_city($_POST['location_city'] ?? '') ?: null), $remote, $start, $deadline, $price, $fee,
             $mode, $lead['level'] === 'warn' ? 1 : 0, $rush_fee,
             $policy['visibility'], $policy['dispatch_mode'], $policy['min_tier'], $policy['priority_tier'], $policy['priority_hours'], $policy['skill_match_only'], $policy['city_match_only'],
         ]);
@@ -279,7 +279,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="field" x-show="mode === 'custom'"><label class="label">İş türü</label><select class="select" name="category"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><option value="<?= $ck ?>"><?= e($cv['label']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label class="label">Başlangıç / çekim</label><input class="input" type="date" name="start_date"></div>
                 <div class="field"><label class="label">Teslim <span class="req">*</span></label><input class="input" type="date" name="deadline" required></div>
-                <div class="field"><label class="label">Şehir</label><input class="input" name="location_city"></div>
+                <div class="field"><label class="label">İl</label><?= city_select('location_city', '') ?></div>
                 <label class="check" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="is_remote" value="1">Uzaktan yapılabilir</label>
             </div>
             <?php if ($services): ?>

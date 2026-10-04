@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tax_number        = trim($_POST['tax_number'] ?? '');
         $id_number         = trim($_POST['id_number'] ?? '');
         $iban              = trim($_POST['iban'] ?? '');
-        $city              = trim($_POST['city'] ?? '');
+        $city              = normalize_city($_POST['city'] ?? '');
         $district          = trim($_POST['district'] ?? '');
         $address           = trim($_POST['address'] ?? '');
         $notes             = trim($_POST['notes'] ?? '');
@@ -297,6 +297,17 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div>
                         <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Vergi No (VKN)</label>
                         <input type="text" name="tax_number" placeholder="10 Haneli VKN" class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1">İl</label>
+                        <?= city_select('city', '', ['class' => 'w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs']) ?>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1">İlçe</label>
+                        <input type="text" name="district" class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     </div>
                 </div>
 

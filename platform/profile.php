@@ -34,9 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_profile') {
         $name  = trim($_POST['full_name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
-        $city  = trim($_POST['city'] ?? '');
-        if ($name === '' || $phone === '') {
-            set_flash('error', 'Ad soyad ve telefon zorunludur.');
+        $city  = normalize_city($_POST['city'] ?? '');
+        if ($name === '' || $phone === '' || $city === '') {
+            set_flash('error', 'Ad soyad, telefon ve il zorunludur.');
             redirect(BASE_URL . '/platform/profile.php');
         }
         if ($role === 'agency') {
@@ -127,7 +127,7 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
                 <div class="field"><label class="label"><?= $role === 'agency' ? 'Yetkili kişi' : 'Ad soyad' ?> <span class="req">*</span></label><input class="input" type="text" name="full_name" required value="<?= e($_SESSION['client_user']['full_name'] ?? '') ?>"></div>
                 <div class="field"><label class="label">Telefon <span class="req">*</span></label><input class="input" type="text" name="phone" required value="<?= e($contact['phone'] ?? '') ?>"></div>
                 <div class="field"><label class="label">E-posta</label><input class="input" type="email" value="<?= e($contact['email'] ?? '') ?>" disabled><span class="hint">Değişiklik için platform ekibine yazın.</span></div>
-                <div class="field"><label class="label">Şehir</label><input class="input" type="text" name="city" value="<?= e($role === 'freelancer' ? ($profile['city'] ?? '') : ($contact['city'] ?? '')) ?>"><?php if ($role === 'freelancer'): ?><span class="hint">Yerinde çekim işleri şehrinize göre listelenir.</span><?php endif; ?></div>
+                <div class="field"><label class="label">İl <span class="req">*</span></label><?= city_select('city', $role === 'freelancer' ? ($profile['city'] ?? '') : ($contact['city'] ?? ''), ['required' => true]) ?><?php if ($role === 'freelancer'): ?><span class="hint">Yerinde çekim işleri şehrinize göre listelenir.</span><?php endif; ?></div>
             </div>
         </section>
 

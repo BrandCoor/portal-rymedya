@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Elle değiştirilen seviye otomatik hesaplamayla ezilmesin diye sabitlenir
         $locked = isset($_POST['tier_locked']) || $tier !== $f['tier'] ? 1 : 0;
         $db->prepare("UPDATE freelancer_profiles SET tier = ?, tier_locked = ?, skills = ?, status = ?, city = ?, admin_notes = ?, is_available = ? WHERE user_id = ?")
-           ->execute([$tier, $locked, implode(',', $skills), $status, trim($_POST['city'] ?? ''), trim($_POST['admin_notes'] ?? ''), isset($_POST['is_available']) ? 1 : 0, $uid]);
+           ->execute([$tier, $locked, implode(',', $skills), $status, normalize_city($_POST['city'] ?? ''), trim($_POST['admin_notes'] ?? ''), isset($_POST['is_available']) ? 1 : 0, $uid]);
         if ($tier !== $f['tier']) {
             $up = tier_rank($tier) > tier_rank($f['tier']);
             notify_user($uid, ($up ? 'Seviyeniz yükseltildi: ' : 'Seviyeniz güncellendi: ') . tier_label($tier) . '. Aynı anda alabileceğiniz iş sayısı: ' . tier_job_limit($tier), '/platform/performance.php');
@@ -233,7 +233,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div class="field"><label class="label">Seviye</label><select class="select" name="tier"><?php foreach (FREELANCER_TIERS as $tk => $tv): ?><option value="<?= $tk ?>" <?= $f['tier'] === $tk ? 'selected' : '' ?>><?= e($tv['label']) ?> · <?= tier_job_limit($tk) ?> iş</option><?php endforeach; ?></select></div>
                         <div class="field"><label class="label">Durum</label><select class="select" name="status"><?php foreach ($status_badge as $sk => [$sv]): ?><option value="<?= $sk ?>" <?= $f['status'] === $sk ? 'selected' : '' ?>><?= $sv ?></option><?php endforeach; ?></select></div>
-                        <div class="field"><label class="label">Şehir</label><input class="input" name="city" value="<?= e($f['city'] ?? '') ?>"></div>
+                        <div class="field"><label class="label">İl</label><?= city_select('city', $f['city'] ?? '') ?></div>
                     </div>
                     <div style="display:flex;gap:18px;flex-wrap:wrap">
                         <label class="check small"><input type="checkbox" name="tier_locked" value="1" <?= (int)$f['tier_locked'] === 1 ? 'checked' : '' ?>>Seviyeyi sabitle (otomatik değişmesin)</label>

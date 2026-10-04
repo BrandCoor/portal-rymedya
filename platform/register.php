@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
     $phone     = trim($_POST['phone'] ?? '');
     $password  = $_POST['password'] ?? '';
     $password2 = $_POST['password2'] ?? '';
-    $city      = trim($_POST['city'] ?? '');
+    $city      = normalize_city($_POST['city'] ?? '');
 
     // Bot tuzağı (görünmez alan dolu ise kayıt reddedilir)
     if (!empty($_POST['website_url_hp'])) {
@@ -50,6 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
     }
     if ($phone === '') {
         $errors[] = 'Telefon zorunludur.';
+    }
+    if ($city === '') {
+        $errors[] = 'Listeden il seçin.';
     }
     if (strlen($password) < 8) {
         $errors[] = 'Şifre en az 8 karakter olmalıdır.';
@@ -169,7 +172,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
                     <div class="field"><label class="label"><?= $is_agency ? 'Yetkili ad soyad' : 'Ad soyad' ?> <span class="req">*</span></label><input class="input" type="text" name="full_name" required value="<?= $val('full_name') ?>"></div>
                     <div class="field"><label class="label">Telefon <span class="req">*</span></label><input class="input" type="tel" name="phone" required value="<?= $val('phone') ?>" placeholder="05xx xxx xx xx"></div>
                     <div class="field"><label class="label">E-posta <span class="req">*</span></label><input class="input" type="email" name="email" required value="<?= $val('email') ?>"><span class="hint">Giriş adresiniz olur.</span></div>
-                    <div class="field"><label class="label">Şehir</label><input class="input" type="text" name="city" value="<?= $val('city') ?>" placeholder="İstanbul"></div>
+                    <div class="field"><label class="label">İl <span class="req">*</span></label><?= city_select('city', is_string($_POST['city'] ?? null) ? $_POST['city'] : '', ['required' => true]) ?><?php if (!$is_agency): ?><span class="hint">Yerinde çekim işleri ilinize göre listelenir.</span><?php endif; ?></div>
                     <div class="field"><label class="label">Şifre <span class="req">*</span></label><input class="input" type="password" name="password" required minlength="8" autocomplete="new-password"><span class="hint">En az 8 karakter.</span></div>
                     <div class="field"><label class="label">Şifre tekrar <span class="req">*</span></label><input class="input" type="password" name="password2" required minlength="8" autocomplete="new-password"></div>
                 </div>

@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'deliverables' => trim($_POST['deliverables'] ?? ''),
             'reference_links' => trim($_POST['reference_links'] ?? ''),
             'agency_notes' => trim($_POST['agency_notes'] ?? ''),
-            'location_city' => trim($_POST['location_city'] ?? '') ?: null,
+            'location_city' => normalize_city($_POST['location_city'] ?? '') ?: null,
             'location_detail' => trim($_POST['location_detail'] ?? ''),
             'is_remote' => isset($_POST['is_remote']) ? 1 : 0,
             'start_date' => valid_date($_POST['start_date'] ?? ''),
@@ -989,7 +989,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="field"><label class="label">İş türü</label><select class="select" name="category"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><option value="<?= $ck ?>" <?= $job['category'] === $ck ? 'selected' : '' ?>><?= e($cv['label']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label class="label">Başlangıç</label><input class="input" type="date" name="start_date" value="<?= e($job['start_date'] ?? '') ?>"></div>
                 <div class="field"><label class="label">Teslim</label><input class="input" type="date" name="deadline" value="<?= e($job['deadline'] ?? '') ?>" required></div>
-                <div class="field"><label class="label">Şehir</label><input class="input" name="location_city" value="<?= e($job['location_city'] ?? '') ?>"></div>
+                <div class="field"><label class="label">İl</label><?= city_select('location_city', $job['location_city'] ?? '') ?></div>
                 <div class="field"><label class="label">Lokasyon</label><input class="input" name="location_detail" value="<?= e($job['location_detail'] ?? '') ?>"></div>
                 <label class="check sm:col-span-2"><input type="checkbox" name="is_remote" value="1" <?= (int)$job['is_remote'] === 1 ? 'checked' : '' ?>>Uzaktan yapılabilir</label>
                 <div class="field sm:col-span-2"><label class="label">Brief</label><textarea class="textarea" name="description" rows="5"><?= e($job['description'] ?? '') ?></textarea></div>

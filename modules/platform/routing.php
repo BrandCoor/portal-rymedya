@@ -37,10 +37,10 @@ function routing_from_post(array $in, string $id): array {
     if ($svcs) $cond['services'] = $svcs;
     $ags = array_values(array_filter(array_map('intval', (array)($c['agencies'] ?? []))));
     if ($ags) $cond['agencies'] = $ags;
-    foreach (['cities', 'keywords'] as $k) {
-        $v = implode(', ', routing_list($c[$k] ?? ''));
-        if ($v !== '') $cond[$k] = mb_substr($v, 0, 300);
-    }
+    $cities = array_values(array_unique(array_filter(array_map('normalize_city', (array)($c['cities'] ?? [])))));
+    if ($cities) $cond['cities'] = implode(', ', $cities);
+    $v = implode(', ', routing_list($c['keywords'] ?? ''));
+    if ($v !== '') $cond['keywords'] = mb_substr($v, 0, 300);
     $a = (array)($in['action'] ?? []);
     $action = [
         'route'          => array_key_exists($a['route'] ?? '', ROUTE_ACTIONS) ? $a['route'] : 'review',
@@ -179,15 +179,17 @@ function routing_form(array $r, bool $is_new, array $services, array $agencies, 
             <div class="field"><label class="label">İş tipi</label><select class="select" name="rule[cond][source]"><?= $opt(['catalog' => 'Katalogdan iş', 'custom' => 'Özel teklif talebi'], (string)($c['source'] ?? ''), 'Hepsi') ?></select></div>
             <div class="field"><label class="label">Acil iş</label><select class="select" name="rule[cond][rush]"><?= $opt(['yes' => 'Yalnızca acil', 'no' => 'Acil olmayan'], (string)($c['rush'] ?? ''), 'Hepsi') ?></select></div>
             <div class="field"><label class="label">Yer</label><select class="select" name="rule[cond][location]"><?= $opt(['onsite' => 'Yerinde (çekim vb.)', 'remote' => 'Uzaktan'], (string)($c['location'] ?? ''), 'Hepsi') ?></select></div>
-            <div class="field"><label class="label">Şehir</label><input class="input" name="rule[cond][cities]" value="<?= e($c['cities'] ?? '') ?>" placeholder="ör. Ankara, İzmir"></div>
             <div class="field"><label class="label">Başlık / brief'te geçen kelime</label><input class="input" name="rule[cond][keywords]" value="<?= e($c['keywords'] ?? '') ?>" placeholder="ör. canlı yayın, gece"></div>
             <div class="field"><label class="label">Ajans ödemesi</label><label class="check small" style="height:38px"><input type="checkbox" name="rule[cond][overdue]" value="1" <?= !empty($c['overdue']) ? 'checked' : '' ?>>Vadesi geçmiş borcu varsa</label></div>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div class="field"><label class="label">İş türü <span class="text-faint">(biri)</span></label>
                 <div class="panel" style="padding:8px 10px;max-height:160px;overflow-y:auto"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><label class="check xsmall" style="display:flex"><input type="checkbox" name="rule[cond][categories][]" value="<?= $ck ?>" <?= in_array($ck, (array)($c['categories'] ?? []), true) ? 'checked' : '' ?>><?= e($cv['label']) ?></label><?php endforeach; ?></div></div>
             <div class="field"><label class="label">İçerdiği hizmet <span class="text-faint">(biri)</span></label>
                 <div class="panel" style="padding:8px 10px;max-height:160px;overflow-y:auto"><?php foreach ($services as $sv): ?><label class="check xsmall" style="display:flex"><input type="checkbox" name="rule[cond][services][]" value="<?= (int)$sv['id'] ?>" <?= in_array((int)$sv['id'], array_map('intval', (array)($c['services'] ?? [])), true) ? 'checked' : '' ?>><?= e($sv['name']) ?></label><?php endforeach; ?></div></div>
+            <div class="field"><label class="label">İl <span class="text-faint">(biri · yerinde işler)</span></label>
+                <?php $sel_c = array_map('normalize_city', array_map('trim', explode(',', (string)($c['cities'] ?? '')))); ?>
+                <div class="panel" style="padding:8px 10px;max-height:160px;overflow-y:auto"><?php foreach (TR_CITIES as $tc): ?><label class="check xsmall" style="display:flex"><input type="checkbox" name="rule[cond][cities][]" value="<?= e($tc) ?>" <?= in_array($tc, $sel_c, true) ? 'checked' : '' ?>><?= e($tc) ?></label><?php endforeach; ?></div></div>
             <div class="field"><label class="label">Ajans <span class="text-faint">(biri)</span></label>
                 <div class="panel" style="padding:8px 10px;max-height:160px;overflow-y:auto"><?php if (!$agencies): ?><p class="xsmall text-muted">Henüz ajans yok.</p><?php endif; ?><?php foreach ($agencies as $ag): ?><label class="check xsmall" style="display:flex"><input type="checkbox" name="rule[cond][agencies][]" value="<?= (int)$ag['id'] ?>" <?= in_array((int)$ag['id'], array_map('intval', (array)($c['agencies'] ?? [])), true) ? 'checked' : '' ?>><?= e($ag['company_title']) ?></label><?php endforeach; ?></div></div>
         </div>

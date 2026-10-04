@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $start_date  = valid_date($_POST['start_date'] ?? '');
     $deadline    = valid_date($_POST['deadline'] ?? '');
     $is_remote   = isset($_POST['is_remote']) ? 1 : 0;
-    $city        = trim($_POST['location_city'] ?? '');
+    $city        = normalize_city($_POST['location_city'] ?? '');
     $items       = $mode === 'catalog' ? build_order_items((array)($_POST['qty'] ?? [])) : [];
 
     if ($mode === 'catalog' && !$items) $errors[] = 'En az bir hizmet seçin.';
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (mb_strlen($description) < 20) $errors[] = 'Brief en az birkaç cümle olmalı.';
     if (!$deadline) $errors[] = 'Teslim tarihi zorunlu.';
     if ($start_date && $deadline && $deadline < $start_date) $errors[] = 'Teslim tarihi başlangıçtan önce olamaz.';
-    if (!$is_remote && $city === '') $errors[] = 'Şehir girin veya "uzaktan yapılabilir" seçin.';
+    if (!$is_remote && $city === '') $errors[] = 'İl seçin veya "uzaktan yapılabilir" işaretleyin.';
 
     $lead = assess_lead_time($start_date, $deadline, $items);
     if ($lead['level'] === 'block') {
@@ -250,7 +250,7 @@ $order_cfg = [
                     <div class="panel" style="padding:14px 16px">
                         <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote" <?= !empty($old['is_remote']) ? 'checked' : '' ?>><span>Uzaktan yapılabilir <span class="text-muted">(kurgu, renk, animasyon gibi işler)</span></span></label>
                         <div x-show="!remote" class="grid grid-cols-1 sm:grid-cols-3 gap-3" style="margin-top:12px">
-                            <div class="field"><label class="label">Şehir <span class="req">*</span></label><input class="input" type="text" name="location_city" value="<?= $val('location_city') ?>" placeholder="İstanbul"></div>
+                            <div class="field"><label class="label">Şehir <span class="req">*</span></label><?= city_select('location_city', $old['location_city'] ?? '') ?></div>
                             <div class="field sm:col-span-2"><label class="label">Lokasyon</label><input class="input" type="text" name="location_detail" value="<?= $val('location_detail') ?>" placeholder="Stüdyo, mekan veya ilçe"></div>
                         </div>
                     </div>
