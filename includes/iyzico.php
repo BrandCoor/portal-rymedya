@@ -15,22 +15,41 @@ function iyzico_secret(): string {
     return secret_setting('iyzico_secret_key');
 }
 
-/** Kartla ödeme kullanılabilir mi? (anahtarlar + tahsilat hesabı) */
+/** Kartla ödeme kullanılabilir mi? (açık + API anahtarı + güvenlik anahtarı) */
 function iyzico_enabled(): bool {
-    return site_setting('iyzico_enabled') === '1'
-        && trim((string)site_setting('iyzico_api_key')) !== ''
-        && iyzico_secret() !== ''
-        && iyzico_account_id() > 0;
+    return !iyzico_issues();
 }
 
-/** Kart tahsilatlarının işleneceği kasa/banka hesabı */
+/**
+ * Kartla ödemenin açılmasına engel olan eksikler (yönetici ekranlarında gösterilir)
+ */
+function iyzico_issues(): array {
+    $out = [];
+    if (site_setting('iyzico_enabled') !== '1') $out[] = 'Ayarlar → Banka ve ödeme → "iyzico ile kartla ödeme" kapalı.';
+    if (trim((string)site_setting('iyzico_api_key')) === '') $out[] = 'iyzico API anahtarı girilmemiş.';
+    if (iyzico_secret() === '') $out[] = 'iyzico güvenlik anahtarı girilmemiş (veya kayıtlı anahtar çözülemedi; yeniden girin).';
+    if (!function_exists('curl_init') && !ini_get('allow_url_fopen')) $out[] = 'Sunucuda PHP cURL eklentisi yok ve allow_url_fopen kapalı; hosting panelinden cURL\'u açın.';
+    return $out;
+}
+
+/**
+ * Kart tahsilatlarının işleneceği kasa/banka hesabı.
+ * Platform kurallarında seçilmediyse "iyzico Sanal POS" hesabı kullanılır (yoksa açılır).
+ */
 function iyzico_account_id(): int {
     global $db;
     $id = (int)platform_setting('platform_card_account_id');
-    if ($id <= 0) return 0;
-    $st = $db->prepare("SELECT id FROM accounts WHERE id = ? AND status = 'active'");
-    $st->execute([$id]);
-    return (int)$st->fetchColumn();
+    if ($id > 0) {
+        $st = $db->prepare("SELECT id FROM accounts WHERE id = ? AND status = 'active'");
+        $st->execute([$id]);
+        if ($found = (int)$st->fetchColumn()) return $found;
+    }
+    $id = (int)$db->query("SELECT id FROM accounts WHERE account_name = 'iyzico Sanal POS' AND status = 'active' LIMIT 1")->fetchColumn();
+    if (!$id) {
+        $db->prepare("INSERT INTO accounts (account_name, account_type, currency, bank_name, balance, status, created_at) VALUES ('iyzico Sanal POS', 'bank', 'TRY', 'iyzico', 0, 'active', NOW())")->execute();
+        $id = (int)$db->lastInsertId();
+    }
+    return $id;
 }
 
 function iyzico_base_url(): string {
@@ -59,6 +78,12 @@ function iyzico_headers(string $path, string $body): array {
 
 function iyzico_request(string $path, array $payload): array {
     $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!function_exists('curl_init')) {
+        $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => implode("\r\n", iyzico_headers($path, $body)), 'content' => $body, 'timeout' => 30, 'ignore_errors' => true]]);
+        $raw = @file_get_contents(iyzico_base_url() . $path, false, $ctx);
+        $res = $raw === false ? null : json_decode((string)$raw, true);
+        return is_array($res) ? $res : ['status' => 'failure', 'errorMessage' => 'iyzico\'ya bağlanılamadı.'];
+    }
     $ch = curl_init(iyzico_base_url() . $path);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,

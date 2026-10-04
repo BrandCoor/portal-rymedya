@@ -150,8 +150,12 @@ require_once __DIR__ . '/../../includes/header.php';
 </div>
 
 <?php elseif ($tab === 'cards'): ?>
-<?php if (!iyzico_enabled()): ?>
-    <div class="alert alert-info" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>Kartla ödeme kapalı. Açmak için <a class="link" href="<?= BASE_URL ?>/modules/settings/index.php?tab=bank">Ayarlar → Banka ve ödeme</a> bölümünden iyzico anahtarlarını girip açın ve <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Platform kuralları → Ödemeler</a> bölümünden tahsilat hesabını seçin.</div></div>
+<?php if ($iy_issues = iyzico_issues()): ?>
+    <div class="alert alert-warning" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div><strong>Kartla ödeme ajanslara görünmüyor.</strong> Eksikler:
+        <ul style="margin:6px 0 0 18px;list-style:disc"><?php foreach ($iy_issues as $is): ?><li><?= e($is) ?></li><?php endforeach; ?></ul>
+        <a class="link" href="<?= BASE_URL ?>/modules/settings/index.php?tab=bank">Ayarlar → Banka ve ödeme</a></div></div>
+<?php else: ?>
+    <div class="alert alert-success" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>Kartla ödeme açık (<?= site_setting('iyzico_mode') === 'live' ? 'canlı' : 'test / sandbox' ?>). Tahsilatlar <strong><?= e((string)$db->query("SELECT account_name FROM accounts WHERE id = " . iyzico_account_id())->fetchColumn()) ?></strong> hesabına işlenir; değiştirmek için <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Platform kuralları → Ödemeler</a>.</div></div>
 <?php endif; ?>
 <section class="card">
     <?php if (!$cards): ?>

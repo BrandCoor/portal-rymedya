@@ -61,7 +61,7 @@ $sections = [
         'platform_payout_min'         => ['int', 'En düşük freelancer ödeme talebi', 'Freelancer bu tutarın altındaki hakedişler için talep oluşturamaz. 0 ise sınır yok.', 0, 1000000, '₺'],
         'platform_payout_days'        => ['int', 'Ödeme talebi işleme süresi', 'Freelancer\'a "talepler genellikle X iş günü içinde ödenir" olarak gösterilir. 0 ise gösterilmez.', 0, 60, 'iş günü'],
         'platform_show_bank_accounts' => ['bool', 'Ajansın Ödemeler ekranında banka bilgileri görünsün', 'Ayarlar → Banka ve ödeme bölümündeki banka adı, alıcı ve IBAN bilgileri ajansa ödeme yapabileceği hesaplar olarak gösterilir.'],
-        'platform_card_account_id'    => ['choice', 'Kartla (iyzico) tahsilatların işleneceği hesap', 'iyzico ile alınan ödemeler bu kasa/banka hesabına ve ilgili faturaya otomatik işlenir. Seçilmezse kartla ödeme açılmaz.', ['0' => 'Seçilmedi'] + array_column($db->query("SELECT id, CONCAT(account_name, ' (', account_type, ')') AS n FROM accounts WHERE status = 'active' ORDER BY account_name")->fetchAll(), 'n', 'id')],
+        'platform_card_account_id'    => ['choice', 'Kartla (iyzico) tahsilatların işleneceği hesap', 'iyzico ile alınan ödemeler bu kasa/banka hesabına ve ilgili faturaya otomatik işlenir. Seçilmezse "iyzico Sanal POS" hesabı otomatik açılır ve kullanılır.', ['0' => 'Otomatik (iyzico Sanal POS)'] + array_column($db->query("SELECT id, CONCAT(account_name, ' (', account_type, ')') AS n FROM accounts WHERE status = 'active' ORDER BY account_name")->fetchAll(), 'n', 'id')],
     ],
     'Kayıt' => [
         'platform_agency_signup'     => ['bool', 'Ajans kaydı açık', 'Giriş sayfasında "Ajans kaydı" bağlantısı görünür.'],

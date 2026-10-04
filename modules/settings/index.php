@@ -235,6 +235,12 @@ $extra_links = [
     </aside>
 
     <div class="lg:col-span-3" style="min-width:0">
+        <?php if ($tab === 'bank'): $iy = iyzico_issues(); ?>
+            <div class="alert <?= $iy ? 'alert-warning' : 'alert-success' ?>" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>
+                <?php if (!$iy): ?><strong>Kartla ödeme açık</strong> (<?= site_setting('iyzico_mode') === 'live' ? 'canlı' : 'test / sandbox' ?>); ajanslar Ödemeler ekranında "Kartla öde" düğmesini görür.
+                <?php else: ?><strong>Kartla ödeme ajanslara görünmüyor:</strong> <?= e(implode(' ', $iy)) ?><?php endif; ?>
+            </div></div>
+        <?php endif; ?>
         <form method="POST" action="?tab=<?= $tab ?>" enctype="multipart/form-data" class="card">
             <?= csrf_field() ?>
             <input type="hidden" name="section" value="<?= $tab ?>">
