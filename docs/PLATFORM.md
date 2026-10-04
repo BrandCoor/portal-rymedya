@@ -237,7 +237,7 @@ Yeni girilen her işin görünürlük ve dağıtım kuralları (kim görsün, da
 
 ### Kredi kartıyla ödeme (iyzico)
 
-1. iyzico üye işyeri panelinden API anahtarı ve güvenlik anahtarını alın (önce test/sandbox anahtarlarıyla deneyin).
+1. iyzico üye işyeri panelinden API anahtarı ve güvenlik anahtarını alın (önce test/sandbox anahtarlarıyla deneyin). Ortam anahtardan otomatik anlaşılır: "sandbox-" ile başlayanlar test sunucusuna, diğerleri canlı sunucuya gider. Kaydettikten sonra "Bağlantıyı test et" ile doğrulayın; "api bilgileri bulunamadı" hatası anahtarların eksik, boşluklu veya farklı ortamlara ait olduğunu gösterir.
 2. Ayarlar → Banka ve ödeme: "iyzico ile kartla ödeme"yi açın, ortamı (Test / Canlı), API anahtarını, güvenlik anahtarını (şifreli saklanır) ve izin verilen taksitleri girin.
 3. Platform kuralları → Ödemeler: "Kartla (iyzico) tahsilatların işleneceği hesap" olarak kasa/banka hesabını seçin.
 4. Ajans Ödemeler ekranında her açık faturada "Kartla öde" ve birden fazla faturada "Tümünü kartla öde" görünür. Ödeme iyzico'nun güvenli ödeme sayfasında yapılır (kart bilgisi portala hiç gelmez).

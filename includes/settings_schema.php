@@ -58,7 +58,7 @@ const SETTINGS_SCHEMA = [
             'bank_secondary_iban'   => ['text', 'İkinci IBAN', '', ''],
             'bank_payment_note'     => ['textarea', 'Ödeme notu', 'Ödemelerinizde açıklama kısmına lütfen fatura veya proje kodunuzu yazınız.', 'Müşteri portalındaki ve ajans Ödemeler ekranındaki ödeme kutusunda görünür.'],
             'iyzico_enabled'        => ['bool', 'iyzico ile kartla ödeme', '0', 'Açıkken ajanslar açık faturalarını Ödemeler ekranından kredi/banka kartıyla öder; tahsilat otomatik olarak faturaya işlenir. Tahsilatın işleneceği hesap: Platform kuralları → Ödemeler.'],
-            'iyzico_mode'           => ['select', 'iyzico ortamı', 'sandbox', 'Önce test (sandbox) anahtarlarıyla deneyin; canlıya geçince "Canlı" seçip canlı anahtarları girin.', ['sandbox' => 'Test (sandbox)', 'live' => 'Canlı']],
+            'iyzico_mode'           => ['select', 'iyzico ortamı', 'sandbox', 'Anahtar girildiğinde ortam anahtardan otomatik belirlenir ("sandbox-" ile başlayan anahtar test, diğerleri canlı); bu seçim yalnızca anahtar yokken kullanılır.', ['sandbox' => 'Test (sandbox)', 'live' => 'Canlı']],
             'iyzico_api_key'        => ['text', 'iyzico API anahtarı', '', 'iyzico üye işyeri paneli → Ayarlar → Firma Ayarları → API Anahtarları.'],
             'iyzico_secret_key'     => ['password', 'iyzico güvenlik anahtarı', '', 'Şifreli saklanır. Boş bırakırsanız kayıtlı anahtar korunur.'],
             'iyzico_installments'   => ['text', 'İzin verilen taksitler', '1', 'Virgülle: 1, 2, 3, 6, 9, 12. Taksit vade farkı iyzico panelindeki ayarlarınıza göre müşteriye yansır.'],

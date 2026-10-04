@@ -155,7 +155,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <ul style="margin:6px 0 0 18px;list-style:disc"><?php foreach ($iy_issues as $is): ?><li><?= e($is) ?></li><?php endforeach; ?></ul>
         <a class="link" href="<?= BASE_URL ?>/modules/settings/index.php?tab=bank">Ayarlar → Banka ve ödeme</a></div></div>
 <?php else: ?>
-    <div class="alert alert-success" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>Kartla ödeme açık (<?= site_setting('iyzico_mode') === 'live' ? 'canlı' : 'test / sandbox' ?>). Tahsilatlar <strong><?= e((string)$db->query("SELECT account_name FROM accounts WHERE id = " . iyzico_account_id())->fetchColumn()) ?></strong> hesabına işlenir; değiştirmek için <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Platform kuralları → Ödemeler</a>.</div></div>
+    <div class="alert alert-success" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>Kartla ödeme açık (<?= iyzico_env() === 'live' ? 'canlı' : 'test / sandbox' ?>). Tahsilatlar <strong><?= e((string)$db->query("SELECT account_name FROM accounts WHERE id = " . iyzico_account_id())->fetchColumn()) ?></strong> hesabına işlenir; değiştirmek için <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Platform kuralları → Ödemeler</a>.</div></div>
 <?php endif; ?>
 <section class="card">
     <?php if (!$cards): ?>

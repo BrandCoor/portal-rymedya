@@ -12,7 +12,21 @@
  */
 
 function iyzico_secret(): string {
-    return secret_setting('iyzico_secret_key');
+    return trim(secret_setting('iyzico_secret_key'));
+}
+
+function iyzico_api_key(): string {
+    return trim((string)site_setting('iyzico_api_key'));
+}
+
+/**
+ * Ortam anahtardan anlaşılır: iyzico test (sandbox) anahtarları "sandbox-" ile başlar.
+ * Böylece canlı anahtar test sunucusuna (veya tersi) gönderilip "api bilgileri bulunamadı" alınmaz.
+ */
+function iyzico_env(): string {
+    $k = iyzico_api_key();
+    if ($k !== '') return str_starts_with($k, 'sandbox-') ? 'sandbox' : 'live';
+    return site_setting('iyzico_mode') === 'live' ? 'live' : 'sandbox';
 }
 
 /** Kartla ödeme kullanılabilir mi? (açık + API anahtarı + güvenlik anahtarı) */
@@ -26,7 +40,7 @@ function iyzico_enabled(): bool {
 function iyzico_issues(): array {
     $out = [];
     if (site_setting('iyzico_enabled') !== '1') $out[] = 'Ayarlar → Banka ve ödeme → "iyzico ile kartla ödeme" kapalı.';
-    if (trim((string)site_setting('iyzico_api_key')) === '') $out[] = 'iyzico API anahtarı girilmemiş.';
+    if (iyzico_api_key() === '') $out[] = 'iyzico API anahtarı girilmemiş.';
     if (iyzico_secret() === '') $out[] = 'iyzico güvenlik anahtarı girilmemiş (veya kayıtlı anahtar çözülemedi; yeniden girin).';
     if (!function_exists('curl_init') && !ini_get('allow_url_fopen')) $out[] = 'Sunucuda PHP cURL eklentisi yok ve allow_url_fopen kapalı; hosting panelinden cURL\'u açın.';
     return $out;
@@ -55,7 +69,7 @@ function iyzico_account_id(): int {
 function iyzico_base_url(): string {
     $override = trim((string)get_setting('iyzico_base_url_override', ''));   // yalnızca test ortamı için
     if ($override !== '') return rtrim($override, '/');
-    return site_setting('iyzico_mode') === 'live' ? 'https://api.iyzipay.com' : 'https://sandbox-api.iyzipay.com';
+    return iyzico_env() === 'live' ? 'https://api.iyzipay.com' : 'https://sandbox-api.iyzipay.com';
 }
 
 /** iyzico fiyat biçimi: "100.0", "1250.5" */
@@ -72,7 +86,7 @@ function iyzico_price(float $v): string {
 function iyzico_headers(string $path, string $body): array {
     $rnd = (string)round(microtime(true) * 1000) . bin2hex(random_bytes(4));
     $sig = hash_hmac('sha256', $rnd . $path . $body, iyzico_secret());
-    $auth = base64_encode('apiKey:' . trim((string)site_setting('iyzico_api_key')) . '&randomKey:' . $rnd . '&signature:' . $sig);
+    $auth = base64_encode('apiKey:' . iyzico_api_key() . '&randomKey:' . $rnd . '&signature:' . $sig);
     return ['Authorization: IYZWSv2 ' . $auth, 'x-iyzi-rnd: ' . $rnd, 'Content-Type: application/json', 'Accept: application/json'];
 }
 
@@ -123,6 +137,28 @@ function run_iyzico_migrations(): void {
         `completed_at` DATETIME NULL,
         UNIQUE KEY `uniq_conv` (`conversation_id`), KEY `idx_token` (`token`(64)), KEY `idx_contact` (`contact_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+/** iyzico hata mesajı + çözüm ipucu */
+function iyzico_error_text(array $res): string {
+    $msg = (string)($res['errorMessage'] ?? 'Bilinmeyen hata.');
+    $code = (string)($res['errorCode'] ?? '');
+    if (in_array($code, ['1000', '1001'], true) || stripos($msg, 'api bilgileri') !== false) {
+        $msg .= ' — API anahtarı ile güvenlik anahtarı aynı ortama ait ve eksiksiz olmalı (test anahtarları "sandbox-" ile başlar, canlı anahtarlar iyzico üye işyeri panelindedir). Anahtarları boşluksuz yeniden girip "Bağlantıyı test et" ile deneyin.';
+    }
+    return $code !== '' ? "[{$code}] {$msg}" : $msg;
+}
+
+/** Ayarlar ekranındaki bağlantı testi: kimlik doğrulamalı hafif bir istek (BIN sorgu) */
+function iyzico_test_connection(): array {
+    if (iyzico_api_key() === '' || iyzico_secret() === '') {
+        return [false, 'API anahtarı ve güvenlik anahtarı girilmeli.'];
+    }
+    $res = iyzico_request('/payment/bin/check', ['locale' => 'tr', 'conversationId' => 'test' . time(), 'binNumber' => '554960']);
+    if (($res['status'] ?? '') === 'success') {
+        return [true, 'iyzico bağlantısı başarılı (' . (iyzico_env() === 'live' ? 'canlı' : 'test / sandbox') . ' ortam).'];
+    }
+    return [false, iyzico_error_text($res)];
 }
 
 const CARD_PAYMENT_STATUSES = [
@@ -189,7 +225,7 @@ function iyzico_start(array $contact, int $user_id, array $user, array $invoices
     ];
     $res = iyzico_request('/payment/iyzipos/checkoutform/initialize/auth/ecom', $payload);
     if (($res['status'] ?? '') !== 'success' || empty($res['token']) || empty($res['paymentPageUrl'])) {
-        $msg = (string)($res['errorMessage'] ?? 'Ödeme başlatılamadı.');
+        $msg = iyzico_error_text($res);
         $db->prepare("UPDATE platform_card_payments SET status = 'failed', error = ?, completed_at = NOW() WHERE id = ?")->execute([mb_substr($msg, 0, 500), $pid]);
         return ['error' => 'Ödeme başlatılamadı: ' . $msg];
     }

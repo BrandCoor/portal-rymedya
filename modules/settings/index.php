@@ -91,6 +91,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($self . 'mail');
     }
 
+    // iyzico bağlantı testi
+    if (($_POST['action'] ?? '') === 'test_iyzico') {
+        [$ok, $msg] = iyzico_test_connection();
+        set_flash($ok ? 'success' : 'error', $msg);
+        redirect($self . 'bank');
+    }
+
     // Varsayılana döndür
     if (($_POST['action'] ?? '') === 'reset') {
         $del = $db->prepare("DELETE FROM system_settings WHERE setting_key = ?");
@@ -164,8 +171,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'password':
                 if (!empty($_POST[$key . '__clear'])) {
                     $values[$key] = '';
-                } elseif ((string)$raw !== '') {
-                    $values[$key] = smtp_password_encrypt((string)$raw);
+                } elseif (trim((string)$raw) !== '') {
+                    $values[$key] = smtp_password_encrypt(trim((string)$raw));
                 }
                 break;
             case 'textarea':
@@ -237,7 +244,7 @@ $extra_links = [
     <div class="lg:col-span-3" style="min-width:0">
         <?php if ($tab === 'bank'): $iy = iyzico_issues(); ?>
             <div class="alert <?= $iy ? 'alert-warning' : 'alert-success' ?>" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>
-                <?php if (!$iy): ?><strong>Kartla ödeme açık</strong> (<?= site_setting('iyzico_mode') === 'live' ? 'canlı' : 'test / sandbox' ?>); ajanslar Ödemeler ekranında "Kartla öde" düğmesini görür.
+                <?php if (!$iy): ?><strong>Kartla ödeme açık</strong> (<?= iyzico_env() === 'live' ? 'canlı' : 'test / sandbox' ?>); ajanslar Ödemeler ekranında "Kartla öde" düğmesini görür.
                 <?php else: ?><strong>Kartla ödeme ajanslara görünmüyor:</strong> <?= e(implode(' ', $iy)) ?><?php endif; ?>
             </div></div>
         <?php endif; ?>
@@ -325,6 +332,13 @@ $extra_links = [
                 <button type="submit" name="action" value="save" class="btn btn-primary">Kaydet</button>
             </div>
         </form>
+        <?php if ($tab === 'bank'): ?>
+        <form method="POST" action="?tab=bank" class="card card-pad" style="margin-top:16px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><?= csrf_field() ?>
+            <input type="hidden" name="section" value="bank"><input type="hidden" name="action" value="test_iyzico">
+            <div><p class="small" style="font-weight:500">iyzico bağlantısını test et</p><p class="xsmall text-muted">Önce anahtarları kaydedin. Ortam anahtardan otomatik anlaşılır: "sandbox-" ile başlayan anahtarlar test sunucusuna, diğerleri canlı sunucuya gider. Şu an: <strong><?= iyzico_env() === 'live' ? 'canlı' : 'test / sandbox' ?></strong>.</p></div>
+            <button class="btn btn-secondary"><i data-lucide="plug-zap"></i>Bağlantıyı test et</button>
+        </form>
+        <?php endif; ?>
         <?php if ($tab === 'mail'): ?>
         <form method="POST" action="?tab=mail" class="card card-pad" style="margin-top:16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap"><?= csrf_field() ?>
             <input type="hidden" name="section" value="mail"><input type="hidden" name="action" value="test_mail">
