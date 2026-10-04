@@ -52,6 +52,8 @@ if (can_access_module('platform.manage')) {
         <?php if (can_access_module('platform.manage')): ?>
             <div class="nav-section">İş platformu</div>
             <?= nav_link('/modules/platform/index.php', 'inbox', 'İş merkezi', ['/modules/platform/index', '/modules/platform/job', '/modules/platform/settings', '/modules/platform/routing'], $platform_pending ?: null) ?>
+            <?php $pay_pending = payments_pending_count(); ?>
+            <?= nav_link('/modules/platform/payments.php', 'wallet', 'Ödemeler', '/modules/platform/payments', $pay_pending ?: null) ?>
             <?= nav_link('/modules/platform/freelancers.php', 'users-round', 'Freelancer\'lar', ['/modules/platform/freelancers', '/modules/platform/tiers']) ?>
             <?= nav_link('/modules/platform/agencies.php', 'building-2', 'Ajanslar', '/modules/platform/agencies') ?>
             <?php if (can_access_module('platform.pricing')): ?>

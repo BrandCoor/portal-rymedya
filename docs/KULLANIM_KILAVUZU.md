@@ -119,7 +119,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 3. Aşamalar kartında işin parçalarını görürsünüz. "Düzenle" ile ad, ücret, hedef tarih değiştirilir; "Ek kalem / prim" ile ajansa ek iş önerilir, ajansa yansımayan iç iş ya da prim eklenir.
 4. Çekim gibi yerinde işler teslim bağlantısı istemez: freelancer çekim gününden itibaren "Yapıldı" der; onay şekli Kurallar ekranından seçilir (otomatik / ekip / ajans). Ajans ham görüntü istediyse çekim de bağlantıyla teslim edilir.
 5. Kurgu, ses gibi dijital işlerin teslimi kalite kontrolde size düşer: "Onayla, ajansa ilet" veya "Düzeltme iste". Ajans aşamayı onaylayınca hakediş kaydı oluşur; gerekirse "Aşamayı ajans adına onayla" ya da "İşi ajans adına tamamla".
-6. Hakediş ödemeleri kartından her aşamanın ödemesini kasa/banka seçerek kaydedin.
+6. Ödemeler: ajansların ödeme bildirimlerini ve freelancer ödeme taleplerini İş merkezi → Ödemeler ekranından onaylayın (tahsilat/ödeme faturaya ve kasaya işlenir). Tek tek ödeme için iş sayfasındaki Hakediş ödemeleri kartı da kullanılabilir.
 7. Sorun bildirimleri iş merkezinde kırmızı uyarı olarak görünür; iş sayfasındaki "Sorun bildirimleri" kartından çözüm notuyla kapatın.
 8. İş kaydı her işlemi kalem kalem tutar; CSV ile dışa aktarılabilir.
 9. Kurallar ekranından aşama bölme ve otomatik onay süresini ayarlayın. Hatırlatma ve otomatik onay için cron: `php /home/KULLANICI/public_html/cron/platform.php` (saatte bir).

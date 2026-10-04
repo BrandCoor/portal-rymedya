@@ -11,7 +11,7 @@ function platform_nav(string $role): array {
             'index'   => ['Genel bakış', 'layout-grid', '/platform/index.php'],
             'new'     => ['Yeni iş', 'plus', '/platform/job_new.php'],
             'jobs'    => ['İşlerim', 'briefcase', '/platform/jobs.php'],
-            'finance' => ['Ekstre', 'receipt-text', '/modules/contacts/statement_print.php'],
+            'finance' => ['Ödemeler', 'wallet', '/platform/payments.php'],
             'profile' => ['Hesap', 'circle-user-round', '/platform/profile.php'],
         ]
         : [
@@ -48,7 +48,7 @@ function platform_header(string $title, string $active = ''): void {
 
         <nav class="portal-nav">
             <?php foreach ($nav as $k => [$label, $icon, $href]): ?>
-                <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>" <?= $k === 'finance' ? 'target="_blank"' : '' ?>><i data-lucide="<?= $icon ?>"></i><?= e($label) ?><?php if ($k === 'jobs' && $todo > 0): ?><span class="nav-count" style="margin-left:2px" title="İşlem bekleyen"><?= $todo > 99 ? '99+' : $todo ?></span><?php endif; ?></a>
+                <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>" ><i data-lucide="<?= $icon ?>"></i><?= e($label) ?><?php if ($k === 'jobs' && $todo > 0): ?><span class="nav-count" style="margin-left:2px" title="İşlem bekleyen"><?= $todo > 99 ? '99+' : $todo ?></span><?php endif; ?></a>
             <?php endforeach; ?>
         </nav>
 

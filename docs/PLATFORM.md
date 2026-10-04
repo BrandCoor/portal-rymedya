@@ -219,6 +219,17 @@ Her işin sayfasındaki **Görünürlük ve dağıtım** bölümü:
 
 Yeni girilen her işin görünürlük ve dağıtım kuralları (kim görsün, dağıtım, en düşük seviye, öncelikli seviye ve süresi, uzmanlık ve şehir eşleşmesi) Kurallar → "Yeni işlerde varsayılan görünürlük ve dağıtım" bölümünden belirlenir. Her işin kuralları sonradan iş sayfasındaki "Görünürlük ve dağıtım" kartından değiştirilebilir; "Varsayılanlara dön" ile ayarlardaki değerlere geri alınır. Hizmet kataloğunda daha yüksek seviye isteyen hizmetlerde o seviye geçerlidir.
 
+## 7.1 Ödemeler
+
+**Ajans → Ödeme bildirimi** (portal → Ödemeler): açık faturalar ve vadeleri, ödeme yapılabilecek banka hesapları (IBAN'lı aktif banka hesapları; Kurallar → Ödemeler'den kapatılabilir), ödeme bildirimi formu (fatura seçimi veya genel ödeme, tutar, tarih, yöntem, referans, not, PDF/görsel dekont en fazla 5 MB) ve bildirim geçmişi.
+
+**Freelancer → Ödeme talebi** (portal → Kazanç): onaylanmış ve ödenmemiş hakedişler (aşama aşama) seçilerek talep oluşturulur. IBAN zorunludur; en düşük talep tutarı ve "X iş günü içinde ödenir" bilgisi Kurallar → Ödemeler'den ayarlanır. Aynı hakediş iki bekleyen talepte yer alamaz.
+
+**Ekip → İş merkezi → Ödemeler** (menüde bekleyen sayısı):
+- Ajans bildirimi: dekontu açın, tutarı açık faturalara dağıtın (seçilen fatura önce, kalan eskiden yeniye önerilir), kasa/banka hesabını seçip "Hesaba geçti, onayla". Faturaya dağıtılmayan kısım cari hesaba avans olarak işlenir. Ya da gerekçeyle reddedin.
+- Freelancer talebi: hesap seçip "öde" → talepteki her hakediş faturası ödenir, ilgili işlerin iş kaydına ödeme satırı düşer. Ya da gerekçeyle reddedin.
+- Her sonuç ilgili ajans/freelancer'a bildirim (ve e-posta) olarak gider. Dekontlar doğrudan erişime kapalı klasörde tutulur; yalnızca bildiren ajans ve ekip görür.
+
 ## 8. Silme yetkisi ve roller
 
 - `platform.delete` izni kalıcı silmeyi açar. Bu izin Roller sayfasından herhangi bir role verilebilir. Hazır **Platform Yöneticisi** rolünde platform.manage, platform.pricing ve platform.delete birlikte bulunur.

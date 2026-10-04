@@ -27,3 +27,6 @@ config/db.php
 # Yüklenen marka görselleri (logo, favicon) sunucuda kalır
 assets/uploads/branding/*
 !assets/uploads/branding/.gitkeep
+# Ajans ödeme dekontları sunucuda kalır
+assets/uploads/receipts/*
+!assets/uploads/receipts/.htaccess

@@ -87,7 +87,10 @@ const PLATFORM_DEFAULTS = [
     'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
     'platform_default_margin'        => '25',
     // Yeni işlerin varsayılan görünürlük / dağıtım kuralları (iş sayfasından tek tek değiştirilebilir)
-    'platform_onsite_confirm'        => 'auto', // Yerinde işin "yapıldı" onayı: auto | staff | agency
+    'platform_onsite_confirm'        => 'auto',
+    'platform_payout_min'            => '0',    // Freelancer ödeme talebi alt sınırı (₺)
+    'platform_payout_days'           => '5',    // Ödeme talebinin işleme süresi (iş günü, freelancer'a gösterilir)
+    'platform_show_bank_accounts'    => '1',    // Ajansın ödeme ekranında IBAN'lı banka hesapları görünsün // Yerinde işin "yapıldı" onayı: auto | staff | agency
     'platform_default_visibility'    => 'pool',
     'platform_default_dispatch'      => 'first_come',
     'platform_default_min_tier'      => 'standard',

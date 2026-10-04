@@ -52,6 +52,38 @@ $in_progress_total = (float)$in_progress->fetchColumn();
 $c = $db->prepare("SELECT iban FROM contacts WHERE id = ?");
 $c->execute([(int)$_SESSION['client_contact_id']]);
 $iban = $c->fetchColumn();
+$cid = (int)$_SESSION['client_contact_id'];
+
+// ---------------- Ödeme talebi ----------------
+$available = payout_available($uid, $cid);
+$requestable = array_values(array_filter($available, fn($i) => !$i['busy']));
+$payout_min = (float)platform_setting('platform_payout_min');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'payout') {
+    verify_csrf();
+    $pick = array_map('intval', (array)($_POST['invoices'] ?? []));
+    $chosen = array_values(array_filter($requestable, fn($i) => in_array((int)$i['id'], $pick, true)));
+    $sum = array_sum(array_map(fn($i) => (float)$i['remaining'], $chosen));
+    $err = !$iban ? 'Ödeme talebi için önce profilinize IBAN ekleyin.'
+        : (!$chosen ? 'Talep edilecek hakedişleri seçin.'
+        : ($sum + 0.009 < $payout_min ? 'En düşük ödeme talebi tutarı ' . format_money($payout_min) . '.' : null));
+    if ($err) {
+        set_flash('error', $err);
+        redirect(BASE_URL . '/platform/earnings.php#talep');
+    }
+    $db->prepare("INSERT INTO platform_payout_requests (user_id, contact_id, amount, invoice_ids, iban, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())")
+       ->execute([$uid, $cid, round($sum, 2), implode(',', array_map(fn($i) => (int)$i['id'], $chosen)), $iban, trim($_POST['note'] ?? '') ?: null]);
+    $rid = (int)$db->lastInsertId();
+    foreach ($chosen as $i) {
+        if ($i['ms']) job_event((int)$i['ms']['job_id'], 'payment', 'Ödeme talep edildi: ' . $i['ms']['title'], ['amount' => (float)$i['remaining'], 'new' => "Talep #{$rid}", 'visibility' => 'freelancer']);
+    }
+    notify_staff_payment("Freelancer ödeme talebi: " . ($_SESSION['client_user']['full_name'] ?? '') . ' · ' . format_money($sum) . ' · ' . count($chosen) . ' hakediş');
+    set_flash('success', 'Ödeme talebiniz iletildi. Ödendiğinde bildirim alacaksınız.');
+    redirect(BASE_URL . '/platform/earnings.php');
+}
+$requests = $db->prepare("SELECT * FROM platform_payout_requests WHERE user_id = ? ORDER BY id DESC LIMIT 20");
+$requests->execute([$uid]);
+$requests = $requests->fetchAll();
+$req_sum = array_sum(array_map(fn($i) => (float)$i['remaining'], $requestable));
 
 platform_header('Kazanç', 'earnings');
 $tr_months = ['01' => 'Oca', '02' => 'Şub', '03' => 'Mar', '04' => 'Nis', '05' => 'May', '06' => 'Haz', '07' => 'Tem', '08' => 'Ağu', '09' => 'Eyl', '10' => 'Eki', '11' => 'Kas', '12' => 'Ara'];
@@ -89,6 +121,43 @@ $pay_status = ['paid' => ['Ödendi', 'success'], 'partial' => ['Kısmi ödendi',
         </div>
     </div>
 </div>
+
+<section class="card" id="talep" style="margin-bottom:24px" x-data="{ sel: <?= e(json_encode(array_map(fn($i) => (string)$i['id'], $requestable))) ?>, amt: <?= e(json_encode(array_combine(array_map(fn($i) => (string)$i['id'], $requestable) ?: [], array_map(fn($i) => (float)$i['remaining'], $requestable) ?: []) ?: new stdClass)) ?> }">
+    <div class="card-head"><div><p class="card-title">Ödeme talebi</p><p class="card-sub">Onaylanmış ve henüz ödenmemiş hakedişleriniz için ödeme isteyin<?= (int)platform_setting('platform_payout_days') > 0 ? '; talepler genellikle ' . (int)platform_setting('platform_payout_days') . ' iş günü içinde ödenir' : '' ?>.</p></div></div>
+    <?php if (!$requestable): ?>
+        <div class="card-pad"><p class="small text-muted"><?= $available ? 'Ödenmemiş hakedişlerinizin tamamı bekleyen bir talepte.' : 'Talep edilebilecek hakedişiniz yok. Aşamalarınız onaylandıkça burada görünür.' ?></p></div>
+    <?php else: ?>
+    <form method="POST" action="" class="card-pad stack"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="payout">
+        <div class="panel divide" style="padding:0">
+            <?php foreach ($requestable as $i): ?>
+                <label class="check" style="display:flex;justify-content:space-between;gap:10px;padding:10px 14px;align-items:center">
+                    <span style="display:flex;gap:10px;align-items:center;min-width:0"><input type="checkbox" name="invoices[]" value="<?= (int)$i['id'] ?>" x-model="sel">
+                        <span class="small" style="min-width:0"><?= $i['ms'] ? '<span class="code-tag">' . e($i['ms']['job_code']) . '</span> ' . e($i['ms']['title']) : e($i['invoice_number']) ?><span class="xsmall text-muted"> · <?= format_date($i['issue_date']) ?></span></span></span>
+                    <span class="money small"><?= format_money((float)$i['remaining']) ?></span>
+                </label>
+            <?php endforeach; ?>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+            <p class="small">Talep tutarı: <strong class="money" x-text="sel.reduce((t, k) => t + (amt[k] || 0), 0).toLocaleString('tr-TR', {minimumFractionDigits: 2}) + ' ₺'"></strong><?= $payout_min > 0 ? ' <span class="xsmall text-muted">(en az ' . format_money($payout_min) . ')</span>' : '' ?></p>
+            <p class="xsmall text-muted">IBAN: <?= $iban ? e($iban) : '<a class="link" href="' . BASE_URL . '/platform/profile.php">profilinize ekleyin</a>' ?></p>
+        </div>
+        <input class="input" name="note" placeholder="Not (isteğe bağlı)">
+        <div><button class="btn btn-primary" :disabled="!sel.length" <?= $iban ? '' : 'disabled' ?>><i data-lucide="hand-coins"></i>Ödeme talep et</button></div>
+    </form>
+    <?php endif; ?>
+    <?php if ($requests): ?>
+    <div class="divide" style="border-top:1px solid var(--line-2)">
+        <?php foreach ($requests as $r): [$rl, $rt] = PAYOUT_STATUSES[$r['status']] ?? [$r['status'], 'neutral']; ?>
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+                <div><p class="small" style="font-weight:500">Talep #<?= (int)$r['id'] ?> · <?= format_money((float)$r['amount']) ?></p>
+                    <p class="xsmall text-muted"><?= format_date($r['created_at'], true) ?><?= $r['reviewed_at'] ? ' · sonuç ' . format_date($r['reviewed_at']) : '' ?><?= $r['staff_note'] ? ' · ' . e($r['staff_note']) : '' ?></p></div>
+                <?= ui_badge($rl, $rt, true) ?>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</section>
 
 <section class="card">
     <div class="card-head"><p class="card-title">Hakedişler</p></div>

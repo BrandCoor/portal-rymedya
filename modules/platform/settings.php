@@ -52,6 +52,11 @@ $sections = [
         'platform_default_skill_match'    => ['bool', 'Yalnızca bu alanda uzman olanlar', 'Freelancer\'ın profilindeki uzmanlıklar işin türüyle eşleşmeli.'],
         'platform_default_city_match'     => ['bool', 'Yalnızca aynı şehirdekiler (yerinde işler)', 'Çekim gibi yerinde yapılan işlerde yalnızca işin şehrindeki freelancer\'lar görür. Uzaktan işlere uygulanmaz.'],
     ],
+    'Ödemeler' => [
+        'platform_payout_min'         => ['int', 'En düşük freelancer ödeme talebi', 'Freelancer bu tutarın altındaki hakedişler için talep oluşturamaz. 0 ise sınır yok.', 0, 1000000, '₺'],
+        'platform_payout_days'        => ['int', 'Ödeme talebi işleme süresi', 'Freelancer\'a "talepler genellikle X iş günü içinde ödenir" olarak gösterilir. 0 ise gösterilmez.', 0, 60, 'iş günü'],
+        'platform_show_bank_accounts' => ['bool', 'Ajansın Ödemeler ekranında banka hesapları görünsün', 'IBAN\'ı tanımlı aktif banka hesaplarınız ajansa ödeme yapabileceği hesaplar olarak gösterilir.'],
+    ],
     'Kayıt' => [
         'platform_agency_signup'     => ['bool', 'Ajans kaydı açık', 'Giriş sayfasında "Ajans kaydı" bağlantısı görünür.'],
         'platform_freelancer_signup' => ['bool', 'Freelancer başvurusu açık', 'Giriş sayfasında "Freelancer başvurusu" bağlantısı görünür.'],
