@@ -58,27 +58,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Bu hesap için müşteri portalı erişimi tanımlanmamış. Lütfen ajansınızla iletişime geçiniz.';
             } else {
                 clear_login_failures($email);
-                session_regenerate_id(true);
-
-                $_SESSION['client_user_id'] = $client['id'];
-                $_SESSION['client_contact_id'] = $active_contact_id;
-                $_SESSION['client_user'] = [
-                    'role'         => portal_role_from_slug($client['role_slug'] ?? ''),
-                    'id'           => $client['id'],
-                    'contact_id'   => $active_contact_id,
-                    'full_name'    => $client['full_name'],
-                    'company_name' => $client['client_name'] ?? $client['full_name'],
-                    'email'        => $client['email'],
-                    'phone'        => $client['phone']
-                ];
-
-                $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([$client['id']]);
-
+                if (twofa_mode('portal') !== 'off' && (int)($client['totp_enabled'] ?? 0) === 1) {
+                    twofa_begin($client, 'portal', ['contact_id' => (int)$active_contact_id, 'client_name' => $client['client_name'] ?? null]);
+                }
+                portal_session_start($client, (int)$active_contact_id);
                 set_flash('success', 'Hoş geldiniz, ' . $client['full_name']);
                 redirect(portal_home_url($_SESSION['client_user']['role']));
             }
         } else {
             record_login_failure($email);
+            security_log_login($client['id'] ?? null, $email, 'portal', false, 'hatalı şifre');
             $error = 'E-posta adresi veya şifre hatalı!';
         }
     }
@@ -119,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <button type="submit" class="btn btn-primary btn-lg btn-block">Giriş yap</button>
                 </form>
+                <p class="xsmall" style="margin-top:12px;text-align:right"><a class="link" href="<?= BASE_URL ?>/modules/auth/forgot.php?for=portal">Şifremi unuttum</a></p>
             </div>
 
             <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>

@@ -237,7 +237,7 @@ function iyzico_start(array $contact, int $user_id, array $user, array $invoices
  * iyzico dönüşü: token ile sonucu sunucudan sorgular, başarılıysa tahsilatı işler.
  * Aynı ödeme iki kez işlenmez. Döner: kart ödeme satırı (güncel) veya null
  */
-function iyzico_complete(string $token): ?array {
+function iyzico_complete(string $token, bool $final = true): ?array {
     global $db;
     $st = $db->prepare("SELECT * FROM platform_card_payments WHERE token = ?");
     $st->execute([$token]);
@@ -252,6 +252,9 @@ function iyzico_complete(string $token): ?array {
         && (!isset($res['conversationId']) || (string)$res['conversationId'] === $cp['conversation_id'])
         && abs((float)($res['price'] ?? 0) - (float)$cp['amount']) < 0.01
         && (int)($res['fraudStatus'] ?? 1) !== -1;
+    if (!$ok && !$final) {
+        return $cp;   // mutabakat: henüz tamamlanmamış ödeme olduğu gibi bırakılır
+    }
     if (!$ok) {
         $msg = (string)($res['errorMessage'] ?? (($res['paymentStatus'] ?? '') !== '' ? 'Ödeme tamamlanmadı (' . $res['paymentStatus'] . ').' : 'Ödeme doğrulanamadı.'));
         $db->prepare("UPDATE platform_card_payments SET status = 'failed', error = ?, completed_at = NOW() WHERE id = ? AND status = 'initiated'")->execute([mb_substr($msg, 0, 500), $cp['id']]);
@@ -291,4 +294,25 @@ function iyzico_complete(string $token): ?array {
     notify_staff_payment("Kartla ödeme alındı (iyzico): {$company} · " . format_money((float)$cp['amount']) . ($nums ? ' · ' . implode(', ', $nums) : ''));
     $st->execute([$token]);
     return $st->fetch() ?: null;
+}
+
+/**
+ * Mutabakat (saatlik): ödeme sayfasına gidip iyzico'dan dönmeyen (tarayıcısını
+ * kapatan) ödemeleri iyzico'dan sorgular. Çekilmiş ödemeler faturaya işlenir;
+ * 24 saati geçip tamamlanmayanlar "başarısız" olarak kapatılır.
+ * Döner: ['recovered' => n, 'expired' => n]
+ */
+function iyzico_reconcile(): array {
+    global $db;
+    $out = ['recovered' => 0, 'expired' => 0];
+    if (!iyzico_enabled()) return $out;
+    $rows = $db->query("SELECT token, created_at FROM platform_card_payments WHERE status = 'initiated' AND token IS NOT NULL AND created_at < NOW() - INTERVAL 10 MINUTE AND created_at > NOW() - INTERVAL 7 DAY ORDER BY id LIMIT 50")->fetchAll();
+    foreach ($rows as $r) {
+        $old = strtotime($r['created_at']) < time() - 86400;
+        $cp = iyzico_complete($r['token'], $old);
+        if (!$cp) continue;
+        if ($cp['status'] === 'success') $out['recovered']++;
+        elseif ($cp['status'] === 'failed') $out['expired']++;
+    }
+    return $out;
 }

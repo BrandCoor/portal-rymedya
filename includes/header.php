@@ -89,6 +89,7 @@ $notif = get_notifications((int)$user['id'], 8);
                             <a href="<?= BASE_URL ?>/modules/settings/index.php" class="menu-item"><i data-lucide="settings-2"></i>Ayarlar</a>
                         <?php endif; ?>
                         <a href="<?= BASE_URL ?>/modules/notifications/index.php" class="menu-item"><i data-lucide="activity"></i>Aktivite</a>
+                        <?php if (twofa_mode('staff') !== 'off'): ?><a href="<?= BASE_URL ?>/modules/auth/2fa_setup.php" class="menu-item"><i data-lucide="smartphone"></i>İki adımlı doğrulama</a><?php endif; ?>
                         <div class="menu-sep"></div>
                         <a href="<?= BASE_URL ?>/modules/auth/logout.php" class="menu-item"><i data-lucide="log-out"></i>Çıkış yap</a>
                     </div>

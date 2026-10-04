@@ -719,7 +719,7 @@ function platform_run_automations(bool $force = false): array {
         return ['skipped' => true];
     }
     $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('platform_automation_last_run', ?, 'platform') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([(string)time()]);
-    $res = ['auto_approved' => 0, 'reminders' => 0, 'overdue' => 0, 'unassigned' => 0];
+    $res = ['auto_approved' => 0, 'reminders' => 0, 'overdue' => 0, 'unassigned' => 0, 'card_recovered' => 0, 'backup' => ''];
     $already = function (int $job_id, string $label) use ($db): bool {
         $st = $db->prepare("SELECT COUNT(*) FROM platform_job_changes WHERE job_id = ? AND event_type = 'reminder' AND field_label = ?");
         $st->execute([$job_id, $label]);
@@ -770,6 +770,19 @@ function platform_run_automations(bool $force = false): array {
             notify_staff("{$j['job_code']} henüz atanmadı; başlangıç " . format_date($j['start_date'] ?: $j['deadline']) . '.', (int)$j['id']);
             $res['unassigned']++;
         }
+    }
+    // Kart ödemesi mutabakatı: iyzico'dan dönmeyen ödemeler
+    try {
+        $rc = iyzico_reconcile();
+        $res['card_recovered'] = $rc['recovered'];
+    } catch (Throwable $e) {
+        error_log('iyzico mutabakatı: ' . $e->getMessage());
+    }
+    // Günlük yedek (cron/backup.php tanımlı değilse)
+    if (backup_due()) {
+        [$bname, $berr] = backup_run();
+        $res['backup'] = $bname ?: ('hata: ' . $berr);
+        if ($berr) error_log('Otomatik yedek: ' . $berr);
     }
     return $res;
 }

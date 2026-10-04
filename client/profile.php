@@ -58,8 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', 'Bu e-posta adresi başka bir hesap tarafından kullanılıyor.');
             redirect(BASE_URL . '/client/profile.php');
         }
-        if (!empty($new_password) && strlen($new_password) < 8) {
-            set_flash('error', 'Yeni şifre en az 8 karakter olmalıdır.');
+        if (!empty($new_password) && ($perr = password_policy_error($new_password))) {
+            set_flash('error', $perr);
             redirect(BASE_URL . '/client/profile.php');
         }
         $changes_count = 0;
@@ -282,9 +282,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Yeni Şifreniz</label>
                         <input type="password" name="new_password" placeholder="••••••••"
                                class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                        <span class="text-[11px] text-slate-400 mt-1 block">En az 6 karakterli güçlü bir şifre.</span>
+                        <span class="text-[11px] text-slate-400 mt-1 block">En az 8 karakter; harf ve rakam içermeli.</span>
                     </div>
                 </div>
+                <?php if (twofa_mode('portal') !== 'off'): ?>
+                <a href="<?= BASE_URL ?>/modules/auth/2fa_setup.php" class="inline-flex items-center gap-2 mt-4 text-xs font-semibold text-indigo-600 hover:underline"><i data-lucide="smartphone" class="w-4 h-4"></i>İki adımlı doğrulama</a>
+                <?php endif; ?>
             </div>
 
             <!-- Kaydet Butonu -->

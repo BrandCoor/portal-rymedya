@@ -54,8 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
     if ($city === '') {
         $errors[] = 'Listeden il seçin.';
     }
-    if (strlen($password) < 8) {
-        $errors[] = 'Şifre en az 8 karakter olmalıdır.';
+    if ($perr = password_policy_error($password)) {
+        $errors[] = $perr;
     } elseif ($password !== $password2) {
         $errors[] = 'Şifreler eşleşmiyor.';
     }

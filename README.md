@@ -71,3 +71,11 @@ php /home/KULLANICI/public_html/cron/mail-queue.php
 ```
 php /home/KULLANICI/public_html/cron/platform.php
 ```
+
+Günlük veritabanı yedeği için günde bir (ör. 03:15):
+
+```
+php /home/KULLANICI/public_html/cron/backup.php
+```
+
+Yedekler varsayılan olarak web kökünün bir üstündeki `rymedya-yedek` klasörüne yazılır (Ayarlar → Güvenlik'ten değiştirilebilir).

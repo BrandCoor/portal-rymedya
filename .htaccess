@@ -1,0 +1,46 @@
+# ====================================================================
+# RY MEDYA PORTAL - SUNUCU GÜVENLİK KURALLARI (Apache)
+# ====================================================================
+
+# Klasör listelemesini kapat
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # HTTPS zorunlu (yerel geliştirme hariç)
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Gizli dosya ve klasörler (.git, .env, .htaccess ...) — .well-known hariç
+    RewriteRule (^|/)\.(?!well-known/) - [F,L]
+</IfModule>
+
+# Kaynak, yedek ve belge dosyalarına doğrudan erişim yok
+<FilesMatch "\.(sql|gz|zip|tar|bak|old|log|md|sh|ini|lock|dist|example|yml|yaml)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Deny from all
+    </IfModule>
+</FilesMatch>
+<FilesMatch "^(composer\.(json|lock)|package(-lock)?\.json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Güvenlik başlıkları (PHP de gönderir; statik dosyalar için burada)
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(self)"
+    Header unset X-Powered-By
+</IfModule>

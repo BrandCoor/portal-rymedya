@@ -30,3 +30,5 @@ assets/uploads/branding/*
 # Ajans ödeme dekontları sunucuda kalır
 assets/uploads/receipts/*
 !assets/uploads/receipts/.htaccess
+# Veritabanı yedekleri sunucuda kalır
+storage/

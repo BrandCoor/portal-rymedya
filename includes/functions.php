@@ -815,7 +815,7 @@ function refresh_staff_session(): void {
     }
 
     $stmt = $db->prepare("
-        SELECT u.id, u.role_id, u.contact_id, u.full_name, u.email, u.phone, u.avatar, u.status, r.role_name, r.role_slug
+        SELECT u.id, u.role_id, u.contact_id, u.full_name, u.email, u.phone, u.avatar, u.status, u.totp_enabled, r.role_name, r.role_slug
         FROM users u JOIN roles r ON u.role_id = r.id
         WHERE u.id = ? LIMIT 1
     ");
@@ -839,6 +839,7 @@ function refresh_staff_session(): void {
         'avatar'    => $row['avatar']
     ];
     $_SESSION['user_permissions'] = load_user_permissions((int)$row['role_id']);
+    security_staff_guard($row);
 }
 
 /**
@@ -862,7 +863,7 @@ function require_client_login(array $allowed_roles = ['client']): void {
         unset($_SESSION['client_user_id'], $_SESSION['client_contact_id'], $_SESSION['client_user']);
         redirect(BASE_URL . '/client/login.php');
     }
-    $stmt = $db->prepare("SELECT u.status, u.contact_id, c.id AS cid, r.role_slug FROM users u LEFT JOIN contacts c ON c.id = ? LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ? LIMIT 1");
+    $stmt = $db->prepare("SELECT u.status, u.contact_id, u.totp_enabled, c.id AS cid, r.role_slug FROM users u LEFT JOIN contacts c ON c.id = ? LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ? LIMIT 1");
     $stmt->execute([(int)$_SESSION['client_contact_id'], (int)$_SESSION['client_user_id']]);
     $row = $stmt->fetch();
     if (!$row || $row['status'] !== 'active' || empty($row['cid'])) {
@@ -870,6 +871,7 @@ function require_client_login(array $allowed_roles = ['client']): void {
         set_flash('error', 'Portal oturumunuz sonlandırıldı.');
         redirect(BASE_URL . '/client/login.php');
     }
+    security_portal_guard($row);
     $role = portal_role_from_slug($row['role_slug'] ?? '');
     $_SESSION['client_user']['role'] = $role;
     if (!in_array($role, $allowed_roles, true)) {
@@ -953,14 +955,14 @@ function is_login_locked(string $email): bool {
         return false;
     }
     // "register:IP" kayıtları yalnızca kayıt hız sınırı içindir; giriş kilidine sayılmaz
-    if (str_starts_with($email, 'register:')) {
+    if (str_starts_with($email, 'register:') || str_starts_with($email, 'reset:')) {
         $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE email = ? AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)");
         $stmt->execute([$email]);
         return (int)$stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
     }
     $stmt = $db->prepare("
         SELECT COUNT(*) FROM login_attempts
-        WHERE ((ip_address = ? AND email NOT LIKE 'register:%') OR email = ?) AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)
+        WHERE ((ip_address = ? AND email NOT LIKE 'register:%' AND email NOT LIKE 'reset:%') OR email = ?) AND attempted_at > (NOW() - INTERVAL " . LOGIN_LOCKOUT_MINUTES . " MINUTE)
     ");
     $stmt->execute([$_SERVER['REMOTE_ADDR'] ?? '', mb_strtolower($email)]);
     return (int)$stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
@@ -981,7 +983,7 @@ function clear_login_failures(string $email): void {
     if (!login_attempts_table()) {
         return;
     }
-    $db->prepare("DELETE FROM login_attempts WHERE (ip_address = ? AND email NOT LIKE 'register:%') OR email = ?")
+    $db->prepare("DELETE FROM login_attempts WHERE (ip_address = ? AND email NOT LIKE 'register:%' AND email NOT LIKE 'reset:%') OR email = ?")
        ->execute([$_SERVER['REMOTE_ADDR'] ?? '', mb_strtolower($email)]);
 }
 
@@ -993,7 +995,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1112,6 +1114,7 @@ function run_migrations(): void {
         run_payment_migrations();
         run_fee_migrations();
         run_iyzico_migrations();
+        run_security_migrations();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1246,6 +1249,9 @@ require_once __DIR__ . '/platform_routing.php';
 require_once __DIR__ . '/platform_payments.php';
 require_once __DIR__ . '/platform_fees.php';
 require_once __DIR__ . '/iyzico.php';
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/backup.php';
+send_security_headers();
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur
 run_migrations();

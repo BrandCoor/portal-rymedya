@@ -22,4 +22,4 @@ require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 $r = platform_run_automations(true);
-echo date('Y-m-d H:i:s') . " otomatik onay: {$r['auto_approved']}, hatırlatma: {$r['reminders']}, geciken: {$r['overdue']}, atama bekleyen: {$r['unassigned']}" . PHP_EOL;
+echo date('Y-m-d H:i:s') . " otomatik onay: {$r['auto_approved']}, hatırlatma: {$r['reminders']}, geciken: {$r['overdue']}, atama bekleyen: {$r['unassigned']}, kurtarılan kart ödemesi: {$r['card_recovered']}" . ($r['backup'] !== '' ? ", yedek: {$r['backup']}" : '') . PHP_EOL;

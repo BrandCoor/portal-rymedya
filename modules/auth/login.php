@@ -43,38 +43,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Bu hesap bir müşteri / ajans / freelancer hesabıdır. Lütfen aşağıdaki "Müşteri / Ajans / Freelancer Girişi" butonunu kullanınız.';
         } elseif ($user && password_verify($password, $user['password'])) {
             clear_login_failures($email);
-
-            // Oturumu Güvenli Şekilde Yenile (Session Fixation Koruması)
-            session_regenerate_id(true);
-
             // Şifre hash algoritması güncellendiyse hash'i yenile
             if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
                 $db->prepare("UPDATE users SET password = ? WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
             }
-
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user'] = [
-                'id'        => $user['id'],
-                'role_id'   => $user['role_id'],
-                'role_name' => $user['role_name'],
-                'role_slug' => $user['role_slug'],
-                'full_name' => $user['full_name'],
-                'email'     => $user['email'],
-                'phone'     => $user['phone'],
-                'avatar'    => $user['avatar']
-            ];
-
-            // Kullanıcı İzinlerini Session'a Yükle
-            $_SESSION['user_permissions'] = load_user_permissions((int)$user['role_id']);
-
-            // Son Giriş Tarihini Güncelle
-            $update_stmt = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-            $update_stmt->execute([$user['id']]);
-
+            // İki adımlı doğrulama açıksa kod ekranına
+            if (twofa_mode('staff') !== 'off' && (int)($user['totp_enabled'] ?? 0) === 1) {
+                twofa_begin($user, 'staff');
+            }
+            staff_session_start($user);
             set_flash('success', 'Hoş geldiniz, Sn. ' . $user['full_name']);
             redirect(BASE_URL . '/modules/dashboard/index.php');
         } else {
             record_login_failure($email);
+            security_log_login($user['id'] ?? null, $email, 'staff', false, 'hatalı şifre');
             $error = 'E-posta adresi veya şifre hatalı!';
         }
     }
@@ -115,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <button type="submit" class="btn btn-primary btn-lg btn-block">Giriş yap</button>
                 </form>
+                <p class="xsmall" style="margin-top:12px;text-align:right"><a class="link" href="<?= BASE_URL ?>/modules/auth/forgot.php">Şifremi unuttum</a></p>
             </div>
 
             <?php if (site_setting('login_staff_show_portal') === '1'): ?>

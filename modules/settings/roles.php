@@ -72,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
             redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
         }
-        if (strlen($password) < 8) {
-            set_flash('error', 'Şifre en az 8 karakter olmalıdır.');
+        if ($perr = password_policy_error($password)) {
+            set_flash('error', $perr);
             redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
         }
         $dup = $db->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
@@ -121,8 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', 'Lütfen geçerli bir e-posta adresi giriniz.');
             redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
         }
-        if ($password !== '' && strlen($password) < 8) {
-            set_flash('error', 'Yeni şifre en az 8 karakter olmalıdır.');
+        if ($password !== '' && ($perr = password_policy_error($password))) {
+            set_flash('error', $perr);
             redirect(BASE_URL . '/modules/settings/roles.php?tab=users');
         }
 

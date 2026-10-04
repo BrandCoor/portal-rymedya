@@ -96,6 +96,7 @@ if (can_access_module('platform.manage')) {
                 <?= nav_link('/modules/settings/roles.php', 'shield-check', 'Roller ve kullanıcılar', '/modules/settings/roles') ?>
                 <?= nav_link('/modules/settings/index.php', 'settings-2', 'Ayarlar', '/modules/settings/index') ?>
             <?php endif; ?>
+            <?php if (is_super_admin()): ?><?= nav_link('/modules/security/index.php', 'lock-keyhole', 'Güvenlik', '/modules/security') ?><?php endif; ?>
         <?php endif; ?>
     </nav>
 

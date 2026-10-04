@@ -124,7 +124,16 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 8. İş kaydı her işlemi kalem kalem tutar; CSV ile dışa aktarılabilir.
 9. Kurallar ekranından aşama bölme ve otomatik onay süresini ayarlayın. Hatırlatma ve otomatik onay için cron: `php /home/KULLANICI/public_html/cron/platform.php` (saatte bir).
 
-## 9. Yetkiler
+## 9. Güvenlik (yalnızca süper yönetici)
+
+- **Ayarlar → Güvenlik:** iki adımlı doğrulama (personel ve portal için ayrı ayrı: Kapalı / İsteğe bağlı / Zorunlu), hareketsizlikte otomatik çıkış süreleri, yeni cihazdan giriş e-postası, şifre sıfırlama bağlantısı süresi, otomatik yedek ve yedek klasörü. Bu bölümü yalnızca süper yönetici görür ve değiştirebilir.
+- **İki adımlı doğrulama:** kullanıcı sağ üst menüden (portalda profil menüsünden) "İki adımlı doğrulama"ya girer, Google/Microsoft Authenticator ile QR kodu okutur, 6 haneli kodu onaylar ve 8 kurtarma kodunu saklar. "Zorunlu" seçilirse kurmayan kullanıcı girişten sonra kuruluma yönlendirilir. Telefonunu kaybeden kullanıcı için Güvenlik → İki adımlı doğrulama sekmesinden "Sıfırla".
+- **Şifremi unuttum:** giriş ekranlarındaki bağlantıyla e-postaya tek kullanımlık, süreli bağlantı gider (E-posta ayarlarının açık olması gerekir). Şifre en az 8 karakter, harf ve rakam içermeli.
+- **Güvenlik merkezi** (menü → Güvenlik): durum kontrolü, giriş kayıtları (başarılı/başarısız, IP, tarayıcı), kullanıcıların iki adımlı doğrulama durumu ve yedekler (şimdi al, indir, sil). Yedek phpMyAdmin → İçe aktar ile geri yüklenir.
+- **Kart ödemesi mutabakatı:** ajans kartla ödeyip iyzico'dan dönmeden tarayıcıyı kapatırsa saatlik görev ödemeyi iyzico'dan sorgular ve faturaya işler.
+- Sunucuda kök `.htaccess` HTTPS'e yönlendirir, gizli/yedek dosyalara erişimi kapatır ve güvenlik başlıklarını ekler.
+
+## 10. Yetkiler
 
 | İzin | Ne açar? |
 |------|----------|

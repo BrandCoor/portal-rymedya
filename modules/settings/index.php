@@ -17,6 +17,10 @@ require_permission('settings.manage');
 $user = current_user();
 
 $tab = array_key_exists($_GET['tab'] ?? '', SETTINGS_SCHEMA) ? $_GET['tab'] : 'brand';
+// Güvenlik bölümü yalnızca süper yönetici içindir
+if (!empty(SETTINGS_SCHEMA[$tab]['admin_only']) && !is_super_admin()) {
+    $tab = 'brand';
+}
 $self = BASE_URL . '/modules/settings/index.php?tab=';
 const BRANDING_DIR = __DIR__ . '/../../assets/uploads/branding/';
 
@@ -71,6 +75,10 @@ function settings_delete_image(?string $path): void {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $section = $_POST['section'] ?? '';
+    if (!empty(SETTINGS_SCHEMA[$section]['admin_only']) && !is_super_admin()) {
+        set_flash('error', 'Bu ayarları yalnızca süper yönetici değiştirebilir.');
+        redirect($self . 'brand');
+    }
     if (!array_key_exists($section, SETTINGS_SCHEMA)) {
         redirect($self . 'brand');
     }
@@ -229,7 +237,7 @@ $extra_links = [
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
     <aside class="stack" style="min-width:0">
         <nav class="card" style="padding:6px">
-            <?php foreach (SETTINGS_SCHEMA as $sk => $sv): ?>
+            <?php foreach (SETTINGS_SCHEMA as $sk => $sv): if (!empty($sv['admin_only']) && !is_super_admin()) continue; ?>
                 <a href="?tab=<?= $sk ?>" class="menu-item" style="<?= $tab === $sk ? 'background:var(--surface-3);color:var(--ink);font-weight:500' : '' ?>"><i data-lucide="<?= $sv['icon'] ?>"></i><?= e($sv['title']) ?></a>
             <?php endforeach; ?>
         </nav>

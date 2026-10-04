@@ -89,6 +89,7 @@ function platform_header(string $title, string $active = ''): void {
                     </div>
                     <div class="menu-sep"></div>
                     <a href="<?= BASE_URL ?>/platform/profile.php" class="menu-item"><i data-lucide="circle-user-round"></i>Hesap ve profil</a>
+                    <?php if (twofa_mode('portal') !== 'off'): ?><a href="<?= BASE_URL ?>/modules/auth/2fa_setup.php" class="menu-item"><i data-lucide="smartphone"></i>İki adımlı doğrulama</a><?php endif; ?>
                     <a href="<?= BASE_URL ?>/platform/notifications.php" class="menu-item"><i data-lucide="bell"></i>Bildirimler</a>
                     <div class="menu-sep"></div>
                     <a href="<?= BASE_URL ?>/client/logout.php" class="menu-item"><i data-lucide="log-out"></i>Çıkış yap</a>

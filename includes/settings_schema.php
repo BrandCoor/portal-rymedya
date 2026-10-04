@@ -183,6 +183,21 @@ const SETTINGS_SCHEMA = [
             'mail_batch_size'       => ['number', 'Toplu gönderimde parti büyüklüğü', '20', 'Her adımda gönderilecek e-posta sayısı. Hosting saatlik limitine göre ayarlayın.', [1, 200, 'e-posta']],
         ],
     ],
+    'security' => [
+        'title' => 'Güvenlik', 'icon' => 'shield-check', 'admin_only' => true,
+        'desc'  => 'İki adımlı doğrulama, oturum süresi, şifre sıfırlama, giriş uyarıları ve otomatik yedek. Yalnızca süper yönetici görür ve değiştirir.',
+        'fields' => [
+            'security_2fa_staff'       => ['select', 'Personel için iki adımlı doğrulama', 'optional', 'Kapalı: hiç sorulmaz. İsteğe bağlı: kullanıcı profilinden açabilir. Zorunlu: kurmayan personel ilk girişte kuruluma yönlendirilir.', ['off' => 'Kapalı', 'optional' => 'İsteğe bağlı', 'required' => 'Zorunlu']],
+            'security_2fa_portal'      => ['select', 'Ajans, freelancer ve müşteriler için iki adımlı doğrulama', 'optional', 'Portal hesapları için aynı seçenekler.', ['off' => 'Kapalı', 'optional' => 'İsteğe bağlı', 'required' => 'Zorunlu']],
+            'security_idle_staff'      => ['number', 'Personel hareketsizlik süresi', '120', 'Bu süre boyunca işlem yapılmazsa oturum kapanır. 0 ise kapanmaz.', [0, 1440, 'dakika']],
+            'security_idle_portal'     => ['number', 'Portal hareketsizlik süresi', '240', 'Ajans, freelancer ve müşteri oturumları için. 0 ise kapanmaz.', [0, 1440, 'dakika']],
+            'security_new_device_mail' => ['bool', 'Yeni cihazdan girişte e-posta uyarısı', '1', 'Kullanıcı daha önce kullanmadığı bir tarayıcı/ağdan girdiğinde kendisine e-posta gider.'],
+            'security_reset_minutes'   => ['number', 'Şifre sıfırlama bağlantısının geçerlilik süresi', '60', '', [10, 1440, 'dakika']],
+            'backup_enabled'           => ['bool', 'Günlük otomatik veritabanı yedeği', '1', 'cron/backup.php tanımlıysa o çalışır; değilse personel paneli açıldıkça günde bir yedek alınır.'],
+            'backup_keep_days'         => ['number', 'Yedek saklama süresi', '14', 'Daha eski yedekler silinir; en son yedek her zaman kalır.', [1, 365, 'gün']],
+            'backup_path'              => ['text', 'Yedek klasörü (isteğe bağlı)', '', 'Sunucudaki tam yol, ör. /home/KULLANICI/yedekler. Boşsa web kökünün bir üstündeki "rymedya-yedek" klasörü kullanılır.'],
+        ],
+    ],
     'documents' => [
         'title' => 'Belgeler', 'icon' => 'file-text',
         'desc'  => 'Fatura, ekstre ve call sheet çıktıları.',
