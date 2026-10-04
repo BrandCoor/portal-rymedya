@@ -1,8 +1,11 @@
 <?php
 /**
  * ====================================================================
- * AJANS CRM / ERP - KAPSAMLI SİSTEM, FİNANS, BANKA & PORTAL AYARLARI
+ * AYARLAR
  * ====================================================================
+ * Tüm bölümler includes/settings_schema.php'deki şemadan oluşur.
+ * Görsel alanlar (logo, favicon, arka plan) assets/uploads/branding/
+ * klasörüne yüklenir. Her bölüm ayrı kaydedilir ve varsayılana döndürülebilir.
  */
 
 require_once __DIR__ . '/../../config/db.php';
@@ -12,331 +15,287 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_staff_login();
 require_permission('settings.manage');
 
-// ====================================================================
-// 1. TÜM FORM İŞLEMLERİ (HEADER'DAN ÖNCE ÇALIŞIR - ASLA BOŞ EKRAN VERMEZ)
-// ====================================================================
+$tab = array_key_exists($_GET['tab'] ?? '', SETTINGS_SCHEMA) ? $_GET['tab'] : 'brand';
+$self = BASE_URL . '/modules/settings/index.php?tab=';
+const BRANDING_DIR = __DIR__ . '/../../assets/uploads/branding/';
+
+/**
+ * Görsel yükler; başarılıysa göreli yolu, hata varsa [null, mesaj] döner
+ */
+function settings_store_image(array $file, string $key, string $kind): array {
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, null];
+    }
+    if ($file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        return [null, 'Dosya yüklenemedi (sunucu yükleme sınırını kontrol edin).'];
+    }
+    if ($file['size'] > 2 * 1024 * 1024) {
+        return [null, 'Görsel en fazla 2 MB olabilir.'];
+    }
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+    $map = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp', 'image/gif' => 'gif', 'image/svg+xml' => 'svg',
+            'image/x-icon' => 'ico', 'image/vnd.microsoft.icon' => 'ico'];
+    if (!isset($map[$mime])) {
+        return [null, 'Desteklenmeyen dosya türü. PNG, JPG, WEBP, SVG veya ICO yükleyin.'];
+    }
+    $ext = $map[$mime];
+    if ($ext === 'ico' && $kind !== 'favicon') {
+        return [null, 'ICO yalnızca favicon için kullanılabilir.'];
+    }
+    if ($ext === 'svg') {
+        // SVG içinde betik veya dış içerik olmamalı
+        $svg = (string)file_get_contents($file['tmp_name']);
+        if (preg_match('/<script|on[a-z]+\s*=|javascript:|<foreignObject|<iframe|<embed|<object|xlink:href\s*=\s*["\'](?!#|data:image)/i', $svg)) {
+            return [null, 'SVG dosyası betik veya dış bağlantı içeremez.'];
+        }
+    } elseif ($ext !== 'ico' && @getimagesize($file['tmp_name']) === false) {
+        return [null, 'Dosya geçerli bir görsel değil.'];
+    }
+    if (!is_dir(BRANDING_DIR) && !@mkdir(BRANDING_DIR, 0755, true)) {
+        return [null, 'Yükleme klasörü oluşturulamadı: assets/uploads/branding'];
+    }
+    $name = preg_replace('/[^a-z0-9_]/', '', $key) . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(3)) . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], BRANDING_DIR . $name)) {
+        return [null, 'Dosya kaydedilemedi; klasör yazma iznini kontrol edin.'];
+    }
+    return ['assets/uploads/branding/' . $name, null];
+}
+
+function settings_delete_image(?string $path): void {
+    if ($path && preg_match('#^assets/uploads/branding/[A-Za-z0-9._-]+$#', $path)) {
+        @unlink(__DIR__ . '/../../' . $path);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $action = $_POST['action'] ?? '';
+    $section = $_POST['section'] ?? '';
+    if (!array_key_exists($section, SETTINGS_SCHEMA)) {
+        redirect($self . 'brand');
+    }
+    $fields = SETTINGS_SCHEMA[$section]['fields'];
+    $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), setting_group = VALUES(setting_group)");
+    $current = get_settings(true);
 
-    if ($action === 'save_all_settings') {
-        $settings_to_save = [
-            // 1. Şirket & Künye
-            'company_name'             => trim($_POST['company_name'] ?? ''),
-            'company_brand_name'       => trim($_POST['company_brand_name'] ?? ''),
-            'company_email'            => trim($_POST['company_email'] ?? ''),
-            'company_phone'            => trim($_POST['company_phone'] ?? ''),
-            'company_address'          => trim($_POST['company_address'] ?? ''),
-            'company_city'             => trim($_POST['company_city'] ?? ''),
-            'company_tax_office'       => trim($_POST['company_tax_office'] ?? ''),
-            'company_tax_number'       => trim($_POST['company_tax_number'] ?? ''),
-            'company_trade_registry'   => trim($_POST['company_trade_registry'] ?? ''),
-
-            // 2. Banka & IBAN
-            'bank_primary_name'        => trim($_POST['bank_primary_name'] ?? ''),
-            'bank_primary_receiver'    => trim($_POST['bank_primary_receiver'] ?? ''),
-            'bank_primary_iban'        => trim($_POST['bank_primary_iban'] ?? ''),
-            'bank_secondary_name'      => trim($_POST['bank_secondary_name'] ?? ''),
-            'bank_secondary_iban'      => trim($_POST['bank_secondary_iban'] ?? ''),
-            'bank_payment_note'        => trim($_POST['bank_payment_note'] ?? ''),
-
-            // 3. Finans & Vergi Parametreleri
-            'default_currency'         => array_key_exists($_POST['default_currency'] ?? '', CURRENCIES) ? $_POST['default_currency'] : 'TRY',
-            'default_vat_rate'         => (string)max(0, min(100, (float)($_POST['default_vat_rate'] ?? 20))),
-            'corporate_tax_rate'       => (string)max(0, min(100, (float)($_POST['corporate_tax_rate'] ?? 25))),
-            'invoice_prefix'           => trim($_POST['invoice_prefix'] ?? 'RYM-'),
-            'project_prefix'           => trim($_POST['project_prefix'] ?? 'PRJ-'),
-
-            // 4. Müşteri Portalı & Operasyon
-            'portal_support_email'     => trim($_POST['portal_support_email'] ?? ''),
-            'portal_support_phone'     => trim($_POST['portal_support_phone'] ?? ''),
-            'callsheet_default_notes'  => trim($_POST['callsheet_default_notes'] ?? '')
-        ];
-
-        $stmt = $db->prepare("
-            INSERT INTO system_settings (setting_key, setting_value, setting_group) 
-            VALUES (?, ?, 'master')
-            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-        ");
-
-        foreach ($settings_to_save as $key => $val) {
-            $stmt->execute([$key, $val]);
+    // Varsayılana döndür
+    if (($_POST['action'] ?? '') === 'reset') {
+        $del = $db->prepare("DELETE FROM system_settings WHERE setting_key = ?");
+        foreach ($fields as $key => $f) {
+            if ($f[0] === 'image') {
+                settings_delete_image($current[$key] ?? null);
+            }
+            $del->execute([$key]);
         }
-
-        set_flash('success', 'Tüm sistem, banka IBAN ve şirket ayarları başarıyla kaydedildi.');
-        redirect(BASE_URL . '/modules/settings/index.php');
+        log_activity('settings', 'Ayarlar varsayılana döndürüldü: ' . SETTINGS_SCHEMA[$section]['title'], null, null, '/modules/settings/index.php?tab=' . $section);
+        set_flash('success', SETTINGS_SCHEMA[$section]['title'] . ' varsayılan değerlere döndürüldü.');
+        redirect($self . $section);
     }
+
+    $errors = [];
+    $values = [];
+    foreach ($fields as $key => $f) {
+        [$type, $label] = $f;
+        $raw = $_POST[$key] ?? '';
+        switch ($type) {
+            case 'bool':
+                $values[$key] = isset($_POST[$key]) ? '1' : '0';
+                break;
+            case 'number':
+                [$min, $max] = $f[4];
+                $n = max($min, min($max, (float)str_replace(',', '.', (string)$raw)));
+                $values[$key] = (string)($n == (int)$n ? (int)$n : $n);
+                break;
+            case 'color':
+                $raw = trim((string)$raw);
+                if (!valid_hex_color($raw)) { $errors[] = "{$label}: #RRGGBB biçiminde bir renk girin."; continue 2; }
+                $values[$key] = strtoupper($raw);
+                break;
+            case 'email':
+                $raw = trim((string)$raw);
+                if ($raw !== '' && !filter_var($raw, FILTER_VALIDATE_EMAIL)) { $errors[] = "{$label}: geçerli bir e-posta girin."; continue 2; }
+                $values[$key] = $raw;
+                break;
+            case 'url':
+                $raw = trim((string)$raw);
+                if ($raw !== '' && !is_safe_url($raw)) { $errors[] = "{$label}: http(s):// ile başlayan bir adres girin."; continue 2; }
+                $values[$key] = $raw;
+                break;
+            case 'select':
+                $opts = is_string($f[4]) ? constant($f[4]) : $f[4];
+                $values[$key] = array_key_exists($raw, $opts) ? $raw : (string)$f[2];
+                break;
+            case 'points':
+                $rows = [];
+                foreach ((array)($_POST[$key] ?? []) as $r) {
+                    $rows[] = [
+                        preg_replace('/[^a-z0-9-]/', '', strtolower(trim((string)($r[0] ?? '')))),
+                        mb_substr(trim((string)($r[1] ?? '')), 0, 80),
+                        mb_substr(trim((string)($r[2] ?? '')), 0, 240),
+                    ];
+                }
+                $values[$key] = json_encode(array_slice($rows, 0, (int)($f[4] ?? 3)), JSON_UNESCAPED_UNICODE);
+                break;
+            case 'image':
+                if (!empty($_POST[$key . '__remove'])) {
+                    settings_delete_image($current[$key] ?? null);
+                    $values[$key] = '';
+                }
+                [$path, $err] = settings_store_image($_FILES[$key] ?? [], $key, $f[4] ?? 'logo');
+                if ($err) { $errors[] = "{$label}: {$err}"; break; }
+                if ($path) {
+                    settings_delete_image($current[$key] ?? null);
+                    $values[$key] = $path;
+                }
+                break;
+            case 'textarea':
+                $values[$key] = mb_substr(str_replace("\r\n", "\n", trim((string)$raw)), 0, 4000);
+                break;
+            default:
+                $values[$key] = mb_substr(trim((string)$raw), 0, 500);
+        }
+    }
+
+    foreach ($values as $k => $v) {
+        $stmt->execute([$k, $v, $section]);
+    }
+    get_settings(true);
+    log_activity('settings', 'Ayarlar güncellendi: ' . SETTINGS_SCHEMA[$section]['title'], null, null, '/modules/settings/index.php?tab=' . $section);
+    if ($errors) {
+        set_flash('warning', 'Diğer alanlar kaydedildi, ancak: ' . implode(' ', $errors));
+    } else {
+        set_flash('success', SETTINGS_SCHEMA[$section]['title'] . ' kaydedildi.');
+    }
+    redirect($self . $section);
 }
 
-// 2. VERİLERİ ÇEKME
-$settings_raw = $db->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_KEY_PAIR);
-
-if (!function_exists('get_conf')) {
-    function get_conf(string $key, string $default = ''): string {
-        global $settings_raw;
-        return $settings_raw[$key] ?? $default;
-    }
-}
-
-$page_title = 'Sistem & Şirket Yapılandırması';
+$sec = SETTINGS_SCHEMA[$tab];
+$page_title = 'Ayarlar';
 require_once __DIR__ . '/../../includes/header.php';
+
+/** Alan değeri (kayıtlıysa o, değilse varsayılan) */
+$val = function (string $key, array $f) {
+    if ($f[0] === 'points') {
+        $rows = site_points($key);
+        return array_pad($rows, (int)($f[4] ?? 3), ['', '', '']);
+    }
+    if ($f[0] === 'image') {
+        return get_setting($key, '');
+    }
+    $all = get_settings();
+    return array_key_exists($key, $all) ? (string)$all[$key] : (string)$f[2];
+};
+$extra_links = [
+    ['/modules/platform/settings.php', 'sliders-horizontal', 'Platform kuralları', 'Termin, acil iş, seviye limitleri', 'platform.manage'],
+    ['/modules/platform/catalog.php', 'tags', 'Hizmet kataloğu', 'Ajans fiyat listesi', 'platform.pricing'],
+    ['/modules/settings/roles.php', 'shield-check', 'Roller ve kullanıcılar', 'Yetkiler, personel hesapları', null],
+    ['/modules/taxes/index.php', 'percent', 'Vergi', 'Vergi takvimi ve hesaplar', null],
+];
 ?>
-
-<div class="max-w-5xl mx-auto" x-data="{ activeTab: 'company' }">
-    <!-- Üst Başlık & Eylemler -->
-    <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Sistem & Ajans Yapılandırma Masası</h1>
-            <p class="text-xs text-slate-500 mt-1">Banka IBAN'ları, şirket künyesi, PDF dökümleri ve müşteri portalı kuralları.</p>
-        </div>
-
-        <div class="flex items-center gap-2">
-            <a href="<?= BASE_URL ?>/modules/settings/roles.php" class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-md transition cursor-pointer">
-                <i data-lucide="shield-check" class="w-4 h-4"></i>
-                <span>Roller & Yetkiler (RBAC)</span>
-            </a>
-        </div>
+<div class="page-head">
+    <div>
+        <h1 class="h1">Ayarlar</h1>
+        <p class="sub">Marka, giriş sayfaları, şirket bilgileri, belgeler ve portal metinleri.</p>
     </div>
-
-    <!-- Sekme Başlıkları -->
-    <div class="flex flex-wrap border-b border-slate-200 mb-6 gap-4 bg-white p-2 rounded-2xl shadow-xs border border-slate-200">
-        <button @click="activeTab = 'company'" :class="activeTab === 'company' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'" class="py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center gap-2">
-            <i data-lucide="building-2" class="w-4 h-4"></i>
-            <span>1. Şirket & Künye</span>
-        </button>
-
-        <button @click="activeTab = 'bank'" :class="activeTab === 'bank' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'" class="py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center gap-2">
-            <i data-lucide="credit-card" class="w-4 h-4"></i>
-            <span>2. Banka & IBAN Bilgileri</span>
-        </button>
-
-        <button @click="activeTab = 'finance'" :class="activeTab === 'finance' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'" class="py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center gap-2">
-            <i data-lucide="calculator" class="w-4 h-4"></i>
-            <span>3. Finans, Vergi & Kodlar</span>
-        </button>
-
-        <button @click="activeTab = 'portal'" :class="activeTab === 'portal' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'" class="py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center gap-2">
-            <i data-lucide="monitor" class="w-4 h-4"></i>
-            <span>4. Müşteri Portalı & Set Kuralları</span>
-        </button>
-    </div>
-
-    <!-- Form Kartı -->
-    <form method="POST" action="" class="space-y-6">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="save_all_settings">
-
-        <!-- ==================================================================== -->
-        <!-- TAB 1: ŞİRKET & KÜNYE BİLGİLERİ -->
-        <!-- ==================================================================== -->
-        <div x-show="activeTab === 'company'" class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-            <div class="pb-3 border-b border-slate-100">
-                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Ajans Resmi Künyesi</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Fatura başlıklarında, cari ekstrelerde ve sözleşmelerde çıkacak resmi bilgiler.</p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Şirket Resmi Ünvanı *</label>
-                    <input type="text" name="company_name" value="<?= e(get_conf('company_name', 'RY Medya Prodüksiyon A.Ş.')) ?>" required
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-brand-500">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Marka / Ticari Adı</label>
-                    <input type="text" name="company_brand_name" value="<?= e(get_conf('company_brand_name', 'RY Medya')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Resmi İletişim E-Postası *</label>
-                    <input type="email" name="company_email" value="<?= e(get_conf('company_email', 'info@rymedya.com.tr')) ?>" required
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Telefon Numarası *</label>
-                    <input type="text" name="company_phone" value="<?= e(get_conf('company_phone', '+90 (212) 000 00 00')) ?>" required
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Şehir / İlçe</label>
-                    <input type="text" name="company_city" value="<?= e(get_conf('company_city', 'İstanbul / Beşiktaş')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Vergi Dairesi</label>
-                    <input type="text" name="company_tax_office" value="<?= e(get_conf('company_tax_office', 'Beşiktaş V.D.')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Vergi Numarası (VKN)</label>
-                    <input type="text" name="company_tax_number" value="<?= e(get_conf('company_tax_number', '1234567890')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Ticaret Sicil No</label>
-                    <input type="text" name="company_trade_registry" value="<?= e(get_conf('company_trade_registry', '123456-5')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900">
-                </div>
-            </div>
-
-            <div>
-                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Merkez Açık Adresi</label>
-                <textarea name="company_address" rows="2"
-                          class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"><?= e(get_conf('company_address', 'Levent Mah. Cömert Sk. No: 1 Beşiktaş / İstanbul')) ?></textarea>
-            </div>
-        </div>
-
-        <!-- ==================================================================== -->
-        <!-- TAB 2: BANKA & IBAN BİLGİLERİ -->
-        <!-- ==================================================================== -->
-        <div x-show="activeTab === 'bank'" x-cloak class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-            <div class="pb-3 border-b border-slate-100">
-                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Şirket Banka Hesapları & IBAN Masası</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Müşteri portalında ve kesilen faturalarda gösterilecek resmi havale hesapları.</p>
-            </div>
-
-            <div class="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">1. Ana Ticari Banka Hesabı (Varsayılan TL)</h4>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Banka Adı & Şube *</label>
-                        <input type="text" name="bank_primary_name" value="<?= e(get_conf('bank_primary_name', 'Garanti BBVA - Levent Ticari Şubesi')) ?>" required
-                               class="w-full py-2.5 px-3.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Hesap Sahibi / Alıcı Ünvan *</label>
-                        <input type="text" name="bank_primary_receiver" value="<?= e(get_conf('bank_primary_receiver', 'RY MEDYA PRODÜKSİYON A.Ş.')) ?>" required
-                               class="w-full py-2.5 px-3.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900">
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Ana IBAN Numarası (TR...) *</label>
-                    <input type="text" name="bank_primary_iban" value="<?= e(get_conf('bank_primary_iban', 'TR00 0000 0000 0000 0000 0000 00')) ?>" required
-                           class="w-full py-2.5 px-3.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900">
-                </div>
-            </div>
-
-            <div class="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
-                <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">2. İkincil / Döviz Hesabı (USD / EUR / Alternatif)</h4>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Banka & Para Birimi</label>
-                        <input type="text" name="bank_secondary_name" value="<?= e(get_conf('bank_secondary_name', 'QNB Finansbank (USD/EUR Hesabı)')) ?>"
-                               class="w-full py-2.5 px-3.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">İkincil IBAN</label>
-                        <input type="text" name="bank_secondary_iban" value="<?= e(get_conf('bank_secondary_iban', 'TR00 0000 0000 0000 0000 0000 01')) ?>"
-                               class="w-full py-2.5 px-3.5 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-900">
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Müşteriye Gösterilecek Havale Notu</label>
-                <textarea name="bank_payment_note" rows="2"
-                          class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"><?= e(get_conf('bank_payment_note', 'Ödemelerinizde açıklama kısmına lütfen Fatura veya Proje Kodunuzu yazınız.')) ?></textarea>
-            </div>
-        </div>
-
-        <!-- ==================================================================== -->
-        <!-- TAB 3: FİNANS, VERGİ & KODLAR -->
-        <!-- ==================================================================== -->
-        <div x-show="activeTab === 'finance'" x-cloak class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-            <div class="pb-3 border-b border-slate-100">
-                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Finans & Vergi Parametreleri</h3>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Varsayılan Para Birimi</label>
-                    <select name="default_currency" class="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
-                        <?php foreach (CURRENCIES as $ck => $cn): ?>
-                            <option value="<?= $ck ?>" <?= get_conf('default_currency', 'TRY') === $ck ? 'selected' : '' ?>><?= $cn ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Varsayılan KDV Oranı (%)</label>
-                    <input type="number" name="default_vat_rate" value="<?= e(get_conf('default_vat_rate', '20')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Kurumlar Vergisi (%)</label>
-                    <input type="number" name="corporate_tax_rate" value="<?= e(get_conf('corporate_tax_rate', '25')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900">
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Otomatik Proje Kod Ön Eki</label>
-                    <input type="text" name="project_prefix" value="<?= e(get_conf('project_prefix', 'PRJ-')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Otomatik Fatura No Ön Eki</label>
-                    <input type="text" name="invoice_prefix" value="<?= e(get_conf('invoice_prefix', 'RYM-')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900">
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================================================================== -->
-        <!-- TAB 4: MÜŞTERİ PORTALI VE CALL SHEET DİREKTİFLERİ -->
-        <!-- ==================================================================== -->
-        <div x-show="activeTab === 'portal'" x-cloak class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
-            <div class="pb-3 border-b border-slate-100">
-                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Müşteri Portalı İletişimi & Set Kuralları</h3>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Müşteri Destek / WhatsApp Hattı</label>
-                    <input type="text" name="portal_support_phone" value="<?= e(get_conf('portal_support_phone', '+90 555 000 00 00')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Müşteri Destek E-Postası</label>
-                    <input type="email" name="portal_support_email" value="<?= e(get_conf('portal_support_email', 'destek@rymedya.com.tr')) ?>"
-                           class="w-full py-2.5 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
-                </div>
-            </div>
-
-            <div>
-                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Call Sheet (Çağrı Kağıdı) Varsayılan Kurallar Metni</label>
-                <textarea name="callsheet_default_notes" rows="3"
-                          class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"><?= e(get_conf('callsheet_default_notes', 'Tüm set ekibinin çağrı saatinden en geç 15 dakika önce sette hazır bulunması rica olunur. Güvenlik ve gizlilik kurallarına riayet ediniz.')) ?></textarea>
-            </div>
-        </div>
-
-        <!-- Kaydet Butonu -->
-        <div class="flex items-center justify-end pt-4">
-            <button type="submit" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-3 px-8 rounded-xl shadow-lg shadow-brand-600/30 transition cursor-pointer">
-                <i data-lucide="check" class="w-4 h-4"></i>
-                <span>Tüm Ayarları ve IBAN Bilgilerini Kaydet</span>
-            </button>
-        </div>
-    </form>
 </div>
 
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <aside class="stack" style="min-width:0">
+        <nav class="card" style="padding:6px">
+            <?php foreach (SETTINGS_SCHEMA as $sk => $sv): ?>
+                <a href="?tab=<?= $sk ?>" class="menu-item" style="<?= $tab === $sk ? 'background:var(--surface-3);color:var(--ink);font-weight:500' : '' ?>"><i data-lucide="<?= $sv['icon'] ?>"></i><?= e($sv['title']) ?></a>
+            <?php endforeach; ?>
+        </nav>
+        <div class="card" style="padding:6px">
+            <p class="eyebrow" style="padding:8px 9px 4px">Diğer ayarlar</p>
+            <?php foreach ($extra_links as [$href, $icon, $label, $hint, $perm]): if ($perm && !can_access_module($perm)) continue; ?>
+                <a href="<?= BASE_URL . $href ?>" class="menu-item" style="align-items:flex-start"><i data-lucide="<?= $icon ?>" style="margin-top:2px"></i><span><span style="display:block"><?= e($label) ?></span><span class="xsmall text-muted"><?= e($hint) ?></span></span></a>
+            <?php endforeach; ?>
+        </div>
+    </aside>
+
+    <div class="lg:col-span-3" style="min-width:0">
+        <form method="POST" action="?tab=<?= $tab ?>" enctype="multipart/form-data" class="card">
+            <?= csrf_field() ?>
+            <input type="hidden" name="section" value="<?= $tab ?>">
+            <div class="card-head">
+                <div><p class="card-title"><?= e($sec['title']) ?></p><p class="card-sub"><?= e($sec['desc']) ?></p></div>
+                <?php if (!empty($sec['preview'])): ?>
+                    <a href="<?= BASE_URL . $sec['preview'] . (str_contains($sec['preview'], '?') ? '&' : '?') ?>preview=1" target="_blank" class="btn btn-secondary btn-sm"><i data-lucide="external-link"></i>Önizle</a>
+                <?php endif; ?>
+            </div>
+            <div class="divide">
+            <?php foreach ($sec['fields'] as $key => $f):
+                [$type, $label] = $f; $hint = $f[3] ?? ''; $v = $val($key, $f); ?>
+                <div class="card-pad" style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
+                    <?php if ($type === 'bool'): ?>
+                        <div style="display:flex;justify-content:space-between;gap:16px;align-items:center">
+                            <div><p class="small" style="font-weight:500"><?= e($label) ?></p><?php if ($hint): ?><p class="xsmall text-muted"><?= e($hint) ?></p><?php endif; ?></div>
+                            <label class="switch"><input type="checkbox" name="<?= $key ?>" value="1" <?= $v === '1' ? 'checked' : '' ?>><span></span></label>
+                        </div>
+
+                    <?php elseif ($type === 'image'): $url = site_image($key); $kind = $f[4] ?? 'logo'; ?>
+                        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap" x-data="{ preview: null }">
+                            <div style="width:<?= $kind === 'favicon' ? '64px' : '180px' ?>;height:64px;border:1px dashed var(--line);border-radius:10px;display:grid;place-items:center;flex-shrink:0;overflow:hidden;background:<?= in_array($key, ['brand_logo_dark', 'login_aside_image'], true) ? 'var(--sidebar)' : 'var(--surface-2)' ?>">
+                                <template x-if="preview"><img :src="preview" style="max-width:100%;max-height:56px;object-fit:contain"></template>
+                                <template x-if="!preview">
+                                    <?php if ($url): ?><img src="<?= e($url) ?>" alt="" style="max-width:100%;max-height:<?= $key === 'login_aside_image' ? '64px;width:100%;object-fit:cover' : '56px;object-fit:contain' ?>">
+                                    <?php else: ?><span class="xsmall text-faint">Görsel yok</span><?php endif; ?>
+                                </template>
+                            </div>
+                            <div style="flex:1;min-width:220px" class="stack-sm">
+                                <p class="small" style="font-weight:500"><?= e($label) ?></p>
+                                <?php if ($hint): ?><p class="xsmall text-muted"><?= e($hint) ?></p><?php endif; ?>
+                                <input type="file" name="<?= $key ?>" accept="<?= $kind === 'favicon' ? 'image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/webp' : 'image/png,image/jpeg,image/webp,image/svg+xml,image/gif' ?>" class="small"
+                                       @change="const f = $event.target.files[0]; preview = f ? URL.createObjectURL(f) : null">
+                                <?php if ($url): ?><label class="check xsmall"><input type="checkbox" name="<?= $key ?>__remove" value="1">Görseli kaldır</label><?php endif; ?>
+                            </div>
+                        </div>
+
+                    <?php elseif ($type === 'points'): ?>
+                        <p class="small" style="font-weight:500"><?= e($label) ?></p>
+                        <?php if ($hint): ?><p class="xsmall text-muted"><?= e($hint) ?> <a class="link" href="https://lucide.dev/icons/" target="_blank" rel="noopener">Simge listesi</a></p><?php endif; ?>
+                        <?php foreach ($v as $i => $row): ?>
+                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2" style="align-items:center">
+                                <div class="sm:col-span-3" style="display:flex;gap:8px;align-items:center">
+                                    <span style="width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--line);border-radius:8px;flex-shrink:0"><i data-lucide="<?= e($row[0] ?: 'circle') ?>" style="width:15px;height:15px"></i></span>
+                                    <input class="input" name="<?= $key ?>[<?= $i ?>][0]" value="<?= e($row[0] ?? '') ?>" placeholder="simge">
+                                </div>
+                                <input class="input sm:col-span-3" name="<?= $key ?>[<?= $i ?>][1]" value="<?= e($row[1] ?? '') ?>" placeholder="Kalın başlık">
+                                <input class="input sm:col-span-6" name="<?= $key ?>[<?= $i ?>][2]" value="<?= e($row[2] ?? '') ?>" placeholder="Açıklama">
+                            </div>
+                        <?php endforeach; ?>
+                        <p class="xsmall text-faint">Boş bırakılan satırlar gösterilmez.</p>
+
+                    <?php else: ?>
+                        <label class="label" for="f_<?= $key ?>"><?= e($label) ?></label>
+                        <?php if ($type === 'textarea'): ?>
+                            <textarea class="textarea" id="f_<?= $key ?>" name="<?= $key ?>" rows="3"><?= e($v) ?></textarea>
+                        <?php elseif ($type === 'color'): ?>
+                            <div style="display:flex;gap:8px;align-items:center" x-data="{ c: '<?= e($v) ?>' }">
+                                <input type="color" x-model="c" style="width:42px;height:36px;border:1px solid var(--line);border-radius:8px;padding:2px;background:#fff">
+                                <input class="input mono" id="f_<?= $key ?>" name="<?= $key ?>" x-model="c" maxlength="7" style="width:120px">
+                                <button type="button" class="btn btn-ghost btn-sm" @click="c = '<?= e((string)$f[2]) ?>'">Varsayılan</button>
+                            </div>
+                        <?php elseif ($type === 'number'): [$min, $max, $unit] = $f[4]; ?>
+                            <div class="input-group" style="width:180px"><input class="input" type="number" id="f_<?= $key ?>" name="<?= $key ?>" value="<?= e($v) ?>" min="<?= $min ?>" max="<?= $max ?>" step="any"><span class="addon"><?= e($unit) ?></span></div>
+                        <?php elseif ($type === 'select'): $opts = is_string($f[4]) ? constant($f[4]) : $f[4]; ?>
+                            <select class="select" id="f_<?= $key ?>" name="<?= $key ?>" style="max-width:320px">
+                                <?php foreach ($opts as $ok => $ol): ?><option value="<?= e($ok) ?>" <?= $v === (string)$ok ? 'selected' : '' ?>><?= e(is_array($ol) ? ($ol['name'] ?? $ol['label'] ?? $ok) : $ol) ?></option><?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <input class="input" id="f_<?= $key ?>" type="<?= $type === 'email' ? 'email' : ($type === 'url' ? 'url' : 'text') ?>" name="<?= $key ?>" value="<?= e($v) ?>">
+                        <?php endif; ?>
+                        <?php if ($hint): ?><span class="hint"><?= e($hint) ?></span><?php endif; ?>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+            </div>
+            <div class="card-foot" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;bottom:0;z-index:5">
+                <button type="submit" form="reset-form" class="btn btn-ghost btn-sm" onclick="return confirm('Bu bölümdeki tüm alanlar varsayılan değerlere dönsün mü? Yüklenen görseller silinir.');">Varsayılana döndür</button>
+                <button type="submit" name="action" value="save" class="btn btn-primary">Kaydet</button>
+            </div>
+        </form>
+        <form id="reset-form" method="POST" action="?tab=<?= $tab ?>"><?= csrf_field() ?><input type="hidden" name="section" value="<?= $tab ?>"><input type="hidden" name="action" value="reset"></form>
+    </div>
+</div>
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

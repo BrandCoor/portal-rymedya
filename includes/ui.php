@@ -8,16 +8,28 @@
  * ui_*()     : rozet, boş durum, avatar, puan halkası gibi küçük bileşenler
  */
 
-const UI_ASSET_VERSION = '2026.10.6';
+const UI_ASSET_VERSION = '2026.10.8';
 
 function ui_head(string $title, array $opts = []): void {
-    $chart = !empty($opts['chart']);
+    $chart   = !empty($opts['chart']);
+    $accent  = valid_hex_color(site_setting('brand_accent_color')) ? strtoupper(site_setting('brand_accent_color')) : '#D2462F';
+    $sidebar = valid_hex_color(site_setting('brand_sidebar_color')) ? strtoupper(site_setting('brand_sidebar_color')) : '#121214';
+    $hover   = color_shade($accent, -0.12);
+    $soft    = color_shade($accent, 0.9);
+    $suffix  = site_setting('brand_title_suffix');
+    $favicon = site_image('brand_favicon');
+    $mark    = mb_substr(site_setting('brand_mark_text'), 0, 1);
     ?>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#121214">
-    <title><?= e($title) ?> · RY Medya</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23D2462F'/%3E%3Ccircle cx='16' cy='16' r='5' fill='white'/%3E%3C/svg%3E">
+    <meta name="theme-color" content="<?= e($sidebar) ?>">
+    <title><?= e($title) ?><?= $suffix !== '' ? ' · ' . e($suffix) : '' ?></title>
+    <?php if ($favicon !== ''): ?>
+    <link rel="icon" href="<?= e($favicon) ?>">
+    <link rel="apple-touch-icon" href="<?= e($favicon) ?>">
+    <?php else: ?>
+    <link rel="icon" href="data:image/svg+xml,<?= rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="' . $accent . '"/>' . ($mark !== '' ? '<text x="16" y="21.5" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">' . htmlspecialchars($mark, ENT_XML1) . '</text>' : '<circle cx="16" cy="16" r="5" fill="#fff"/>') . '</svg>') ?>">
+    <?php endif; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -35,7 +47,7 @@ function ui_head(string $title, array $opts = []): void {
                         brand: { 50: '#F4F3F0', 100: '#E9E8E3', 200: '#D6D4CD', 300: '#B9B7AF', 400: '#6B6A72', 500: '#3D3D43', 600: '#18181B', 700: '#000000', 800: '#000000', 900: '#000000' },
                         // Soğuk gri yerine sıcak nötr palet
                         slate: { 50: '#FAF9F7', 100: '#F1F0EC', 200: '#E4E2DD', 300: '#D1CFC8', 400: '#A3A2A8', 500: '#6E6D74', 600: '#55545B', 700: '#3D3D43', 800: '#26262A', 900: '#151517', 950: '#0E0E10' },
-                        accent: { 50: '#FBEDEA', 100: '#F6D5CE', 500: '#D2462F', 600: '#B93A25', 700: '#962E1D' }
+                        accent: { 50: '<?= $soft ?>', 100: '<?= color_shade($accent, 0.75) ?>', 500: '<?= $accent ?>', 600: '<?= $hover ?>', 700: '<?= color_shade($accent, -0.28) ?>' }
                     },
                     borderRadius: { 'lg': '8px', 'xl': '9px', '2xl': '11px', '3xl': '13px' },
                     boxShadow: {
@@ -51,6 +63,7 @@ function ui_head(string $title, array $opts = []): void {
         }
     </script>
     <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/app.css?v=<?= UI_ASSET_VERSION ?>">
+    <style>:root{--accent:<?= $accent ?>;--accent-hover:<?= $hover ?>;--accent-soft:<?= $soft ?>;--sidebar:<?= $sidebar ?>;--sidebar-2:<?= color_shade($sidebar, 0.06) ?>}.rec-dot{box-shadow:0 0 0 4px <?= $accent ?>2e}</style>
     <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <?php if ($chart): ?><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script><?php endif; ?>
@@ -109,4 +122,29 @@ function ui_meter(string $label, ?float $percent, string $suffix = '%'): string 
     $tone = $v === null ? '' : ($v >= 85 ? 'tone-success' : ($v >= 65 ? '' : ($v >= 45 ? 'tone-warning' : 'tone-danger')));
     return '<div class="meter"><div class="meter-row"><span class="text-ink-2">' . e($label) . '</span><span class="num text-ink">' . ($v === null ? '<span class="text-faint">veri yok</span>' : number_format($v, 0) . $suffix) . '</span></div>'
         . '<div class="progress ' . $tone . '"><span style="width:' . ($v ?? 0) . '%"></span></div></div>';
+}
+
+/**
+ * Giriş / kayıt sayfalarının sol paneli. Metinler ayarlardan gelir:
+ * {$prefix}_eyebrow, {$prefix}_quote, {$prefix}_points
+ */
+function ui_auth_aside(string $prefix): void {
+    $bg = site_image('login_aside_image');
+    ?>
+    <aside class="auth-aside"<?= $bg !== '' ? ' style="background-image:linear-gradient(180deg,rgba(14,14,16,.78),rgba(14,14,16,.9)),url(\'' . e($bg) . '\');background-size:cover;background-position:center"' : '' ?>>
+        <div class="frame-lines"></div>
+        <div style="position:relative"><?= brand_html('dark') ?></div>
+        <div style="position:relative">
+            <?php if (site_setting($prefix . '_eyebrow') !== ''): ?>
+                <p class="eyebrow" style="color:#8A8990;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span><?= e(site_setting($prefix . '_eyebrow')) ?></p>
+            <?php endif; ?>
+            <p class="auth-quote"><?= rich_text(site_setting($prefix . '_quote')) ?></p>
+        </div>
+        <div class="auth-points">
+            <?php foreach (site_points($prefix . '_points') as $pt): ?>
+                <div><i data-lucide="<?= e(preg_replace('/[^a-z0-9-]/', '', strtolower($pt[0] ?? '')) ?: 'circle') ?>"></i><span><?php if (($pt[1] ?? '') !== ''): ?><b><?= e($pt[1]) ?></b> <?php endif; ?><?= e($pt[2] ?? '') ?></span></div>
+            <?php endforeach; ?>
+        </div>
+    </aside>
+    <?php
 }

@@ -169,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($pid === null) {
             $done('Bu durumdaki iş ekibe alınamaz.', 'error');
         }
-        log_job_change($job_id, 'staff', $staff_id, 'Atama', '—', 'RY Medya ekibi');
+        log_job_change($job_id, 'staff', $staff_id, 'Atama', '—', site_setting('platform_team_name'));
         $done('İşi ekibiniz üstlendi' . ($pid ? '; ERP\'de proje açıldı.' : '.'));
     }
     if ($action === 'assign_direct' && in_array($job['status'], ['open', 'submitted', 'quote_sent'], true)) {
@@ -300,14 +300,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $to  = $_POST['thread'] ?? 'agency';
         if ($msg !== '') {
             if ($to === 'agency') {
-                add_job_message($job_id, 'agency', 'staff', $staff_id, 'RY Medya Ekibi', $msg);
+                add_job_message($job_id, 'agency', 'staff', $staff_id, site_setting('platform_team_name'), $msg);
                 notify_contact_users($job['agency_contact_id'], "{$job['job_code']} için ekipten mesaj: \"" . mb_substr($msg, 0, 120) . "\"", "/platform/job.php?id={$job_id}#mesajlar", $job_id);
             } else {
                 $f = staff_freelancer((int)$to);
                 if (!$f) {
                     $done('Freelancer bulunamadı.', 'error', '#mesajlar');
                 }
-                add_job_message($job_id, 'freelancer', 'staff', $staff_id, 'RY Medya Ekibi', $msg, (int)$f['user_id']);
+                add_job_message($job_id, 'freelancer', 'staff', $staff_id, site_setting('platform_team_name'), $msg, (int)$f['user_id']);
                 notify_user((int)$f['user_id'], "{$job['job_code']} için ekipten mesaj: \"" . mb_substr($msg, 0, 120) . "\"", "/platform/job.php?id={$job_id}#mesajlar", $job_id);
             }
         }
@@ -528,7 +528,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 </form>
                 <div class="panel stack-sm" style="padding:14px">
                     <p class="small" style="font-weight:500">Ekibimize al</p>
-                    <p class="xsmall text-muted">İş RY Medya ekibine geçer<?= $job['agency_contact_id'] ? ', ERP\'de proje açılır' : '' ?>. Bekleyen teklifler gerekçesiyle kapatılır.</p>
+                    <p class="xsmall text-muted">İş <?= e(site_setting('platform_team_name')) ?> üzerine geçer<?= $job['agency_contact_id'] ? ', ERP\'de proje açılır' : '' ?>. Bekleyen teklifler gerekçesiyle kapatılır.</p>
                     <form method="POST" action="" onsubmit="return confirm('İş ekibinize alınsın mı?');"><?= csrf_field() ?><input type="hidden" name="action" value="take_internal"><button class="btn btn-secondary btn-sm"><i data-lucide="users"></i>Ekibimize al</button></form>
                 </div>
             </div>

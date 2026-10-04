@@ -1,0 +1,6 @@
+# Yüklenen dosyalar yalnızca görsel olarak sunulur; betik dosyaları erişime kapalıdır
+<IfModule mod_authz_core.c>
+    <FilesMatch "\.(php|phtml|php\d|phar|pl|py|cgi|sh|html?|js)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>

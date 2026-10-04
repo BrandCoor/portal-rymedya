@@ -107,12 +107,10 @@ if (get_setting('bank_primary_iban') === '') {
             <!-- 1. BAŞLIK VE AJANS LOGO ALANI -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-8 border-b-2 border-slate-100 gap-6">
                 <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md">
-                        <i data-lucide="video" class="w-6 h-6"></i>
-                    </div>
+                    <?= doc_logo_box('video', 'bg-slate-900') ?>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
-                        <p class="text-[11px] text-slate-500 font-medium tracking-wide">Video Prodüksiyon & Reklam Hizmetleri</p>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(site_setting('company_brand_name') ?: site_setting('company_name'), 'UTF-8')) ?></h1>
+                        <p class="text-[11px] text-slate-500 font-medium tracking-wide"><?= e(site_setting('doc_tagline')) ?></p>
                     </div>
                 </div>
 
@@ -152,7 +150,7 @@ if (get_setting('bank_primary_iban') === '') {
                         <?php endif; ?>
                     </div>
                     <div class="pt-2 border-t border-slate-200 mt-3 text-[11px] text-slate-500">
-                        <span>Düzenleyen: <strong>RY Medya Prodüksiyon A.Ş.</strong></span>
+                        <span>Düzenleyen: <strong><?= e(site_setting('doc_issuer_name') ?: site_setting('company_name')) ?></strong></span>
                     </div>
                 </div>
             </div>
@@ -225,7 +223,7 @@ if (get_setting('bank_primary_iban') === '') {
                         <p class="font-bold text-slate-800"><?= e($bank['account_name']) ?> (<?= e($bank['bank_name'] ?? 'Banka') ?>)</p>
                         <p class="font-mono text-slate-600 mt-0.5 font-medium"><?= e($bank['iban']) ?></p>
                     <?php else: ?>
-                        <p class="font-bold text-slate-800"><?= e(get_setting('bank_primary_receiver', get_setting('company_name', 'RY Medya Prodüksiyon'))) ?> (<?= e(get_setting('bank_primary_name', 'Banka')) ?>)</p>
+                        <p class="font-bold text-slate-800"><?= e(site_setting('bank_primary_receiver') ?: site_setting('company_name')) ?> (<?= e(get_setting('bank_primary_name', 'Banka')) ?>)</p>
                         <p class="font-mono text-slate-600 mt-0.5"><?= e(get_setting('bank_primary_iban', 'TR00 0000 0000 0000 0000 0000 00')) ?></p>
                     <?php endif; ?>
                 </div>
@@ -239,6 +237,9 @@ if (get_setting('bank_primary_iban') === '') {
             </div>
         </div>
 
+        <?php if (site_setting('invoice_footer_note') !== ''): ?>
+        <p class="text-[11px] text-slate-500 text-center whitespace-pre-line" style="margin-top:16px"><?= e(site_setting('invoice_footer_note')) ?></p>
+        <?php endif; ?>
     </div>
 
     <script>

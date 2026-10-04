@@ -1220,6 +1220,7 @@ const TASK_PRIORITIES = [
 ];
 
 // Arayüz bileşenleri ve iş platformu (ajans / freelancer pazaryeri)
+require_once __DIR__ . '/settings_schema.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/platform.php';
 

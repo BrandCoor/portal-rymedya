@@ -8,8 +8,9 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-// Zaten oturum açmışsa Dashboard'a yönlendir
-if (is_logged_in()) {
+// Zaten oturum açmışsa Dashboard'a yönlendir (ayarlardan önizleme hariç)
+$preview = isset($_GET['preview']) && is_logged_in() && has_permission('settings.manage');
+if (is_logged_in() && !$preview) {
     redirect(BASE_URL . '/modules/dashboard/index.php');
 }
 
@@ -82,34 +83,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <?php ui_head('Personel girişi'); ?>
+    <?php ui_head(site_setting('login_staff_title')); ?>
 </head>
 <body>
 <div class="auth">
-    <aside class="auth-aside">
-        <div class="frame-lines"></div>
-        <div style="position:relative;display:flex;align-items:center;gap:10px">
-            <span class="brand-mark">RY</span>
-            <span style="font-weight:600;color:#F4F4F5"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
-        </div>
-        <div style="position:relative">
-            <p class="eyebrow" style="color:#77767E;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span>Ekip paneli</p>
-            <p class="auth-quote">Tekliften teslime kadar her işin <em>tek bir yerde</em> takibi.</p>
-        </div>
-        <div class="auth-points">
-            <div><i data-lucide="clapperboard"></i><span><b>Projeler ve setler.</b> Çekim günleri, ekip maliyeti, kurgu revizyonları.</span></div>
-            <div><i data-lucide="inbox"></i><span><b>İş platformu.</b> Ajans siparişleri, freelancer ataması, kalite kontrol.</span></div>
-            <div><i data-lucide="landmark"></i><span><b>Finans.</b> Fatura, tahsilat, kasa ve raporlar.</span></div>
-        </div>
-    </aside>
+    <?php ui_auth_aside('login_staff'); ?>
 
     <main class="auth-main">
         <div class="auth-card">
             <div class="lg:hidden" style="display:flex;align-items:center;gap:10px;margin-bottom:32px">
-                <span class="brand-mark">RY</span><span style="font-weight:600"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
+                <?= brand_html('light') ?>
             </div>
-            <h1 class="h1">Personel girişi</h1>
-            <p class="small text-muted" style="margin-top:6px">RY Medya ekip hesabınızla giriş yapın.</p>
+            <h1 class="h1"><?= e(site_setting('login_staff_title')) ?></h1>
+            <?php if (site_setting('login_staff_subtitle') !== ''): ?><p class="small text-muted" style="margin-top:6px"><?= e(site_setting('login_staff_subtitle')) ?></p><?php endif; ?>
 
             <div style="margin-top:24px">
                 <?php if (!empty($error)): ?>
@@ -121,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?= csrf_field() ?>
                     <div class="field">
                         <label class="label" for="email">E-posta</label>
-                        <input class="input" id="email" type="email" name="email" required autofocus autocomplete="username" value="<?= e($_POST['email'] ?? '') ?>" placeholder="ad@rymedya.com.tr">
+                        <input class="input" id="email" type="email" name="email" required autofocus autocomplete="username" value="<?= e($_POST['email'] ?? '') ?>" placeholder="<?= e(site_setting('login_staff_email_placeholder')) ?>">
                     </div>
                     <div class="field">
                         <label class="label" for="password">Şifre</label>
@@ -131,10 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
+            <?php if (site_setting('login_staff_show_portal') === '1'): ?>
             <div class="hairline" style="margin:28px 0 20px"></div>
 
-            <p class="small text-muted" style="margin-bottom:10px">Müşteri, ajans veya freelancer mısınız?</p>
-            <a href="<?= BASE_URL ?>/client/login.php" class="btn btn-secondary btn-lg btn-block"><i data-lucide="log-in"></i>Müşteri / Ajans / Freelancer Girişi</a>
+            <?php if (site_setting('login_staff_portal_question') !== ''): ?><p class="small text-muted" style="margin-bottom:10px"><?= e(site_setting('login_staff_portal_question')) ?></p><?php endif; ?>
+            <a href="<?= BASE_URL ?>/client/login.php" class="btn btn-secondary btn-lg btn-block"><i data-lucide="log-in"></i><?= e(site_setting('login_staff_portal_button')) ?></a>
             <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>
             <p class="xsmall text-muted" style="margin-top:14px;text-align:center">
                 Hesabınız yok mu?
@@ -142,6 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php if (platform_setting('platform_agency_signup') === '1' && platform_setting('platform_freelancer_signup') === '1'): ?> · <?php endif; ?>
                 <?php if (platform_setting('platform_freelancer_signup') === '1'): ?><a class="link" href="<?= BASE_URL ?>/platform/register.php?type=freelancer">Freelancer Başvurusu</a><?php endif; ?>
             </p>
+            <?php endif; ?>
             <?php endif; ?>
         </div>
     </main>

@@ -7,7 +7,7 @@
 ?>
             </div>
             <footer class="xsmall text-faint" style="padding:0 32px 24px;max-width:1400px;margin:0 auto;display:flex;justify-content:space-between">
-                <span>&copy; <?= date('Y') ?> <?= e(get_setting('company_name', APP_NAME)) ?></span>
+                <span><?= e(site_footer_text()) ?></span>
                 <span>v<?= APP_VERSION ?></span>
             </footer>
         </div>

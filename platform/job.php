@@ -414,7 +414,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
             <strong><?= e(job_status_label($job['status'], 'agency')) ?>.</strong>
             <?= $job['status'] === 'open'
                 ? 'Siparişiniz uygun ekip üyeleriyle eşleştiriliyor. Atama yapıldığında bildirim alacaksınız.'
-                : 'Siparişiniz RY Medya prodüksiyon ekibi tarafından yürütülüyor. Teslim edildiğinde bildirim alacaksınız.' ?>
+                : 'Siparişiniz ' . e(site_setting('platform_team_name')) . ' tarafından yürütülüyor. Teslim edildiğinde bildirim alacaksınız.' ?>
             <?php if ($scope === 'limited'): ?><br><span class="xsmall">Üretim sürecinde referans ve not ekleyebilir, teslim tarihini ileri alabilirsiniz.</span><?php endif; ?>
         </div></div>
     <?php endif; ?>
@@ -694,7 +694,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
     </section>
 
     <section class="card" id="mesajlar">
-        <div class="card-head"><div><p class="card-title">Yazışma</p><p class="card-sub"><?= $role === 'agency' ? 'RY Medya proje ekibi' : 'RY Medya platform ekibi · size özel' ?></p></div></div>
+        <div class="card-head"><div><p class="card-title">Yazışma</p><p class="card-sub"><?= e(site_setting('platform_team_name')) ?><?= $role === 'agency' ? '' : ' · size özel' ?></p></div></div>
         <div class="card-pad">
             <?php platform_message_box($messages, $role, $role === 'agency' ? 'Ekibe mesaj yazın' : ($is_assignee ? 'Ekibe mesaj yazın' : 'İşle ilgili sorunuzu yazın')); ?>
         </div>

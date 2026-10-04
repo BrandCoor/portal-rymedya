@@ -129,32 +129,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
 </head>
 <body>
 <div class="auth">
-    <aside class="auth-aside">
-        <div class="frame-lines"></div>
-        <div style="position:relative;display:flex;align-items:center;gap:10px">
-            <span class="brand-mark">RY</span>
-            <span style="font-weight:600;color:#F4F4F5"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
-        </div>
-        <div style="position:relative">
-            <p class="eyebrow" style="color:#77767E;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span><?= $is_agency ? 'Ajanslar için' : 'Freelancer\'lar için' ?></p>
-            <?php if ($is_agency): ?>
-                <p class="auth-quote">Fiyat listesinden seçin, <em>anında</em> sipariş verin. Gerisini ekip halleder.</p>
-            <?php else: ?>
-                <p class="auth-quote">Uzmanlığınıza uygun prodüksiyon işleri. <em>Performansınız</em> seviyenizi belirler.</p>
-            <?php endif; ?>
-        </div>
-        <div class="auth-points">
-            <?php if ($is_agency): ?>
-                <div><i data-lucide="tags"></i><span><b>Şeffaf fiyat.</b> Hizmet kataloğundan seçtiğiniz anda toplam tutarı görürsünüz.</span></div>
-                <div><i data-lucide="shield-check"></i><span><b>Kalite kontrol.</b> Her teslimat size ulaşmadan önce ekibimiz tarafından incelenir.</span></div>
-                <div><i data-lucide="receipt-text"></i><span><b>Tek fatura.</b> İş kapandığında faturanız otomatik oluşur.</span></div>
-            <?php else: ?>
-                <div><i data-lucide="radar"></i><span><b>Size uygun işler.</b> Uzmanlık alanınız, şehriniz ve seviyenize göre filtrelenir.</span></div>
-                <div><i data-lucide="gauge"></i><span><b>Performans karnesi.</b> Zamanında teslim ve puanlarınız seviyenizi yükseltir.</span></div>
-                <div><i data-lucide="wallet"></i><span><b>Net hakediş.</b> Her işin ücreti iş açılırken bellidir.</span></div>
-            <?php endif; ?>
-        </div>
-    </aside>
+    <?php ui_auth_aside($is_agency ? 'register_agency' : 'register_freelancer'); ?>
 
     <main class="auth-main" style="align-items:flex-start">
         <div class="auth-card" style="max-width:520px">
@@ -162,11 +137,11 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
                 <a href="?type=agency" class="<?= $is_agency ? 'is-active' : '' ?>">Ajans</a>
                 <a href="?type=freelancer" class="<?= !$is_agency ? 'is-active' : '' ?>">Freelancer</a>
             </div>
-            <h1 class="h1"><?= $is_agency ? 'Ajans hesabı oluşturun' : 'Freelancer olarak başvurun' ?></h1>
-            <p class="small text-muted" style="margin-top:6px">Başvurunuz ekibimiz tarafından incelendikten sonra hesabınız aktifleşir.</p>
+            <h1 class="h1"><?= e(site_setting($is_agency ? 'register_agency_title' : 'register_freelancer_title')) ?></h1>
+            <?php if (site_setting('register_note') !== ''): ?><p class="small text-muted" style="margin-top:6px"><?= e(site_setting('register_note')) ?></p><?php endif; ?>
 
             <?php if (!$signup_open): ?>
-                <div class="alert alert-neutral" style="margin-top:24px"><i data-lucide="lock"></i><span>Bu kayıt türü şu an yeni başvurulara kapalı.</span></div>
+                <div class="alert alert-neutral" style="margin-top:24px"><i data-lucide="lock"></i><span><?= e(site_setting('register_closed_text')) ?></span></div>
             <?php else: ?>
             <?php if ($errors): ?>
                 <div class="alert alert-danger" style="margin-top:20px"><i data-lucide="alert-circle"></i><div><?php foreach ($errors as $er): ?><div><?= e($er) ?></div><?php endforeach; ?></div></div>
@@ -218,7 +193,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
                 <div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= $val('iban') ?>" placeholder="TR.."><span class="hint">Hakediş ödemeleri için.</span></div>
                 <?php endif; ?>
 
-                <label class="check"><input type="checkbox" name="kvkk" value="1" required><span class="small">Kullanım koşullarını ve KVKK aydınlatma metnini okudum; bilgilerimin iş eşleştirme amacıyla işlenmesini kabul ediyorum.</span></label>
+                <label class="check"><input type="checkbox" name="kvkk" value="1" required><span class="small"><?= e(site_setting('register_consent_text')) ?><?php if (site_setting('register_terms_url') !== '' && is_safe_url(site_setting('register_terms_url'))): ?> <a class="link" href="<?= e(site_setting('register_terms_url')) ?>" target="_blank" rel="noopener">Metni oku</a><?php endif; ?></span></label>
 
                 <button type="submit" class="btn btn-primary btn-lg btn-block"><?= $is_agency ? 'Hesabı oluştur' : 'Başvuruyu gönder' ?></button>
             </form>

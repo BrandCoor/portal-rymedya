@@ -62,7 +62,29 @@ Portal erişimini cari kartından **"Erişimi Kapat"** ile durdurabilirsiniz.
   - *Müşteri Ciroları*: Müşteri bazında ciro, tahsilat ve açık bakiye.
   - Her rapor **Excel / CSV** butonuyla indirilebilir.
 
-## 6. Yetkiler
+## 6. Ayarlar (Yönetim → Ayarlar)
+
+Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her bölüm ayrı kaydedilir ve **Varsayılana döndür** ile ilk haline alınabilir.
+
+| Bölüm | Neleri değiştirir? |
+|-------|--------------------|
+| **Marka ve görünüm** | Marka adı, simge kısaltması, alt başlık, açık/koyu zemin logosu ve yüksekliği, favicon, vurgu rengi, koyu panel rengi, tarayıcı sekmesi son eki, alt bilgi metinleri |
+| **Şirket ve künye** | Resmi ünvan, iletişim, adres, vergi ve sicil bilgileri |
+| **Banka ve ödeme** | IBAN'lar ve müşteri portalındaki ödeme notu |
+| **Finans ve kodlar** | Para birimi, KDV ve kurumlar vergisi oranı, fatura/proje kodu önekleri |
+| **Personel giriş sayfası** | Başlık, alt metin, sol panel sloganı ve maddeleri, portal butonu, arka plan görseli |
+| **Portal giriş sayfası** | Müşteri/ajans/freelancer giriş sayfasının tüm metinleri ve kayıt kartları |
+| **Kayıt sayfaları** | Ajans ve freelancer başvuru sayfalarının başlıkları, sloganları, onay metni ve KVKK bağlantısı |
+| **Portal ve iletişim** | Destek e-postası/telefonu, müşteri portalı etiketi, mesajlarda görünen ekip adı |
+| **Belgeler** | Fatura/teklif/ekstre/call sheet'te logo, slogan, "Düzenleyen", alt notlar |
+
+- Sloganlarda `*yıldızla çevrilen*` kelimeler vurgu renginde görünür.
+- Madde simgeleri [lucide.dev/icons](https://lucide.dev/icons/) listesindeki adlarla yazılır (ör. `camera`, `film`).
+- Giriş ve kayıt bölümlerindeki **Önizle** butonu sayfayı yeni sekmede açar.
+- Görseller PNG, JPG, WEBP veya SVG olabilir; favicon ICO da olabilir. En fazla 2 MB. Dosyalar `assets/uploads/branding/` klasörüne kaydedilir; bu klasörün sunucuda yazılabilir olması gerekir. Betik içeren SVG'ler reddedilir.
+- Platform kuralları, hizmet kataloğu ve roller sayfalarına ayarların sol menüsünden de ulaşılır.
+
+## 7. Yetkiler
 
 | İzin | Ne açar? |
 |------|----------|

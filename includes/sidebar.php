@@ -29,13 +29,7 @@ if (can_access_module('platform.manage')) {
 <div x-show="nav" @click="nav = false" x-cloak class="lg:hidden" style="position:fixed;inset:0;z-index:70;background:rgba(21,21,23,.45)"></div>
 
 <aside class="sidebar" :class="nav ? 'is-open' : ''">
-    <div class="sidebar-brand">
-        <span class="brand-mark">RY</span>
-        <div>
-            <div class="brand-name"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></div>
-            <div class="brand-sub">Prodüksiyon yönetimi</div>
-        </div>
-    </div>
+    <a href="<?= BASE_URL ?>/modules/dashboard/index.php" class="sidebar-brand"><?= brand_html('dark', site_setting('brand_tagline')) ?></a>
 
     <nav class="sidebar-nav">
         <?= nav_link('/modules/dashboard/index.php', 'layout-grid', 'Genel bakış', '/modules/dashboard') ?>
@@ -81,7 +75,7 @@ if (can_access_module('platform.manage')) {
             <?php if (has_permission('personnel.manage')): ?><?= nav_link('/modules/personnel/index.php', 'id-card', 'Personel', '/modules/personnel') ?><?php endif; ?>
             <?php if (has_permission('settings.manage')): ?>
                 <?= nav_link('/modules/settings/roles.php', 'shield-check', 'Roller ve kullanıcılar', '/modules/settings/roles') ?>
-                <?= nav_link('/modules/settings/index.php', 'settings-2', 'Şirket ayarları', '/modules/settings/index') ?>
+                <?= nav_link('/modules/settings/index.php', 'settings-2', 'Ayarlar', '/modules/settings/index') ?>
             <?php endif; ?>
         <?php endif; ?>
     </nav>

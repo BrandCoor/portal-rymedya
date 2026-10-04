@@ -84,11 +84,9 @@ $crew_items = $cg_stmt->fetchAll();
             <!-- 1. BAŞLIK VE SET KİMLİĞİ -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-2 border-slate-900 gap-4">
                 <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md">
-                        <i data-lucide="clapperboard" class="w-6 h-6"></i>
-                    </div>
+                    <?= doc_logo_box('clapperboard', 'bg-slate-900') ?>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(site_setting('company_brand_name') ?: site_setting('company_name'), 'UTF-8')) ?></h1>
                         <p class="text-xs font-bold text-brand-600 tracking-wide uppercase">SET ÇAĞRI KAĞIDI / CALL SHEET</p>
                     </div>
                 </div>
@@ -175,8 +173,8 @@ $crew_items = $cg_stmt->fetchAll();
         <div class="pt-4 border-t border-slate-200 text-xs">
             <div class="grid grid-cols-2 gap-4 items-center">
                 <div>
-                    <p class="font-bold text-slate-800"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?> YÖNETİMİ</p>
-                    <p class="text-[11px] text-slate-500 whitespace-pre-line"><?= e(get_setting('callsheet_default_notes', 'Lütfen çağrı saatinden en geç 15 dakika önce sette hazır bulununuz.')) ?></p>
+                    <p class="font-bold text-slate-800"><?= e(mb_strtoupper(site_setting('company_brand_name') ?: site_setting('company_name'), 'UTF-8')) ?> YÖNETİMİ</p>
+                    <p class="text-[11px] text-slate-500 whitespace-pre-line"><?= e(site_setting('callsheet_default_notes')) ?></p>
                 </div>
                 <div class="text-right">
                     <p class="text-[10px] text-slate-400 uppercase font-bold">Prodüksiyon İletişim</p>

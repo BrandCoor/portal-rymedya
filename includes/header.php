@@ -86,7 +86,7 @@ $notif = get_notifications((int)$user['id'], 8);
                         </div>
                         <div class="menu-sep"></div>
                         <?php if (has_permission('settings.manage')): ?>
-                            <a href="<?= BASE_URL ?>/modules/settings/index.php" class="menu-item"><i data-lucide="settings-2"></i>Şirket ayarları</a>
+                            <a href="<?= BASE_URL ?>/modules/settings/index.php" class="menu-item"><i data-lucide="settings-2"></i>Ayarlar</a>
                         <?php endif; ?>
                         <a href="<?= BASE_URL ?>/modules/notifications/index.php" class="menu-item"><i data-lucide="activity"></i>Aktivite</a>
                         <div class="menu-sep"></div>

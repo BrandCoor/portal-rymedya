@@ -87,34 +87,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <?php ui_head('Portal girişi'); ?>
+    <?php ui_head(site_setting('login_portal_title')); ?>
 </head>
 <body>
 <div class="auth">
-    <aside class="auth-aside">
-        <div class="frame-lines"></div>
-        <div style="position:relative;display:flex;align-items:center;gap:10px">
-            <span class="brand-mark">RY</span>
-            <span style="font-weight:600;color:#F4F4F5"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
-        </div>
-        <div style="position:relative">
-            <p class="eyebrow" style="color:#77767E;margin-bottom:18px"><span class="rec-dot" style="margin-right:10px"></span>Prodüksiyon platformu</p>
-            <p class="auth-quote">Siparişi verin, ekibi biz kuralım. <em>Teslime kadar</em> her adımı buradan izleyin.</p>
-        </div>
-        <div class="auth-points">
-            <div><i data-lucide="building-2"></i><span><b>Ajanslar</b> hizmetleri seçip anında fiyat görür, işi tek adımda sipariş eder.</span></div>
-            <div><i data-lucide="users-round"></i><span><b>Freelancer'lar</b> seviyelerine uygun işleri alır, teslim eder, kazancını takip eder.</span></div>
-            <div><i data-lucide="film"></i><span><b>Müşteriler</b> projelerini, kurgu versiyonlarını ve faturalarını görür.</span></div>
-        </div>
-    </aside>
+    <?php ui_auth_aside('login_portal'); ?>
 
     <main class="auth-main">
         <div class="auth-card">
             <div class="lg:hidden" style="display:flex;align-items:center;gap:10px;margin-bottom:32px">
-                <span class="brand-mark">RY</span><span style="font-weight:600"><?= e(get_setting('company_brand_name', 'RY Medya')) ?></span>
+                <?= brand_html('light') ?>
             </div>
-            <h1 class="h1">Portal girişi</h1>
-            <p class="small text-muted" style="margin-top:6px">Müşteri, ajans ve freelancer hesapları için ortak giriş.</p>
+            <h1 class="h1"><?= e(site_setting('login_portal_title')) ?></h1>
+            <?php if (site_setting('login_portal_subtitle') !== ''): ?><p class="small text-muted" style="margin-top:6px"><?= e(site_setting('login_portal_subtitle')) ?></p><?php endif; ?>
 
             <div style="margin-top:24px">
                 <?php if (!empty($error)): ?>
@@ -126,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?= csrf_field() ?>
                     <div class="field">
                         <label class="label" for="email">E-posta</label>
-                        <input class="input" id="email" type="email" name="email" required autofocus autocomplete="username" placeholder="ornek@sirket.com">
+                        <input class="input" id="email" type="email" name="email" required autofocus autocomplete="username" placeholder="<?= e(site_setting('login_portal_email_placeholder')) ?>">
                     </div>
                     <div class="field">
                         <label class="label" for="password">Şifre</label>
@@ -138,26 +123,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>
             <div class="hairline" style="margin:28px 0 20px"></div>
-            <p class="small text-muted" style="margin-bottom:10px">Henüz hesabınız yok mu?</p>
+            <p class="small text-muted" style="margin-bottom:10px"><?= e(site_setting('login_portal_signup_question')) ?></p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <?php if (platform_setting('platform_agency_signup') === '1'): ?>
                 <a href="<?= BASE_URL ?>/platform/register.php?type=agency" class="card card-hover card-pad-sm" style="display:block">
                     <i data-lucide="building-2" style="width:17px;height:17px"></i>
-                    <p class="small" style="font-weight:600;margin-top:8px">Ajans Kaydı</p>
-                    <p class="xsmall text-muted">İş yaptırmak istiyorum</p>
+                    <p class="small" style="font-weight:600;margin-top:8px"><?= e(site_setting('login_portal_agency_card')) ?></p>
+                    <p class="xsmall text-muted"><?= e(site_setting('login_portal_agency_hint')) ?></p>
                 </a>
                 <?php endif; ?>
                 <?php if (platform_setting('platform_freelancer_signup') === '1'): ?>
                 <a href="<?= BASE_URL ?>/platform/register.php?type=freelancer" class="card card-hover card-pad-sm" style="display:block">
                     <i data-lucide="user-plus" style="width:17px;height:17px"></i>
-                    <p class="small" style="font-weight:600;margin-top:8px">Freelancer Başvurusu</p>
-                    <p class="xsmall text-muted">İş almak istiyorum</p>
+                    <p class="small" style="font-weight:600;margin-top:8px"><?= e(site_setting('login_portal_freelancer_card')) ?></p>
+                    <p class="xsmall text-muted"><?= e(site_setting('login_portal_freelancer_hint')) ?></p>
                 </a>
                 <?php endif; ?>
             </div>
             <?php endif; ?>
 
-            <p class="xsmall text-muted" style="margin-top:24px;text-align:center"><a class="link" href="<?= BASE_URL ?>/modules/auth/login.php">RY Medya personeli girişi</a></p>
+            <?php if (site_setting('login_portal_show_staff_link') === '1'): ?><p class="xsmall text-muted" style="margin-top:24px;text-align:center"><a class="link" href="<?= BASE_URL ?>/modules/auth/login.php"><?= e(site_setting('login_portal_staff_link')) ?></a></p><?php endif; ?>
         </div>
     </main>
 </div>

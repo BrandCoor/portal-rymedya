@@ -55,8 +55,8 @@ $settings_raw  = $db->query("SELECT setting_key, setting_value FROM system_setti
 $bank_name     = $settings_raw['bank_primary_name'] ?? 'Garanti BBVA';
 $bank_receiver = $settings_raw['bank_primary_receiver'] ?? 'RY MEDYA PRODÜKSİYON A.Ş.';
 $bank_iban     = $settings_raw['bank_primary_iban'] ?? 'TR00 0000 0000 0000 0000 0000 00';
-$payment_note  = $settings_raw['bank_payment_note'] ?? 'Ödemelerinizde açıklama kısmına lütfen fatura veya proje kodunuzu yazınız.';
-$support_email = $settings_raw['portal_support_email'] ?? 'info@rymedya.com.tr';
+$payment_note  = site_setting('bank_payment_note');
+$support_email = site_setting('portal_support_email');
 
 // Cari Bilgilerini Getir
 $c_stmt = $db->prepare("SELECT * FROM contacts WHERE id = ?");
@@ -144,16 +144,8 @@ $proposal_labels = [
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
     <!-- ÜST MENÜ BAR (NAVBAR) -->
-    <nav class="h-16 bg-slate-900 border-b border-slate-800 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-50">
-        <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
-                <i data-lucide="clapperboard" class="w-5 h-5"></i>
-            </div>
-            <div>
-                <span class="text-sm font-black text-white tracking-wide block leading-tight">RY MEDYA</span>
-                <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Müşteri Portalı</span>
-            </div>
-        </div>
+    <nav style="background:var(--sidebar)" class="h-16 border-b border-slate-800 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center gap-3"><?= brand_html('dark', site_setting('client_portal_label')) ?></div>
 
         <div class="flex items-center gap-3">
             <a href="<?= BASE_URL ?>/client/profile.php" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition">
@@ -384,7 +376,7 @@ $proposal_labels = [
                 </div>
 
                 <p class="text-[11px] text-slate-400 text-center mt-4">
-                    İletişim & Destek: <strong><?= e($support_email) ?></strong>
+                    İletişim & Destek: <strong><?= e($support_email) ?></strong><?php if (site_setting('portal_support_phone') !== ''): ?> · <strong><?= e(site_setting('portal_support_phone')) ?></strong><?php endif; ?>
                 </p>
             </div>
 
@@ -393,7 +385,7 @@ $proposal_labels = [
     </main>
 
     <footer class="py-4 text-center text-xs text-slate-400 border-t border-slate-200 bg-white">
-        &copy; <?= date('Y') ?> <?= e($settings_raw['company_name'] ?? 'RY Medya Prodüksiyon') ?>. Tüm hakları saklıdır.
+        <?= e(site_footer_text()) ?>
     </footer>
 
     <script>

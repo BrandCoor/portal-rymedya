@@ -110,11 +110,9 @@ $total_credit = 0;
             <!-- BAŞLIK -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-2 border-slate-900 gap-4">
                 <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md">
-                        <i data-lucide="video" class="w-6 h-6"></i>
-                    </div>
+                    <?= doc_logo_box('video', 'bg-slate-900') ?>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(get_setting('company_brand_name', get_setting('company_name', 'RY MEDYA PRODÜKSİYON')), 'UTF-8')) ?></h1>
+                        <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e(mb_strtoupper(site_setting('company_brand_name') ?: site_setting('company_name'), 'UTF-8')) ?></h1>
                         <p class="text-[11px] text-slate-500 font-medium">Cari Hesap ve Bakiye Hareket Ekstresi</p>
                     </div>
                 </div>
@@ -222,7 +220,7 @@ $total_credit = 0;
         <div class="pt-6 border-t border-slate-200 text-xs">
             <div class="grid grid-cols-2 gap-8 pt-4">
                 <div class="border-t border-slate-300 pt-2 text-center">
-                    <p class="font-bold text-slate-800"><?= e(get_setting('company_name', 'RY MEDYA PRODÜKSİYON A.Ş.')) ?></p>
+                    <p class="font-bold text-slate-800"><?= e(site_setting('company_name')) ?></p>
                     <p class="text-[10px] text-slate-400">Yetkili İmza / Kaşe</p>
                 </div>
                 <div class="border-t border-slate-300 pt-2 text-center">
@@ -231,6 +229,9 @@ $total_credit = 0;
                 </div>
             </div>
         </div>
+        <?php if (site_setting('statement_footer_note') !== ''): ?>
+        <p class="text-[11px] text-slate-500 text-center whitespace-pre-line" style="margin-top:16px"><?= e(site_setting('statement_footer_note')) ?></p>
+        <?php endif; ?>
     </div>
 
     <script>

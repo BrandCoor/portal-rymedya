@@ -24,3 +24,6 @@ Thumbs.db
 
 # Database credentials
 config/db.php
+# Yüklenen marka görselleri (logo, favicon) sunucuda kalır
+assets/uploads/branding/*
+!assets/uploads/branding/.gitkeep

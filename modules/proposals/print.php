@@ -47,7 +47,7 @@ try {
 
 // Şirket Ayarlarını Çek
 $settings_raw = $db->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_KEY_PAIR);
-$company_name = $settings_raw['company_name'] ?? 'RY MEDYA PRODÜKSİYON A.Ş.';
+$company_name = site_setting('company_name');
 $company_email = $settings_raw['company_email'] ?? 'info@rymedya.com.tr';
 $company_phone = $settings_raw['company_phone'] ?? '+90 (212) 000 00 00';
 $company_address = $settings_raw['company_address'] ?? 'İstanbul / Türkiye';
@@ -94,12 +94,10 @@ $bank_name = $settings_raw['bank_primary_name'] ?? 'Garanti BBVA';
             <!-- 1. BAŞLIK VE AJANS LOGO -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-2 border-slate-900 gap-4">
                 <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
-                        <i data-lucide="video" class="w-6 h-6"></i>
-                    </div>
+                    <?= doc_logo_box('video', 'bg-indigo-600') ?>
                     <div>
                         <h1 class="text-xl font-black text-slate-900 tracking-tight"><?= e($company_name) ?></h1>
-                        <p class="text-[11px] text-slate-500 font-medium">Video Prodüksiyon, Reklam & Post-Prodüksiyon Hizmetleri</p>
+                        <p class="text-[11px] text-slate-500 font-medium"><?= e(site_setting('doc_tagline')) ?></p>
                     </div>
                 </div>
 

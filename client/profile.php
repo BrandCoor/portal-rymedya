@@ -141,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="h-full flex flex-col font-sans text-slate-800 antialiased bg-slate-100">
 
     <!-- ÜST MENÜ -->
-    <nav class="h-16 bg-slate-900 border-b border-slate-800 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-50">
+    <nav style="background:var(--sidebar)" class="h-16 border-b border-slate-800 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-50">
         <a href="<?= BASE_URL ?>/client/index.php" class="flex items-center gap-2 text-white text-xs font-bold hover:text-indigo-300 transition">
             <i data-lucide="arrow-left" class="w-4 h-4"></i>
             <span>Portal Ana Sayfasına Dön</span>

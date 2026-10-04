@@ -38,11 +38,7 @@ function platform_header(string $title, string $active = ''): void {
 <header class="portal-top">
     <div class="portal-top-inner">
         <a href="<?= BASE_URL ?>/platform/index.php" style="display:flex;align-items:center;gap:10px;flex-shrink:0">
-            <span class="brand-mark">RY</span>
-            <span style="line-height:1.15">
-                <span style="display:block;font-weight:600;font-size:13.5px">RY Medya</span>
-                <span class="xsmall text-muted"><?= $role === 'agency' ? 'Ajans' : 'Freelancer' ?></span>
-            </span>
+            <?= brand_html('light', $role === 'agency' ? 'Ajans' : 'Freelancer') ?>
         </a>
 
         <nav class="portal-nav">
@@ -112,8 +108,8 @@ function platform_footer(): void {
     ?>
 </main>
 <footer class="xsmall text-faint" style="max-width:1240px;margin:0 auto;padding:0 24px 32px;display:flex;justify-content:space-between">
-    <span>&copy; <?= date('Y') ?> <?= e(get_setting('company_name', 'RY Medya Prodüksiyon')) ?></span>
-    <span>Prodüksiyon platformu</span>
+    <span><?= e(site_footer_text()) ?></span>
+    <span><?= e(site_setting('portal_footer_tagline')) ?></span>
 </footer>
 <?php ui_icons_init(); ?>
 </body>
