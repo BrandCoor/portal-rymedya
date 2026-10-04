@@ -99,6 +99,11 @@ const PLATFORM_DEFAULTS = [
     'platform_default_priority_tier' => '',   // Yeni işlerde öncelikli seviye (boş = yok)
     'platform_default_priority_hours'=> '0',
     'platform_max_revisions'         => '2',
+    'platform_revision_fee'          => '1500', // Ücretsiz hak dolduktan sonra revizyon başına ajans ücreti (0 = ek revizyon istenemez)
+    'platform_revision_freelancer_share' => '70', // Revizyon ücretinden freelancer payı (%)
+    'platform_raw_fee_mode'          => 'percent', // Ham görüntü ücreti: percent (çekim tutarının %) | fixed (sabit)
+    'platform_raw_fee_value'         => '20',
+    'platform_raw_freelancer_share'  => '50', // Ham görüntü ücretinden freelancer payı (%)
     'platform_freelancer_vat'        => '0',
     // Termin kuralları
     'platform_block_same_day'        => '1',  // Aynı gün başlayan işler alınmasın
@@ -596,9 +601,9 @@ function dominant_category(array $items, string $fallback = 'other'): string {
     $max = -1;
     foreach ($items as $it) {
         $v = $it['quantity'] * $it['agency_unit_price'];
-        if ($v > $max) {
+        if ($v > $max && !empty($it['category'])) {
             $max = $v;
-            $best = $it['category'] ?? null;
+            $best = $it['category'];
         }
     }
     return $best ?: $fallback;
@@ -1337,6 +1342,7 @@ function job_qa_decision(array $job, int $delivery_id, bool $approve, string $fe
 
 function job_request_revision(array $job, string $feedback): void {
     global $db;
+    $paid = revision_is_paid($job);
     $last = job_deliveries((int)$job['id'], ['sent']);
     $m = $last && $last[0]['milestone_id'] ? get_milestone((int)$last[0]['milestone_id']) : null;
     if ($last) {
@@ -1345,7 +1351,10 @@ function job_request_revision(array $job, string $feedback): void {
     if ($m) $db->prepare("UPDATE platform_milestones SET status = 'revision' WHERE id = ?")->execute([$m['id']]);
     $db->prepare("UPDATE platform_jobs SET status = 'revision', revision_count = revision_count + 1, delivered_at = NULL WHERE id = ?")->execute([$job['id']]);
     $n = (int)$job['revision_count'] + 1;
-    job_event((int)$job['id'], 'revision', "Revizyon {$n}: " . ($m['title'] ?? 'Teslim'), ['new' => $feedback, 'milestone_id' => $m['id'] ?? null, 'visibility' => 'all']);
+    job_event((int)$job['id'], 'revision', "Revizyon {$n}" . ($paid ? ' (ücretli)' : '') . ': ' . ($m['title'] ?? 'Teslim'), ['new' => $feedback, 'milestone_id' => $m['id'] ?? null, 'visibility' => 'all']);
+    if ($paid) {
+        revision_charge($job, $m, $n);
+    }
     if (!empty($job['assigned_user_id'])) {
         notify_user((int)$job['assigned_user_id'], "Revizyon istendi ({$job['job_code']}" . ($m ? ' · ' . $m['title'] : '') . "): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }

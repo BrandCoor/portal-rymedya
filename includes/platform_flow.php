@@ -97,14 +97,14 @@ function run_platform_migrations_v8(): void {
  * Ajans ham dosya teslimi istediyse (raw_delivery) teslim gerekir.
  */
 function milestone_physical(array $job, array $items, bool $is_extra = false): bool {
-    if ((int)($job['raw_delivery'] ?? 0) === 1) return false;
+    // Katalog işinde ham görüntü ayrı "Ham görüntü teslimi" kalemiyle (teslimli aşama) gelir
     if ($items) {
         foreach ($items as $it) {
             if (!(JOB_CATEGORIES[$it['category'] ?? 'other']['onsite'] ?? false)) return false;
         }
         return true;
     }
-    if ($is_extra) return false;
+    if ($is_extra || (int)($job['raw_delivery'] ?? 0) === 1) return false;
     // Kalemsiz (özel talep) işler: yalnızca saf çekim türleri; komple prodüksiyon teslimlidir
     return in_array($job['category'] ?? '', ['shooting', 'drone', 'photo'], true);
 }

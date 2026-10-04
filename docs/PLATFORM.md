@@ -75,9 +75,14 @@ Sahada yapılan işlerde teslim bağlantısı istenmez:
 - Çekim gibi aşamalar "Yerinde · teslim yok" olarak açılır; freelancer çekim gününden itibaren **Yapıldı** der (isterse not ekler).
 - Onay şekli Kurallar → "Yerinde işler nasıl tamamlansın?" ayarından: *freelancer bildirince onaylansın* (varsayılan; ajansa bilgi gider, sorun varsa "Sorun bildir"), *ekip onaylasın* veya *ajans onaylasın*.
 - Kurgu, renk, ses, motion gibi işler her zaman bağlantıyla teslim edilir ve kalite kontrol / ajans onayından geçer.
-- Ajans iş girerken "Ham görüntü / dosya teslimi istiyorum" işaretlerse çekim aşaması da bağlantıyla teslim edilir.
+- Ajans iş girerken "Ham görüntü / dosya teslimi istiyorum" işaretlerse ücretli "Ham görüntü teslimi" aşaması eklenir ve bağlantıyla teslim edilir.
 - Ekip bir aşamayı aşamalar kartından "Teslim bağlantısı gerekir" anahtarıyla değiştirebilir ve yerinde aşamayı "Yapıldı" ile kendisi kapatabilir. Ek kalem eklerken "Yerinde iş" işaretlenebilir.
 - Yalnızca yerinde işten oluşan işlerde kalite kontrol ve teslim adımları akıştan çıkar.
+
+### 2.1.2 Ücretli revizyon ve ham görüntü
+
+- **Revizyon:** Ajansın ücretsiz revizyon hakkı Kurallar → "Ücretsiz revizyon hakkı" ile belirlenir. Hak dolduktan sonra ajans revizyonu ancak "Ek revizyon ücreti"ni onaylayarak isteyebilir; ücret işe "Ücretli revizyon #N" kalemi olarak eklenir, revize edilen aşamanın tutarına yazılır ve freelancer payı ("Revizyon ücretinden freelancer payı") aşama onaylanınca hakedişe geçer. Ücret 0 ise hak dolunca ajans revizyon isteyemez, ekiple yazışır. Ekip iş sayfasındaki "Revizyon koşulları"ndan işe özel hak ve ücret tanımlayabilir.
+- **Ham görüntü:** Ajans iş girerken ham görüntü isterse işe "Ham görüntü teslimi" kalemi eklenir (çekim tutarının yüzdesi veya sabit tutar; freelancer payı ayrı ayar). Çekim aşaması yine "Yapıldı" ile kapanır; ham dosyalar ayrı bir teslim aşamasında bağlantıyla teslim edilir.
 
 ### 2.2 Ek kalemler ve prim
 

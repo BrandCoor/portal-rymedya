@@ -135,6 +135,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $done('İş onaylandı ve yayına alındı.');
     }
 
+    // ---------- Revizyon koşulları (işe özel) ----------
+    if ($action === 'save_revision_terms') {
+        $fr = trim($_POST['free_revisions'] ?? '');
+        $rf = trim($_POST['revision_fee'] ?? '');
+        $new_fr = $fr === '' ? null : max(0, min(50, (int)$fr));
+        $new_rf = $rf === '' ? null : max(0, parse_money($rf));
+        $db->prepare("UPDATE platform_jobs SET free_revisions = ?, revision_fee = ? WHERE id = ?")->execute([$new_fr, $new_rf, $job_id]);
+        job_event($job_id, 'change', 'Revizyon koşulları', ['new' => ($new_fr ?? 'standart') . ' ücretsiz · ek revizyon ' . ($new_rf !== null ? format_money($new_rf) : 'standart ücret'), 'visibility' => 'agency']);
+        $done('Revizyon koşulları kaydedildi.', 'success', '#revizyon');
+    }
+
     // ---------- Görünürlük / dağıtım politikası ----------
     if ($action === 'save_policy' && $policy_editable && !empty($_POST['reset_defaults'])) {
         $policy = default_job_policy(job_items($job_id), $job['category'], (int)$job['is_remote'] === 1);
@@ -985,6 +996,20 @@ require_once __DIR__ . '/../../includes/header.php';
         </details>
         <?php endif; ?>
     </section>
+    <?php endif; ?>
+
+    <!-- ===================== REVİZYON KOŞULLARI ===================== -->
+    <?php if (!in_array($job['status'], ['completed', 'cancelled'], true)): ?>
+    <details class="card card-pad-sm" id="revizyon">
+        <summary class="small" style="cursor:pointer;font-weight:500">Revizyon koşulları · <?= (int)$job['revision_count'] ?>/<?= job_free_revisions($job) ?> ücretsiz kullanıldı · sonrası <?= job_revision_fee($job) > 0 ? format_money(job_revision_fee($job)) . ' / revizyon' : 'istenemez' ?><?= $job['free_revisions'] !== null || $job['revision_fee'] !== null ? ' · işe özel' : '' ?></summary>
+        <form method="POST" action="" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:flex-end"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="save_revision_terms">
+            <div class="field"><label class="label">Ücretsiz revizyon</label><input class="input" type="number" min="0" max="50" name="free_revisions" value="<?= e((string)($job['free_revisions'] ?? '')) ?>" placeholder="Ayar: <?= (int)platform_setting('platform_max_revisions') ?>" style="width:130px"></div>
+            <div class="field"><label class="label">Ek revizyon ücreti (₺)</label><input class="input" type="number" min="0" step="0.01" name="revision_fee" value="<?= e((string)($job['revision_fee'] ?? '')) ?>" placeholder="Ayar: <?= e(number_format((float)platform_setting('platform_revision_fee'), 0, ',', '.')) ?>" style="width:150px"></div>
+            <button class="btn btn-secondary btn-sm">Kaydet</button>
+            <span class="xsmall text-muted" style="flex-basis:100%">Boş bırakılırsa Kurallar ekranındaki standart değer geçerlidir. Ücret 0 ise hak dolunca ajans revizyon isteyemez.</span>
+        </form>
+    </details>
     <?php endif; ?>
 
     <!-- ===================== BRIEF / DETAY ===================== -->

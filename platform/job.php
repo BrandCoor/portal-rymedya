@@ -132,9 +132,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (mb_strlen($feedback) < 5) {
                 $back('error', 'Revizyon notlarınızı yazın.');
             }
+            $paid = revision_is_paid($job);
+            $rfee = job_revision_fee($job);
+            if ($paid && $rfee <= 0) {
+                $back('error', 'Ücretsiz revizyon hakkınız doldu. Ek değişiklik için ekibimizle yazışın.');
+            }
+            if ($paid && empty($_POST['paid_ack'])) {
+                $back('error', 'Ücretsiz revizyon hakkınız doldu. Devam etmek için ' . format_money($rfee) . ' + KDV revizyon ücretini onaylayın.');
+            }
             job_request_revision($job, $feedback);
-            notify_staff("{$job['job_code']} için ajans revizyon istedi: \"" . mb_substr($feedback, 0, 140) . "\"", $job_id);
-            $back('success', 'Revizyon talebiniz iletildi.');
+            notify_staff("{$job['job_code']} için ajans " . ($paid ? 'ÜCRETLİ (' . format_money($rfee) . ') ' : '') . "revizyon istedi: \"" . mb_substr($feedback, 0, 140) . "\"", $job_id);
+            $back('success', $paid ? 'Ücretli revizyon talebiniz iletildi; ' . format_money($rfee) . ' + KDV iş tutarına eklendi.' : 'Revizyon talebiniz iletildi.');
         }
         if ($action === 'add_extra' && in_array($job['status'], $production, true)) {
             $items = build_order_items((array)($_POST['qty'] ?? []));
@@ -292,7 +300,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $job         = get_job($job_id);
 $is_assignee = $role === 'freelancer' && (int)$job['assigned_user_id'] === $uid;
 $items       = array_values(array_filter(job_items($job_id), fn($i) => ($i['status'] ?? 'active') === 'active'));
-$free_revs   = (int)platform_setting('platform_max_revisions');
+$free_revs   = job_free_revisions($job);
+$rev_fee     = job_revision_fee($job);
+$rev_paid    = revision_is_paid($job);
 $milestones  = job_milestones($job_id);
 if ($role === 'agency') {
     // Ekibin iç ek işleri ve primleri ajansa gösterilmez
@@ -472,8 +482,8 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                     <button type="button" class="btn btn-primary" @click="mode = 'approve'"><i data-lucide="check"></i><?= $review_physical ? ($is_final_review ? 'Yapıldı, işi kapat' : 'Yapıldığını onayla') : ($is_final_review ? 'Onayla ve kapat' : 'Aşamayı onayla') ?></button>
                     <?php if (!$review_physical): ?><button type="button" class="btn btn-secondary" @click="mode = 'revision'">Revizyon iste <span class="text-muted num" style="margin-left:4px"><?= (int)$job['revision_count'] ?>/<?= $free_revs ?></span></button><?php endif; ?>
                 </div>
-                <?php if ((int)$job['revision_count'] >= $free_revs): ?>
-                    <p class="xsmall text-muted" style="margin-top:10px">Ücretsiz revizyon hakkınız doldu; ek revizyonlar ayrıca fiyatlandırılabilir.</p>
+                <?php if ($rev_paid && !$review_physical): ?>
+                    <p class="xsmall text-muted" style="margin-top:10px"><?= $rev_fee > 0 ? 'Ücretsiz revizyon hakkınız doldu; ek revizyon ' . format_money($rev_fee) . ' + KDV olarak iş tutarına eklenir.' : 'Ücretsiz revizyon hakkınız doldu; ek değişiklik için ekibimizle yazışın.' ?></p>
                 <?php endif; ?>
 
                 <form x-show="mode === 'approve'" x-cloak method="POST" action="" class="stack" style="margin-top:18px"><?= csrf_field() ?>
@@ -498,8 +508,15 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                 </form>
                 <form x-show="mode === 'revision'" x-cloak method="POST" action="" class="stack-sm" style="margin-top:18px"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="request_revision">
+                    <?php if ($rev_paid && $rev_fee <= 0): ?>
+                    <div class="alert alert-warning"><i data-lucide="info"></i><div>Ücretsiz revizyon hakkınız (<?= $free_revs ?>) doldu. Ek değişiklik için sağdaki yazışma alanından ekibimize yazın.</div></div>
+                    <?php else: ?>
                     <textarea name="feedback" rows="4" required class="textarea" placeholder="Değişmesini istediğiniz noktalar. Zaman kodu ile yazmanız süreci hızlandırır (ör. 00:12 logo daha büyük)."></textarea>
-                    <div><button class="btn btn-primary">Revizyonu gönder</button></div>
+                    <?php if ($rev_paid): ?>
+                    <label class="check small panel" style="padding:10px 12px"><input type="checkbox" name="paid_ack" value="1" required><span><strong>Ücretli revizyon:</strong> <?= $free_revs ?> ücretsiz revizyon hakkınız kullanıldı. Bu revizyon için <strong><?= format_money($rev_fee) ?> + KDV</strong> iş tutarına eklenecek; onaylıyorum.</span></label>
+                    <?php endif; ?>
+                    <div><button class="btn btn-primary"><?= $rev_paid ? 'Ücretli revizyonu gönder' : 'Revizyonu gönder' ?></button></div>
+                    <?php endif; ?>
                 </form>
             </div>
         </section>
@@ -901,9 +918,10 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                     <?php endif; ?>
                 </dd>
                 <dt>Lokasyon</dt><dd><?= e($location ?: '—') ?></dd>
+                <?php if ((int)$job['raw_delivery'] === 1): ?><dt>Ham görüntü</dt><dd>Teslim edilecek</dd><?php endif; ?>
                 <?php if ($role === 'agency'): ?>
                     <dt>Giriş tarihi</dt><dd><?= format_date($job['created_at']) ?></dd>
-                    <dt>Revizyon</dt><dd class="num"><?= (int)$job['revision_count'] ?> / <?= $free_revs ?> ücretsiz</dd>
+                    <dt>Revizyon</dt><dd class="num"><?= (int)$job['revision_count'] ?> / <?= $free_revs ?> ücretsiz<?php if ($rev_fee > 0): ?><span class="xsmall text-muted"> · sonrası <?= format_money($rev_fee) ?></span><?php endif; ?></dd>
                 <?php else: ?>
                     <dt>Seviye şartı</dt><dd><?= tier_badge($job['min_tier']) ?></dd>
                 <?php endif; ?>

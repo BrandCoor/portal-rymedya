@@ -100,6 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($new_qty != $old_sorted) {
                 $items = build_order_items($new_qty);
                 if (!$items) $errors[] = 'En az bir hizmet seçili olmalı.';
+                // Ham görüntü kalemi yeni kalemlere göre yeniden hesaplanır
+                if ($items && (int)$job['raw_delivery'] === 1) {
+                    $items[] = raw_delivery_item($items);
+                }
             }
         }
         $items_for_rules = $items ?? array_map(fn($i) => $i + ['min_lead_hours' => (int)($i['min_lead_hours'] ?? 0)], $cur_items);

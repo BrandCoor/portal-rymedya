@@ -33,6 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $items       = $mode === 'catalog' ? build_order_items((array)($_POST['qty'] ?? [])) : [];
 
     if ($mode === 'catalog' && !$items) $errors[] = 'En az bir hizmet seçin.';
+    // Ham görüntü teslimi ücretli ek kalemdir (ayrı teslim aşaması olur)
+    $raw = !$is_remote && !empty($_POST['raw_delivery']);
+    if ($raw && $items) {
+        $items[] = raw_delivery_item($items);
+    }
     if ($title === '') $errors[] = 'İş başlığı zorunlu.';
     if (mb_strlen($description) < 20) $errors[] = 'Brief en az birkaç cümle olmalı.';
     if (!$deadline) $errors[] = 'Teslim tarihi zorunlu.';
@@ -75,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $budget > 0 ? $budget : null, $price['agency_price'] ?? null, $price['freelancer_fee'] ?? null,
             $mode, $rush ? 1 : 0, $price['rush_fee'] ?? 0,
             $policy['visibility'], $policy['dispatch_mode'], $policy['min_tier'], $policy['priority_tier'], $policy['priority_hours'],
-            $policy['skill_match_only'], $policy['city_match_only'], !$is_remote && !empty($_POST['raw_delivery']) ? 1 : 0,
+            $policy['skill_match_only'], $policy['city_match_only'], $raw ? 1 : 0,
         ]);
         $job_id = (int)$db->lastInsertId();
         if ($items) {
@@ -253,7 +258,7 @@ $order_cfg = [
                             <div class="field"><label class="label">Şehir <span class="req">*</span></label><?= city_select('location_city', $old['location_city'] ?? '') ?></div>
                             <div class="field sm:col-span-2"><label class="label">Lokasyon</label><input class="input" type="text" name="location_detail" value="<?= $val('location_detail') ?>" placeholder="Stüdyo, mekan veya ilçe"></div>
                         </div>
-                        <label x-show="!remote" class="check small" style="margin-top:12px"><input type="checkbox" name="raw_delivery" value="1" <?= !empty($old['raw_delivery']) ? 'checked' : '' ?>><span>Ham görüntü / dosya teslimi istiyorum <span class="text-muted">(işaretlemezseniz çekim gibi yerinde işler "yapıldı" bildirimiyle tamamlanır; kurgu, ses gibi işler her zaman bağlantıyla teslim edilir)</span></span></label>
+                        <label x-show="!remote" class="check small" style="margin-top:12px"><input type="checkbox" name="raw_delivery" value="1" <?= !empty($old['raw_delivery']) ? 'checked' : '' ?>><span>Ham görüntü / dosya teslimi istiyorum <span class="text-muted">· <?= e(raw_delivery_fee_label()) ?>. İşaretlemezseniz çekim gibi yerinde işler "yapıldı" bildirimiyle tamamlanır; kurgu, ses gibi işler her zaman bağlantıyla teslim edilir.</span></span></label>
                     </div>
 
                     <div class="field">
@@ -289,7 +294,7 @@ $order_cfg = [
                     <div class="hairline" style="margin:14px 0"></div>
                     <ul class="stack-sm xsmall text-muted" style="list-style:none;padding:0">
                         <li style="display:flex;gap:8px"><i data-lucide="shield-check" style="width:14px;height:14px;flex-shrink:0"></i>Teslimat size ulaşmadan önce kalite kontrolden geçer.</li>
-                        <li style="display:flex;gap:8px"><i data-lucide="repeat" style="width:14px;height:14px;flex-shrink:0"></i><?= (int)platform_setting('platform_max_revisions') ?> revizyon hakkı dahil.</li>
+                        <li style="display:flex;gap:8px"><i data-lucide="repeat" style="width:14px;height:14px;flex-shrink:0"></i><?= (int)platform_setting('platform_max_revisions') ?> revizyon hakkı dahil<?= (float)platform_setting('platform_revision_fee') > 0 ? '; sonrası revizyon başına ' . format_money((float)platform_setting('platform_revision_fee')) . ' + KDV' : '' ?>.</li>
                         <li style="display:flex;gap:8px"><i data-lucide="calendar-clock" style="width:14px;height:14px;flex-shrink:0"></i>En az <?= $rules['block_hours'] ?> saat önceden iş girişi; <?= $rules['warn_hours'] ?> saatten kısa süreli işler acil sayılır.</li>
                     </ul>
                     <button type="submit" class="btn btn-accent btn-lg btn-block" style="margin-top:16px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !rushAck)<?= $mode === 'catalog' ? ' || !lines().length' : '' ?>">
