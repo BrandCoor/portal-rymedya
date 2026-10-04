@@ -137,9 +137,9 @@ platform_header('Ödemeler', 'finance');
     <section class="card">
         <div class="card-head"><p class="card-title">Açık faturalar</p></div>
         <?php if ($card_ok && $open): ?>
-        <label class="check card-pad-sm" style="border-bottom:1px solid var(--line-2);align-items:flex-start">
+        <label class="consent-row" style="border-bottom:1px solid var(--line-2)">
             <input type="checkbox" id="card_terms">
-            <span class="small"><?= legal_link('mesafeli', 'Ön Bilgilendirme Formu ve Mesafeli Hizmet Sözleşmesi') ?>'ni ve <?= legal_link('iptal-iade', 'İptal, İade ve Ödeme Koşulları') ?>'nı okudum, onaylıyorum. <span class="xsmall text-muted">Kartla ödeme için gereklidir.</span></span>
+            <span><?= legal_link('mesafeli', 'Ön Bilgilendirme Formu ve Mesafeli Hizmet Sözleşmesi') ?>'ni ve <?= legal_link('iptal-iade', 'İptal, İade ve Ödeme Koşulları') ?>'nı okudum, onaylıyorum.<span class="tag req">Kartla ödeme için</span></span>
         </label>
         <script>
             function cardTerms(f) {

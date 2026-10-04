@@ -101,7 +101,7 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <div class="card card-pad" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
             <div style="flex:1;min-width:220px">
                 <p style="font-weight:500">Profiliniz %<?= $pct ?> tamamlandı</p>
-                <p class="xsmall text-muted" style="margin-top:2px">Eksik: <?= e(implode(', ', array_slice($missing, 0, 6))) ?><?= count($missing) > 6 ? '…' : '' ?>. <?= $role === 'freelancer' ? 'Eksiksiz profiller atamada öne çıkar.' : 'Eksiksiz bilgiler fatura ve iletişimi hızlandırır.' ?></p>
+                <p class="xsmall text-muted" style="margin-top:2px">Eksik: <?= e(implode(', ', array_slice($missing, 0, 6))) ?><?= count($missing) > 6 ? ' ve ' . (count($missing) - 6) . ' alan daha' : '' ?>. <?= $role === 'freelancer' ? 'Eksiksiz profiller atamada öne çıkar.' : 'Eksiksiz bilgiler fatura ve iletişimi hızlandırır.' ?></p>
             </div>
             <div class="pbar" style="width:180px"><span style="width:<?= $pct ?>%"></span></div>
         </div>

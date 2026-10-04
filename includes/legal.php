@@ -126,6 +126,7 @@ function legal_render(string $body): string {
     $html = '';
     $list = false;
     $para = [];
+    $h2n = 0;
     $flush = function () use (&$html, &$para) {
         if ($para) {
             $html .= '<p>' . implode('<br>', $para) . '</p>';
@@ -144,12 +145,25 @@ function legal_render(string $body): string {
         if ($list) { $html .= '</ul>'; $list = false; }
         if ($t === '') { $flush(); continue; }
         if (str_starts_with($t, '### ')) { $flush(); $html .= '<h3>' . $inline(substr($t, 4)) . '</h3>'; continue; }
-        if (str_starts_with($t, '## '))  { $flush(); $html .= '<h2>' . $inline(substr($t, 3)) . '</h2>'; continue; }
+        if (str_starts_with($t, '## '))  { $flush(); $h2n++; $html .= '<h2 id="m-' . $h2n . '">' . $inline(substr($t, 3)) . '</h2>'; continue; }
         $para[] = $inline($t);
     }
     if ($list) $html .= '</ul>';
     $flush();
     return $html;
+}
+
+/** Metindeki ana başlıklar (içindekiler): [[id, başlık], ...] */
+function legal_toc(string $body): array {
+    $out = [];
+    $n = 0;
+    foreach (explode("\n", str_replace("\r\n", "\n", $body)) as $line) {
+        if (str_starts_with($line, '## ')) {
+            $n++;
+            $out[] = ['m-' . $n, trim(str_replace('**', '', substr($line, 3)))];
+        }
+    }
+    return $out;
 }
 
 function legal_url(string $slug): string {

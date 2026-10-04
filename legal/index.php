@@ -18,69 +18,98 @@ if ($slug !== '' && !$doc) {
 }
 
 if (is_client_logged_in()) {
-    $back = [portal_home_url($_SESSION['client_user']['role'] ?? 'client'), 'Panele dön'];
+    $back = [portal_home_url($_SESSION['client_user']['role'] ?? 'client'), 'Panele dön', 'layout-dashboard'];
 } elseif (is_logged_in()) {
-    $back = [BASE_URL . '/modules/dashboard/index.php', 'Panele dön'];
+    $back = [BASE_URL . '/modules/dashboard/index.php', 'Panele dön', 'layout-dashboard'];
 } else {
-    $back = [BASE_URL . '/client/login.php', 'Giriş yap'];
+    $back = [BASE_URL . '/client/login.php', 'Giriş yap', 'log-in'];
 }
+$icons = [
+    'kullanim-kosullari' => 'file-text', 'ajans-sozlesmesi' => 'building-2', 'freelancer-sozlesmesi' => 'user-round-check',
+    'kvkk' => 'shield-check', 'acik-riza' => 'circle-check', 'ticari-ileti' => 'mail', 'gizlilik' => 'lock-keyhole',
+    'cerez' => 'cookie', 'mesafeli' => 'credit-card', 'iptal-iade' => 'rotate-ccw', 'iletisim' => 'phone',
+];
+$toc = $doc ? legal_toc($doc['body']) : [];
 ?>
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <?php ui_head($doc ? $doc['title'] : 'Yasal metinler'); ?>
 </head>
-<body class="legal-page">
-<header class="legal-top no-print">
-    <a href="<?= e($back[0]) ?>" class="legal-brand"><?= brand_html('light') ?></a>
-    <a class="btn btn-ghost btn-sm" href="<?= e($back[0]) ?>"><i data-lucide="arrow-left"></i><?= e($back[1]) ?></a>
-</header>
+<body>
+<div class="lg">
+    <header class="lg-top">
+        <div class="lg-top-in">
+            <a href="<?= e(BASE_URL . '/legal/index.php') ?>" class="lg-brand"><?= brand_html('light') ?></a>
+            <a class="btn btn-secondary btn-sm" href="<?= e($back[0]) ?>"><i data-lucide="<?= $back[2] ?>"></i><?= e($back[1]) ?></a>
+        </div>
+    </header>
 
-<div class="legal-wrap">
-    <?php if ($doc): ?>
-    <select class="select legal-jump no-print" aria-label="Metin seçin" onchange="location.href=this.value">
-        <?php foreach (LEGAL_DOCS as $s => $m): ?><option value="<?= e(legal_url($s)) ?>" <?= $s === $slug ? 'selected' : '' ?>><?= e($m['title']) ?></option><?php endforeach; ?>
-    </select>
-    <?php endif; ?>
-    <aside class="legal-nav no-print<?= $doc ? ' has-doc' : '' ?>">
-        <p class="eyebrow" style="margin-bottom:10px">Yasal metinler</p>
-        <?php foreach (LEGAL_DOCS as $s => $m): ?>
-            <a href="<?= e(legal_url($s)) ?>" class="<?= $s === $slug ? 'is-active' : '' ?>"><?= e($m['title']) ?></a>
-        <?php endforeach; ?>
-    </aside>
+    <section class="lg-hero">
+        <div class="lg-hero-in">
+            <p class="eyebrow"><?= $doc ? '<a href="' . e(BASE_URL . '/legal/index.php') . '" style="color:inherit">Yasal metinler</a>' : 'Sözleşmeler ve politikalar' ?></p>
+            <h1><?= e($doc ? $doc['title'] : 'Yasal metinler') ?></h1>
+            <div class="lg-meta">
+                <?php if ($doc): ?>
+                    <span class="pill"><i data-lucide="file-badge"></i>Sürüm <?= (int)$doc['version'] ?></span>
+                    <span class="pill"><i data-lucide="calendar"></i>Yürürlük <?= e(format_date($doc['published_at'])) ?></span>
+                    <?php if ($doc['updated_at'] !== $doc['published_at']): ?><span>Son düzenleme <?= e(format_date($doc['updated_at'])) ?></span><?php endif; ?>
+                    <button type="button" class="btn btn-ghost btn-sm no-print" onclick="window.print()"><i data-lucide="printer"></i>Yazdır / PDF</button>
+                <?php else: ?>
+                    <span><?= e(site_setting('company_name')) ?> tarafından işletilen platformun sözleşme, KVKK ve politika metinleri.</span>
+                <?php endif; ?>
+            </div>
+        </div>
+    </section>
 
-    <main class="legal-main">
+    <div class="lg-body">
         <?php if ($doc): ?>
-            <article class="legal-doc">
-                <h1><?= e($doc['title']) ?></h1>
-                <p class="legal-meta">
-                    Sürüm <?= (int)$doc['version'] ?> · Yürürlük: <?= e(format_date($doc['published_at'])) ?>
-                    <?php if ($doc['updated_at'] !== $doc['published_at']): ?> · Son düzenleme: <?= e(format_date($doc['updated_at'])) ?><?php endif; ?>
-                    <button type="button" class="btn btn-ghost btn-sm no-print" onclick="window.print()" style="margin-left:6px"><i data-lucide="printer"></i>Yazdır / PDF</button>
-                </p>
-                <?= legal_render($doc['body']) ?>
+        <aside class="lg-side no-print">
+            <?php if (count($toc) > 1): ?>
+            <nav class="lg-box lg-toc" aria-label="Bu sayfada">
+                <p class="lg-box-title">Bu sayfada</p>
+                <?php foreach ($toc as [$id, $t]): ?><a href="#<?= e($id) ?>"><?= e($t) ?></a><?php endforeach; ?>
+            </nav>
+            <?php endif; ?>
+            <nav class="lg-box lg-nav" aria-label="Yasal metinler">
+                <p class="lg-box-title">Diğer metinler</p>
+                <?php foreach (LEGAL_DOCS as $s => $m): ?>
+                    <a href="<?= e(legal_url($s)) ?>" class="<?= $s === $slug ? 'is-active' : '' ?>"><?= e($m['title']) ?></a>
+                <?php endforeach; ?>
+            </nav>
+        </aside>
+
+        <main style="min-width:0;display:flex;flex-direction:column;gap:14px">
+            <select class="select lg-jump no-print" aria-label="Metin seçin" onchange="location.href=this.value">
+                <?php foreach (LEGAL_DOCS as $s => $m): ?><option value="<?= e(legal_url($s)) ?>" <?= $s === $slug ? 'selected' : '' ?>><?= e($m['title']) ?></option><?php endforeach; ?>
+            </select>
+            <article class="lg-doc">
+                <div class="lg-prose"><?= legal_render($doc['body']) ?></div>
             </article>
+        </main>
         <?php elseif ($slug !== ''): ?>
-            <?= ui_empty('Metin bulunamadı', 'Aradığınız yasal metin mevcut değil.', 'file-x') ?>
+        <main style="grid-column:1/-1"><div class="card"><?= ui_empty('Metin bulunamadı', 'Aradığınız yasal metin mevcut değil.', 'file-x', '<a class="btn btn-secondary btn-sm" href="' . e(BASE_URL . '/legal/index.php') . '">Tüm metinler</a>') ?></div></main>
         <?php else: ?>
-            <h1 class="h1">Yasal metinler</h1>
-            <p class="small text-muted" style="margin-top:6px"><?= e(site_setting('company_name')) ?> tarafından işletilen platformun sözleşme ve politikaları.</p>
-            <div class="legal-list">
+        <main style="grid-column:1/-1">
+            <div class="lg-cards">
                 <?php foreach (LEGAL_DOCS as $s => $m): $d = legal_doc($s); ?>
-                    <a href="<?= e(legal_url($s)) ?>" class="panel">
-                        <span><strong><?= e($m['title']) ?></strong><span class="xsmall text-muted">Sürüm <?= (int)$d['version'] ?> · <?= e(format_date($d['published_at'])) ?></span></span>
-                        <i data-lucide="chevron-right"></i>
+                    <a href="<?= e(legal_url($s)) ?>" class="lg-card">
+                        <span class="ic"><i data-lucide="<?= e($icons[$s] ?? 'file-text') ?>"></i></span>
+                        <span style="margin:0;min-width:0"><strong><?= e($m['title']) ?></strong><span>Sürüm <?= (int)$d['version'] ?> · <?= e(format_date($d['published_at'])) ?></span></span>
                     </a>
                 <?php endforeach; ?>
             </div>
+        </main>
         <?php endif; ?>
-    </main>
-</div>
+    </div>
 
-<footer class="legal-foot no-print">
-    <span><?= e(site_footer_text()) ?></span>
-    <?= legal_footer_links() ?>
-</footer>
+    <footer class="lg-foot no-print">
+        <div class="lg-foot-in">
+            <span><?= e(site_footer_text()) ?></span>
+            <?= legal_footer_links() ?>
+        </div>
+    </footer>
+</div>
 <?= legal_cookie_notice() ?>
 <?php ui_icons_init(); ?>
 </body>

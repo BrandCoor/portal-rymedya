@@ -1264,6 +1264,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/legal.php';
 require_once __DIR__ . '/live.php';
+require_once __DIR__ . '/ui_styles.php';
 require_once __DIR__ . '/profiles.php';
 send_security_headers();
 

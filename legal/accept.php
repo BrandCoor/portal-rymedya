@@ -52,16 +52,17 @@ auth_page_open('Sözleşme onayı', $role === 'agency' ? 'register_agency' : ($r
 <?php if ($error): ?><div class="alert alert-danger" style="margin-top:16px"><i data-lucide="alert-circle"></i><span><?= e($error) ?></span></div><?php endif; ?>
 
 <form method="POST" action="" class="stack" style="margin-top:20px"><?= csrf_field() ?>
-    <?php foreach ($pending as $s): $d = legal_doc($s); ?>
-        <label class="check option-card" style="padding:12px 14px;align-items:flex-start">
-            <input type="checkbox" name="doc[<?= e($s) ?>]" value="1" required>
-            <span class="small">
-                <?= legal_link($s) ?> <span class="xsmall text-muted">(sürüm <?= (int)$d['version'] ?>, <?= e(format_date($d['published_at'])) ?>)</span><br>
-                <?= $s === 'kvkk' ? 'metnini okudum, kişisel verilerimin işlenmesi hakkında bilgilendirildim.' : 'metnini okudum, anladım ve kabul ediyorum.' ?>
-            </span>
-        </label>
-    <?php endforeach; ?>
-    <button class="btn btn-primary btn-block">Onayla ve devam et</button>
+    <div class="consent">
+        <p class="consent-head"><?= count($pending) ?> metin onayınızı bekliyor</p>
+        <?php foreach ($pending as $s): $d = legal_doc($s); ?>
+            <label class="consent-row">
+                <input type="checkbox" name="doc[<?= e($s) ?>]" value="1" required>
+                <span><?= legal_link($s) ?>'ni <?= $s === 'kvkk' ? 'okudum, kişisel verilerimin işlenmesi hakkında bilgilendirildim.' : 'okudum, anladım ve kabul ediyorum.' ?>
+                    <br><span class="xsmall text-muted">Sürüm <?= (int)$d['version'] ?> · yürürlük <?= e(format_date($d['published_at'])) ?></span></span>
+            </label>
+        <?php endforeach; ?>
+    </div>
+    <button class="btn btn-primary btn-lg btn-block">Onayla ve devam et</button>
 </form>
 <p class="xsmall text-muted" style="margin-top:16px;text-align:center">Kabul etmiyorsanız <a class="link" href="<?= BASE_URL ?>/client/logout.php">çıkış yapabilir</a>, hesabınızın kapatılması için <?= site_setting('company_email') !== '' ? e(site_setting('company_email')) . ' adresinden ' : '' ?>bizimle iletişime geçebilirsiniz.</p>
 <?php auth_page_close();

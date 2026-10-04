@@ -149,7 +149,7 @@ require_once __DIR__ . '/../../includes/header.php';
 </div>
 
 <?php elseif ($tab === 'docs'): ?>
-<section class="card"><div class="table-wrap"><table class="table">
+<section class="card"><div class="table-wrap"><table class="table table-stack">
     <thead><tr><th>Metin</th><th>Kimler onaylar</th><th class="r">Sürüm</th><th>Yürürlük</th><th class="r">Onaylayan</th><th></th></tr></thead>
     <tbody>
     <?php foreach (LEGAL_DOCS as $s => $m): $d = legal_doc($s);
@@ -158,11 +158,11 @@ require_once __DIR__ . '/../../includes/header.php';
         $how = $who ? implode(', ', $who) . ' (zorunlu)' : match ($s) { 'acik-riza', 'ticari-ileti' => 'İsteğe bağlı', 'mesafeli', 'iptal-iade' => 'Kartla ödemede', default => 'Bilgilendirme' };
     ?>
         <tr>
-            <td><a class="link" href="?edit=<?= e($s) ?>" style="font-weight:500"><?= e($d['title']) ?></a><?php if ($d['custom']): ?> <?= ui_badge('Düzenlendi', 'info') ?><?php endif; ?></td>
-            <td class="small"><?= e($how) ?></td>
-            <td class="r num"><?= (int)$d['version'] ?></td>
-            <td class="small"><?= e(format_date($d['published_at'])) ?></td>
-            <td class="r num"><a class="link" href="?tab=log&doc=<?= e($s) ?>"><?= $counts[$s] ?? 0 ?></a></td>
+            <td class="ts-full"><a class="link" href="?edit=<?= e($s) ?>" style="font-weight:500"><?= e($d['title']) ?></a><?php if ($d['custom']): ?> <?= ui_badge('Düzenlendi', 'info') ?><?php endif; ?></td>
+            <td class="small" data-label="Kimler onaylar"><?= e($how) ?></td>
+            <td class="r num" data-label="Sürüm"><?= (int)$d['version'] ?></td>
+            <td class="small" data-label="Yürürlük"><?= e(format_date($d['published_at'])) ?></td>
+            <td class="r num" data-label="Onaylayan"><a class="link" href="?tab=log&doc=<?= e($s) ?>"><?= $counts[$s] ?? 0 ?></a></td>
             <td class="r"><a class="btn btn-ghost btn-sm" href="?edit=<?= e($s) ?>"><i data-lucide="pencil"></i>Düzenle</a></td>
         </tr>
     <?php endforeach; ?>
@@ -180,17 +180,17 @@ require_once __DIR__ . '/../../includes/header.php';
 </form>
 <section class="card">
     <?php if (!$log): ?><?= ui_empty('Kayıt yok', 'Sözleşme onayları burada listelenir.', 'file-check') ?><?php else: ?>
-    <div class="table-wrap"><table class="table">
+    <div class="table-wrap"><table class="table table-stack">
         <thead><tr><th>Zaman</th><th>Kullanıcı</th><th>Metin</th><th class="r">Sürüm</th><th>İşlem</th><th>IP</th></tr></thead>
         <tbody>
         <?php foreach ($log as $r): ?>
             <tr>
-                <td class="small" style="white-space:nowrap"><?= e(format_date($r['created_at'], true)) ?></td>
-                <td><div class="small" style="font-weight:500"><?= e($r['full_name'] ?? '—') ?></div><div class="xsmall text-muted"><?= e($r['email'] ?? '') ?></div></td>
-                <td class="small"><?= e(LEGAL_DOCS[$r['slug']]['short'] ?? $r['slug']) ?></td>
-                <td class="r num"><?= (int)$r['version'] ?></td>
-                <td><?= $r['action'] === 'accept' ? ui_badge('Onay', 'success') : ui_badge('Geri alma', 'neutral') ?> <span class="xsmall text-muted"><?= e($context_labels[$r['context']] ?? $r['context']) ?></span></td>
-                <td class="xsmall mono" title="<?= e($r['user_agent'] ?? '') ?>"><?= e($r['ip'] ?? '') ?></td>
+                <td class="small" data-label="Zaman" style="white-space:nowrap"><?= e(format_date($r['created_at'], true)) ?></td>
+                <td data-label="Kullanıcı"><div class="small" style="font-weight:500"><?= e($r['full_name'] ?? '—') ?></div><div class="xsmall text-muted"><?= e($r['email'] ?? '') ?></div></td>
+                <td class="small" data-label="Metin"><?= e(LEGAL_DOCS[$r['slug']]['short'] ?? $r['slug']) ?></td>
+                <td class="r num" data-label="Sürüm"><?= (int)$r['version'] ?></td>
+                <td data-label="İşlem"><?= $r['action'] === 'accept' ? ui_badge('Onay', 'success') : ui_badge('Geri alma', 'neutral') ?> <span class="xsmall text-muted"><?= e($context_labels[$r['context']] ?? $r['context']) ?></span></td>
+                <td class="xsmall mono" data-label="IP" title="<?= e($r['user_agent'] ?? '') ?>"><?= e($r['ip'] ?? '') ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

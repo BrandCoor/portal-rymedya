@@ -8,7 +8,7 @@
  * ui_*()     : rozet, boş durum, avatar, puan halkası gibi küçük bileşenler
  */
 
-const UI_ASSET_VERSION = '2026.10.10';
+const UI_ASSET_VERSION = '2026.10.11';
 
 function ui_head(string $title, array $opts = []): void {
     $chart   = !empty($opts['chart']);
@@ -63,6 +63,7 @@ function ui_head(string $title, array $opts = []): void {
         }
     </script>
     <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/app.css?v=<?= UI_ASSET_VERSION ?>">
+    <style><?= ui_extra_css() ?></style>
     <style>:root{--accent:<?= $accent ?>;--accent-hover:<?= $hover ?>;--accent-soft:<?= $soft ?>;--sidebar:<?= $sidebar ?>;--sidebar-2:<?= color_shade($sidebar, 0.06) ?>}.rec-dot{box-shadow:0 0 0 4px <?= $accent ?>2e}</style>
     <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>

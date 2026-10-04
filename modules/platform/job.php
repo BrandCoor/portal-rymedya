@@ -996,18 +996,18 @@ require_once __DIR__ . '/../../includes/header.php';
         <form method="POST" action=""><?= csrf_field() ?>
             <input type="hidden" name="action" value="items_save">
             <div class="table-wrap">
-                <table class="table">
+                <table class="table table-stack">
                     <thead><tr><th>Hizmet</th><th class="r">Miktar</th><th class="r">Ajans birim</th><th class="r">Freelancer birim</th><th class="r">Ajans tutar</th><th class="r">Sil</th></tr></thead>
                     <tbody>
                     <?php if (!$live_items): ?><tr><td colspan="6" class="small text-muted">Kalem yok.</td></tr><?php endif; ?>
                     <?php foreach ($live_items as $it): $iid = (int)$it['id']; ?>
                         <tr>
-                            <td style="min-width:200px"><input class="input" name="it[<?= $iid ?>][name]" value="<?= e($it['name']) ?>" style="min-width:180px"><span class="xsmall text-muted"><?= (int)$it['is_extra'] === 1 ? 'Ek kalem' : 'Ana kalem' ?><?= ($it['status'] ?? '') === 'proposed' ? ' · ajans onayında' : '' ?></span></td>
-                            <td class="r"><div class="input-group" style="width:130px;margin-left:auto"><input class="input num" type="number" min="0" step="0.5" name="it[<?= $iid ?>][qty]" value="<?= e(rtrim(rtrim(number_format((float)$it['quantity'], 2, '.', ''), '0'), '.')) ?>"><span class="addon"><?= e($it['unit']) ?></span></div></td>
-                            <td class="r"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][au]" value="<?= e(number_format((float)$it['agency_unit_price'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
-                            <td class="r"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][fu]" value="<?= e(number_format((float)$it['freelancer_unit_fee'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
-                            <td class="r money"><?= format_money((float)$it['agency_unit_price'] * (float)$it['quantity']) ?></td>
-                            <td class="r"><input type="checkbox" name="it[<?= $iid ?>][del]" value="1" aria-label="Kalemi sil"></td>
+                            <td class="ts-full" data-label="Hizmet" style="min-width:200px"><input class="input" name="it[<?= $iid ?>][name]" value="<?= e($it['name']) ?>" style="min-width:180px"><span class="xsmall text-muted"><?= (int)$it['is_extra'] === 1 ? 'Ek kalem' : 'Ana kalem' ?><?= ($it['status'] ?? '') === 'proposed' ? ' · ajans onayında' : '' ?></span></td>
+                            <td class="r" data-label="Miktar"><div class="input-group" style="width:130px;margin-left:auto"><input class="input num" type="number" min="0" step="0.5" name="it[<?= $iid ?>][qty]" value="<?= e(rtrim(rtrim(number_format((float)$it['quantity'], 2, '.', ''), '0'), '.')) ?>"><span class="addon"><?= e($it['unit']) ?></span></div></td>
+                            <td class="r" data-label="Ajans birim"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][au]" value="<?= e(number_format((float)$it['agency_unit_price'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
+                            <td class="r" data-label="Freelancer birim"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][fu]" value="<?= e(number_format((float)$it['freelancer_unit_fee'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
+                            <td class="r money" data-label="Ajans tutar"><?= format_money((float)$it['agency_unit_price'] * (float)$it['quantity']) ?></td>
+                            <td class="r" data-label="Kalemi sil"><input type="checkbox" name="it[<?= $iid ?>][del]" value="1" aria-label="Kalemi sil"></td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if ((float)$job['rush_fee'] > 0): ?><tr><td colspan="4" class="text-muted">Acil iş farkı</td><td class="r money"><?= format_money((float)$job['rush_fee']) ?></td><td></td></tr><?php endif; ?>
