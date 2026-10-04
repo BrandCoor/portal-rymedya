@@ -45,6 +45,32 @@ function is_active(string $path): string {
             <span>Kontrol Paneli</span>
         </a>
 
+        <!-- İŞ PLATFORMU (AJANS & FREELANCER PAZARYERİ) -->
+        <?php if (can_access_module('platform.manage')):
+            $platform_pending = 0;
+            try {
+                $platform_pending = (int)$GLOBALS['db']->query("SELECT (SELECT COUNT(*) FROM platform_jobs WHERE status IN ('submitted', 'qa_review')) + (SELECT COUNT(*) FROM freelancer_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM agency_profiles WHERE status = 'pending')")->fetchColumn();
+            } catch (Throwable $e) {
+            }
+        ?>
+        <div class="pt-4 pb-1">
+            <p class="px-3.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">İş Platformu</p>
+        </div>
+        <a href="<?= BASE_URL ?>/modules/platform/index.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= str_contains($current_page, '/modules/platform/index') || str_contains($current_page, '/modules/platform/job') ? 'bg-brand-600 text-white font-semibold shadow-md shadow-brand-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800' ?>">
+            <i data-lucide="network" class="w-4 h-4 mr-3 text-fuchsia-400"></i>
+            <span class="flex-1">İş Merkezi</span>
+            <?php if ($platform_pending > 0): ?><span class="ml-2 min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center"><?= $platform_pending ?></span><?php endif; ?>
+        </a>
+        <a href="<?= BASE_URL ?>/modules/platform/freelancers.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/platform/freelancers') ?>">
+            <i data-lucide="user-round-search" class="w-4 h-4 mr-3"></i>
+            <span>Freelancer Havuzu</span>
+        </a>
+        <a href="<?= BASE_URL ?>/modules/platform/agencies.php" class="flex items-center px-3.5 py-2.5 text-xs font-medium rounded-xl transition-all <?= is_active('/modules/platform/agencies') ?>">
+            <i data-lucide="building-2" class="w-4 h-4 mr-3"></i>
+            <span>Ajanslar</span>
+        </a>
+        <?php endif; ?>
+
         <!-- SATIŞ & PIPELINE BÖLÜMÜ -->
         <div class="pt-4 pb-1">
             <p class="px-3.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Satış & Teklifler</p>

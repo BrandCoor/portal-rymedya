@@ -2,7 +2,17 @@
 
 Bu portal, RY Medya'nın video prodüksiyon işlerini tek yerden yönetmek için yazıldı. Bir işin tüm adımları sistemde izlenir: fiyat teklifi, çekim planı, set maliyeti, kurgu revizyonları, müşteri onayı, faturalama ve tahsilat. Personel, ekipman ve vergi takibi de aynı sistemde yapılır.
 
-Canlı adres: `https://portal.rymedya.com.tr`. Müşteri portalı `/client/login.php` adresindedir.
+Canlı adres: `https://portal.rymedya.com.tr`.
+
+Portalın iki yüzü vardır:
+- **İç ERP:** RY Medya personeli için.
+- **İş Platformu:** Ajanslar iş verir, RY Medya fiyatlar ve dağıtır, işi RY Medya ekibi veya freelancer'lar yapar. Ayrıntılar: [docs/PLATFORM.md](docs/PLATFORM.md).
+
+| Giriş | Adres |
+|-------|-------|
+| Personel | `/modules/auth/login.php` |
+| Müşteri / Ajans / Freelancer | `/client/login.php` |
+| Ajans kaydı / Freelancer başvurusu | `/platform/register.php?type=agency` · `?type=freelancer` |
 
 ## İş akışı
 
@@ -33,6 +43,8 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 | Ekipman | `modules/inventory` | Envanter, sete çıkış, dışarıya kiralama |
 | Bildirimler | `modules/notifications` | Müşteri hareketleri, görev atamaları, tüm aktivite günlüğü |
 | Müşteri Portalı | `client/` | Projeler, kurgu onayı, teslim dosyaları, teklif kabul/ret, ekstre |
+| **İş Platformu (yönetici)** | `modules/platform` | İş merkezi, fiyatlama, görünürlük politikası, atama, kalite kontrol, freelancer/ajans yönetimi |
+| **Ajans & Freelancer Paneli** | `platform/` | İş talebi, iş havuzu, teslim, mesajlaşma, kazançlar |
 
 ## Kurulum
 
@@ -42,5 +54,6 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 
 ## Belgeler
 
+- [İş Platformu](docs/PLATFORM.md): hiyerarşi, iş akışı ve pazarlama politikası
 - [Kullanım Kılavuzu](docs/KULLANIM_KILAVUZU.md): ekip ve müşteri için adım adım kullanım
 - [İnceleme Raporu ve Düzeltmeler](docs/IYILESTIRMELER.md): güvenlik ve finans düzeltmelerinin listesi

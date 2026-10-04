@@ -34,6 +34,7 @@ const PROJECT_STATUSES = [
 // Cari Türleri
 const CONTACT_TYPES = [
     'client'           => 'Müşteri',
+    'agency'           => 'Ajans (Platform İş Veren)',
     'freelancer'       => 'Freelancer / Dış Ekip',
     'equipment_rental' => 'Ekipman Kiralama Şirketi',
     'studio'           => 'Stüdyo / Plato',

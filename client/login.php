@@ -10,7 +10,7 @@ require_once __DIR__ . '/../includes/functions.php';
 
 // Zaten müşteri oturumu açıksa Dashboard'a yönlendir
 if (is_client_logged_in()) {
-    redirect(BASE_URL . '/client/index.php');
+    redirect(portal_home_url($_SESSION['client_user']['role'] ?? 'client'));
 }
 
 $error = '';
@@ -63,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['client_user_id'] = $client['id'];
                 $_SESSION['client_contact_id'] = $active_contact_id;
                 $_SESSION['client_user'] = [
+                    'role'         => portal_role_from_slug($client['role_slug'] ?? ''),
                     'id'           => $client['id'],
                     'contact_id'   => $active_contact_id,
                     'full_name'    => $client['full_name'],
@@ -74,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([$client['id']]);
 
                 set_flash('success', 'Hoş geldiniz, ' . $client['full_name']);
-                redirect(BASE_URL . '/client/index.php');
+                redirect(portal_home_url($_SESSION['client_user']['role']));
             }
         } else {
             record_login_failure($email);
@@ -88,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Müşteri Portalı Girişi | RY Medya</title>
+    <title>Portal Girişi | RY Medya</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -101,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-xl shadow-indigo-600/30 mb-4 ring-4 ring-indigo-500/20">
                 <i data-lucide="clapperboard" class="w-8 h-8 text-white"></i>
             </div>
-            <h1 class="text-2xl font-bold tracking-tight text-white">MÜŞTERİ PORTALI</h1>
-            <p class="text-sm text-slate-400 mt-1">RY Medya Prodüksiyon Takip Sistemi</p>
+            <h1 class="text-2xl font-bold tracking-tight text-white">PORTAL GİRİŞİ</h1>
+            <p class="text-sm text-slate-400 mt-1">Müşteri · Ajans · Freelancer</p>
         </div>
 
         <!-- Giriş Kartı -->
@@ -150,9 +151,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </button>
                 </div>
             </form>
+
+            <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>
+            <div class="mt-6 pt-6 border-t border-slate-700/60 space-y-2">
+                <p class="text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">Henüz hesabınız yok mu?</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <?php if (platform_setting('platform_agency_signup') === '1'): ?>
+                    <a href="<?= BASE_URL ?>/platform/register.php?type=agency" class="flex flex-col items-center gap-1 py-3 px-2 bg-white/5 hover:bg-white/10 border border-slate-600 hover:border-indigo-400 rounded-xl text-center transition">
+                        <i data-lucide="building-2" class="w-5 h-5 text-indigo-300"></i>
+                        <span class="text-xs font-bold text-white">Ajans Kaydı</span>
+                        <span class="text-[10px] text-slate-400">İş yaptırmak istiyorum</span>
+                    </a>
+                    <?php endif; ?>
+                    <?php if (platform_setting('platform_freelancer_signup') === '1'): ?>
+                    <a href="<?= BASE_URL ?>/platform/register.php?type=freelancer" class="flex flex-col items-center gap-1 py-3 px-2 bg-white/5 hover:bg-white/10 border border-slate-600 hover:border-emerald-400 rounded-xl text-center transition">
+                        <i data-lucide="user-plus" class="w-5 h-5 text-emerald-300"></i>
+                        <span class="text-xs font-bold text-white">Freelancer Başvurusu</span>
+                        <span class="text-[10px] text-slate-400">İş almak istiyorum</span>
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
 
-        <p class="text-center text-xs text-slate-500 mt-8">
+        <p class="text-center text-xs text-slate-400 mt-6">
+            <a href="<?= BASE_URL ?>/modules/auth/login.php" class="hover:text-white underline">RY Medya personeli girişi</a>
+        </p>
+
+        <p class="text-center text-xs text-slate-500 mt-4">
             &copy; <?= date('Y') ?> RY Medya Prodüksiyon Müşteri Portalı.
         </p>
     </div>

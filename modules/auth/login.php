@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($user && password_verify($password, $user['password']) && is_portal_account($user)) {
             // Müşteri hesapları yönetim paneline giremez, portala yönlendirilir
-            $error = 'Bu hesap bir müşteri portalı hesabıdır. Lütfen müşteri portalından giriş yapınız.';
+            $error = 'Bu hesap bir müşteri / ajans / freelancer hesabıdır. Lütfen aşağıdaki "Müşteri / Ajans / Freelancer Girişi" butonunu kullanınız.';
         } elseif ($user && password_verify($password, $user['password'])) {
             clear_login_failures($email);
 
@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <i data-lucide="video" class="w-8 h-8 text-white"></i>
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-white"><?= APP_NAME ?></h1>
-            <p class="text-sm text-slate-400 mt-1">Prodüksiyon & Finans Yönetim Paneli</p>
+            <p class="text-sm text-slate-400 mt-1">Ajans Personeli Yönetim Paneli</p>
         </div>
 
         <!-- Giriş Form Kartı -->
@@ -170,6 +170,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </button>
                 </div>
             </form>
+
+            <!-- Portal Girişleri -->
+            <div class="mt-6 pt-6 border-t border-slate-700/60">
+                <p class="text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Müşteri, ajans veya freelancer misiniz?</p>
+                <a href="<?= BASE_URL ?>/client/login.php"
+                   class="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white/5 hover:bg-white/10 border border-slate-600 hover:border-indigo-400 text-white font-semibold text-sm rounded-xl transition">
+                    <i data-lucide="users-round" class="w-4 h-4 text-indigo-300"></i>
+                    <span>Müşteri / Ajans / Freelancer Girişi</span>
+                </a>
+                <?php if (platform_setting('platform_agency_signup') === '1' || platform_setting('platform_freelancer_signup') === '1'): ?>
+                <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <?php if (platform_setting('platform_agency_signup') === '1'): ?>
+                    <a href="<?= BASE_URL ?>/platform/register.php?type=agency" class="text-center py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Ajans Kaydı</a>
+                    <?php endif; ?>
+                    <?php if (platform_setting('platform_freelancer_signup') === '1'): ?>
+                    <a href="<?= BASE_URL ?>/platform/register.php?type=freelancer" class="text-center py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5">Freelancer Başvurusu</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
 
         <!-- Alt Bilgi -->

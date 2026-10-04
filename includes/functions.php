@@ -776,6 +776,7 @@ const MODULE_PERMISSIONS = [
     'proposals.manage' => ['description' => 'Teklifleri Görüntüleme & Yönetme', 'module' => 'proposals'],
     'inventory.manage' => ['description' => 'Ekipman & Demirbaş Envanteri Yönetimi', 'module' => 'inventory'],
     'reports.view'     => ['description' => 'Yönetim Raporları (Kârlılık, Alacak Yaşlandırma)', 'module' => 'reports', 'grant_if' => 'finance.view'],
+    'platform.manage'  => ['description' => 'İş Platformu Yönetimi (Ajans işleri, freelancer atama)', 'module' => 'platform', 'grant_if' => 'projects.edit'],
 ];
 
 /**
@@ -855,13 +856,13 @@ function require_staff_login(): void {
 /**
  * Müşteri portalı sayfaları için giriş zorunluluğu.
  */
-function require_client_login(): void {
+function require_client_login(array $allowed_roles = ['client']): void {
     global $db;
     if (empty($_SESSION['client_user_id']) || empty($_SESSION['client_contact_id'])) {
         unset($_SESSION['client_user_id'], $_SESSION['client_contact_id'], $_SESSION['client_user']);
         redirect(BASE_URL . '/client/login.php');
     }
-    $stmt = $db->prepare("SELECT u.status, u.contact_id, c.id AS cid FROM users u LEFT JOIN contacts c ON c.id = ? WHERE u.id = ? LIMIT 1");
+    $stmt = $db->prepare("SELECT u.status, u.contact_id, c.id AS cid, r.role_slug FROM users u LEFT JOIN contacts c ON c.id = ? LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ? LIMIT 1");
     $stmt->execute([(int)$_SESSION['client_contact_id'], (int)$_SESSION['client_user_id']]);
     $row = $stmt->fetch();
     if (!$row || $row['status'] !== 'active' || empty($row['cid'])) {
@@ -869,6 +870,22 @@ function require_client_login(): void {
         set_flash('error', 'Portal oturumunuz sonlandırıldı.');
         redirect(BASE_URL . '/client/login.php');
     }
+    $role = portal_role_from_slug($row['role_slug'] ?? '');
+    $_SESSION['client_user']['role'] = $role;
+    if (!in_array($role, $allowed_roles, true)) {
+        redirect(portal_home_url($role));
+    }
+}
+
+/**
+ * Portal hesap türü: ajans, freelancer veya müşteri (varsayılan)
+ */
+function portal_role_from_slug(?string $slug): string {
+    return in_array($slug, ['agency', 'freelancer'], true) ? $slug : 'client';
+}
+
+function portal_home_url(string $role): string {
+    return BASE_URL . ($role === 'client' ? '/client/index.php' : '/platform/index.php');
 }
 
 /**
@@ -878,7 +895,7 @@ function is_portal_account(array $u): bool {
     if ((int)($u['role_id'] ?? 0) === 1) {
         return false;
     }
-    return ($u['role_slug'] ?? '') === 'client' || !empty($u['contact_id']);
+    return in_array($u['role_slug'] ?? '', ['client', 'agency', 'freelancer'], true) || !empty($u['contact_id']);
 }
 
 /**
@@ -970,7 +987,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1080,6 +1097,7 @@ function run_migrations(): void {
         }
 
         ensure_contact_change_logs_table();
+        run_platform_migrations();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1194,6 +1212,9 @@ const TASK_PRIORITIES = [
     'normal' => ['label' => 'Normal', 'color' => 'text-blue-600'],
     'high'   => ['label' => 'Acil',   'color' => 'text-rose-600'],
 ];
+
+// İş platformu (ajans / freelancer pazaryeri)
+require_once __DIR__ . '/platform.php';
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur
 run_migrations();

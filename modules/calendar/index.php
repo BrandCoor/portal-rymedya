@@ -103,6 +103,23 @@ if (can_access_module('proposals.manage')) {
     }
 }
 
+// 7. Platform işleri (ajans işleri) teslim tarihleri
+if (can_access_module('platform.manage')) {
+    try {
+        $st = $db->prepare("SELECT j.id, j.job_code, j.title, j.deadline, j.start_date, j.status, c.company_title FROM platform_jobs j LEFT JOIN contacts c ON j.agency_contact_id = c.id WHERE j.status NOT IN ('completed', 'cancelled') AND (j.deadline BETWEEN ? AND ? OR j.start_date BETWEEN ? AND ?)");
+        $st->execute([$from, $to, $from, $to]);
+        foreach ($st->fetchAll() as $r) {
+            if ($r['deadline'] && $r['deadline'] >= $from && $r['deadline'] <= $to) {
+                $add($r['deadline'], 'platform', 'Platform teslim: ' . $r['job_code'], ($r['company_title'] ?? 'İç iş') . ' · ' . $r['title'], "/modules/platform/job.php?id={$r['id']}");
+            }
+            if ($r['start_date'] && $r['start_date'] >= $from && $r['start_date'] <= $to) {
+                $add($r['start_date'], 'platform', 'Platform çekim: ' . $r['job_code'], ($r['company_title'] ?? 'İç iş') . ' · ' . $r['title'], "/modules/platform/job.php?id={$r['id']}");
+            }
+        }
+    } catch (Throwable $e) {
+    }
+}
+
 $types = [
     'shoot'      => ['label' => 'Çekim',            'color' => 'bg-brand-600 text-white'],
     'deadline'   => ['label' => 'Proje Teslimi',    'color' => 'bg-rose-600 text-white'],
@@ -111,6 +128,7 @@ $types = [
     'payable'    => ['label' => 'Ödeme Vadesi',     'color' => 'bg-orange-100 text-orange-900 border border-orange-300'],
     'rental'     => ['label' => 'Ekipman İadesi',   'color' => 'bg-purple-100 text-purple-800 border border-purple-300'],
     'proposal'   => ['label' => 'Teklif Bitişi',    'color' => 'bg-indigo-100 text-indigo-800 border border-indigo-300'],
+    'platform'   => ['label' => 'Platform İşi',     'color' => 'bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-300'],
 ];
 $present_types = [];
 foreach ($events as $list) {
