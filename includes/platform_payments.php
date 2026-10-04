@@ -194,11 +194,22 @@ function payout_available(int $user_id, int $contact_id): array {
     $st = $db->prepare("SELECT invoice_ids FROM platform_payout_requests WHERE user_id = ? AND status = 'pending'");
     $st->execute([$user_id]);
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ids) foreach (explode(',', $ids) as $i) $busy[(int)$i] = true;
+    // Yalnızca bu freelancer'ın onaylanmış platform aşamalarına ait hakediş faturaları;
+    // cari karttaki diğer (ERP, ekipman vb.) faturalar talep edilemez
+    $st = $db->prepare("
+        SELECT i.*, ROUND(i.grand_total - i.paid_amount, 2) AS remaining,
+               m.title AS ms_title, j.id AS ms_job_id, j.job_code AS ms_job_code, j.title AS ms_job_title
+        FROM platform_milestones m
+        JOIN invoices i ON i.id = m.purchase_invoice_id
+        JOIN platform_jobs j ON j.id = m.job_id
+        WHERE m.freelancer_user_id = ? AND m.status = 'approved' AND i.invoice_type = 'purchase' AND i.contact_id = ?
+          AND i.grand_total - i.paid_amount > 0.009
+        ORDER BY i.issue_date, i.id
+    ");
+    $st->execute([$user_id, $contact_id]);
     $rows = [];
-    foreach (contact_open_invoices($contact_id, 'purchase') as $inv) {
-        $m = $db->prepare("SELECT m.title, j.id AS job_id, j.job_code, j.title AS job_title FROM platform_milestones m JOIN platform_jobs j ON j.id = m.job_id WHERE m.purchase_invoice_id = ? LIMIT 1");
-        $m->execute([$inv['id']]);
-        $inv['ms'] = $m->fetch() ?: null;
+    foreach ($st->fetchAll() as $inv) {
+        $inv['ms'] = ['title' => $inv['ms_title'], 'job_id' => (int)$inv['ms_job_id'], 'job_code' => $inv['ms_job_code'], 'job_title' => $inv['ms_job_title']];
         $inv['busy'] = isset($busy[(int)$inv['id']]);
         $rows[] = $inv;
     }
@@ -227,7 +238,12 @@ function payout_invoices(array $r): array {
 function payout_pay(array $r, int $account_id, string $date, int $staff_id, string $staff_note = ''): ?string {
     global $db;
     if ($r['status'] !== 'pending') return 'Bu talep zaten sonuçlandı.';
-    $invs = array_filter(payout_invoices($r), fn($i) => (float)$i['remaining'] > 0.009 && (int)$i['contact_id'] === (int)$r['contact_id']);
+    // Talepte yalnızca bu freelancer'ın aşama hakedişleri ödenir
+    $own = $db->prepare("SELECT COUNT(*) FROM platform_milestones WHERE purchase_invoice_id = ? AND freelancer_user_id = ?");
+    $invs = array_filter(payout_invoices($r), function ($i) use ($r, $own) {
+        $own->execute([$i['id'], $r['user_id']]);
+        return (float)$i['remaining'] > 0.009 && (int)$i['contact_id'] === (int)$r['contact_id'] && (int)$own->fetchColumn() > 0;
+    });
     if (!$invs) return 'Talepte ödenecek bakiye kalmamış.';
     $paid = 0.0;
     $db->beginTransaction();
