@@ -61,6 +61,7 @@ const JOB_EVENT_TYPES = [
     'rating'             => ['Değerlendirme', 'star', 'staff'],
     'issue'              => ['Sorun bildirimi', 'triangle-alert', 'staff'],
     'reminder'           => ['Hatırlatma', 'bell', 'staff'],
+    'routing'            => ['Otomatik yönlendirme', 'route', 'staff'],
     'change'             => ['Değişiklik', 'pencil', 'all'],
 ];
 

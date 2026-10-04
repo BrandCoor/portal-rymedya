@@ -114,7 +114,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 
 ## 8. İş platformu: günlük akış (İş merkezi)
 
-1. Ajans işi girer. Katalog işi otomatik yayına çıkar; özel talepte fiyatı girip teklifi gönderin.
+1. Ajans işi girer. İş, İş merkezi → Yönlendirme ekranındaki kurallara göre (tutar, acil, termin, ajans, hizmet vb.) "Aksiyon bekleyen"e düşer, doğrudan atamaya gider ya da ekibe ayrılır. Özel talepte fiyatı girip teklifi gönderin.
 2. Atama: freelancer işi alır, teklif verir (ücret + teslim süresi) veya siz doğrudan atarsınız. Atanan kişi işi kabul eder ya da cezasız reddeder.
 3. Aşamalar kartında işin parçalarını görürsünüz. "Düzenle" ile ad, ücret, hedef tarih değiştirilir; "Ek kalem / prim" ile ajansa ek iş önerilir, ajansa yansımayan iç iş ya da prim eklenir.
 4. Teslim kalite kontrolde size düşer: "Onayla, ajansa ilet" veya "Düzeltme iste". Ajans aşamayı onaylayınca hakediş kaydı oluşur; gerekirse "Aşamayı ajans adına onayla" ya da "İşi ajans adına tamamla".

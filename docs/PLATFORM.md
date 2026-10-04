@@ -194,6 +194,16 @@ Her işin sayfasındaki **Görünürlük ve dağıtım** bölümü:
 - "Kimler görüyor?" önizlemesi her freelancer için görüp görmediğini ve nedenini gösterir.
 - Freelancer'ın havuzunda, yalnızca seviye yüzünden göremediği işlerin **sayısı** gösterilir. Bu, seviye atlamak için motivasyon sağlar.
 
+### Otomatik yönlendirme (yeni iş nereye düşer?)
+
+İş merkezi → Yönlendirme ekranında kurallar yukarıdan aşağı denenir; koşullarının tamamını sağlayan ilk kural uygulanır.
+
+- **Koşullar** (boş bırakılan aranmaz): iş tutarı alt/üst sınır, freelancer ücreti, marj oranı, başlangıca kalan süre, başlangıç → teslim süresi, toplam hizmet adedi, ajansın tamamlanmış iş sayısı (yeni ajans), iş tipi (katalog/özel), acil iş, yerinde/uzaktan, şehir, başlık/brief'te geçen kelime, ajansın vadesi geçmiş borcu, iş türü, içerdiği hizmet, belirli ajanslar.
+- **Sonuç:** *Onay bekle* (Aksiyon bekleyen), *Atamaya gönder* (onaysız yayın) veya *Ekibe ayır* (yayına açılır, freelancer'lar görmez).
+- Kural ayrıca görünürlüğü (kim görsün, dağıtım, en düşük seviye, öncelikli seviye/süre, uzmanlık ve şehir eşleşmesi) değiştirebilir, ekibe öncelikli bildirim gönderebilir ve iş sayfasında görünen bir not bırakabilir.
+- Hiçbir kurala uymayan katalog işleri için "onaysız atamaya gitsin" anahtarı geçerlidir. Özel teklif talepleri fiyat gerektirdiği için her zaman onaya düşer.
+- Hangi kuralın uygulandığı iş kaydına ve iş sayfasındaki "Sıradaki adım" kartına yazılır. Ekrandaki önizleme son 20 işin bugünkü kurallarla nereye düşeceğini gösterir. "Örnek kuralları ekle" ile hazır şablonlarla başlanabilir.
+
 ### Varsayılan kurallar
 
 Yeni girilen her işin görünürlük ve dağıtım kuralları (kim görsün, dağıtım, en düşük seviye, öncelikli seviye ve süresi, uzmanlık ve şehir eşleşmesi) Kurallar → "Yeni işlerde varsayılan görünürlük ve dağıtım" bölümünden belirlenir. Her işin kuralları sonradan iş sayfasındaki "Görünürlük ve dağıtım" kartından değiştirilebilir; "Varsayılanlara dön" ile ayarlardaki değerlere geri alınır. Hizmet kataloğunda daha yüksek seviye isteyen hizmetlerde o seviye geçerlidir.

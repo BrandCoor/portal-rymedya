@@ -54,8 +54,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             : (array_key_exists($_POST['category'] ?? '', JOB_CATEGORIES) ? $_POST['category'] : 'other');
         $price  = $mode === 'catalog' ? price_order($items, $rush) : null;
         $budget = $mode === 'custom' ? parse_money($_POST['budget'] ?? '') : 0;
-        $auto   = $mode === 'catalog' && platform_setting('platform_auto_publish') === '1';
         $policy = default_job_policy($items, $category, (bool)$is_remote);
+        // Otomatik yönlendirme kuralları: onaya mı düşsün, atamaya mı gitsin, kimler görsün
+        [$route, $policy, $rule] = routing_decide([
+            'source' => $mode, 'price' => $price['agency_price'] ?? $budget, 'fee' => $price['freelancer_fee'] ?? 0, 'rush' => $rush,
+            'start_date' => $start_date, 'deadline' => $deadline, 'items' => $items, 'category' => $category,
+            'is_remote' => $is_remote, 'city' => $city, 'agency_id' => $cid, 'title' => $title, 'description' => $description,
+        ], $policy);
+        $auto   = $route !== 'review';
         $code   = generate_job_code();
 
         $db->prepare("
@@ -78,12 +84,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         job_event($job_id, 'created', 'İş girildi: ' . $title, ['new' => ($mode === 'custom' ? 'Özel teklif talebi' : count($items) . ' hizmet kalemi') . ($rush ? ' · acil' : ''), 'amount' => $price['agency_price'] ?? null, 'visibility' => 'agency']);
 
         $company = $_SESSION['client_user']['company_name'] ?? '';
+        $rule_txt = $rule ? " · kural: {$rule['name']}" : '';
+        job_event($job_id, 'routing', $rule ? 'Kural uygulandı: ' . $rule['name'] : 'Kural eşleşmedi, genel ayar uygulandı',
+            ['new' => ROUTE_ACTIONS[$route][0] . ($rule && ($rule['note'] ?? '') !== '' ? ' · ' . $rule['note'] : ''), 'actor' => 'system', 'user_id' => null, 'visibility' => 'staff']);
+        if ($rule && !empty($rule['action']['notify'])) {
+            notify_staff("ÖNCELİKLİ · {$code} · {$title} ({$company}) · kural: {$rule['name']}" . (($rule['note'] ?? '') !== '' ? " — {$rule['note']}" : ''), $job_id);
+        }
         if ($auto) {
             job_publish($job_id);
-            notify_staff("Yeni iş yayına alındı: {$code} · {$title} ({$company}) · " . format_money($price['agency_price']) . ($rush ? ' · ACİL' : ''), $job_id);
+            notify_staff(($route === 'internal' ? 'Yeni iş ekibe ayrıldı: ' : 'Yeni iş yayına alındı: ') . "{$code} · {$title} ({$company}) · " . format_money($price['agency_price']) . ($rush ? ' · ACİL' : '') . $rule_txt, $job_id);
             set_flash('success', "İşiniz alındı ({$code}). Ekip ataması başladı.");
         } else {
-            notify_staff(($mode === 'custom' ? 'Özel teklif talebi: ' : 'Yeni iş onay bekliyor: ') . "{$code} · {$title} ({$company})" . ($rush ? ' · ACİL' : ''), $job_id);
+            notify_staff(($mode === 'custom' ? 'Özel teklif talebi: ' : 'Yeni iş onay bekliyor: ') . "{$code} · {$title} ({$company})" . ($rush ? ' · ACİL' : '') . $rule_txt, $job_id);
             set_flash('success', $mode === 'custom'
                 ? "Talebiniz alındı ({$code}). Ekibimiz fiyat teklifini kısa süre içinde paylaşacak."
                 : "İşiniz alındı ({$code}). Ekip onayının ardından üretime alınacak.");

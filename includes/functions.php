@@ -1236,6 +1236,7 @@ require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/platform.php';
 require_once __DIR__ . '/platform_flow.php';
+require_once __DIR__ . '/platform_routing.php';
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur
 run_migrations();

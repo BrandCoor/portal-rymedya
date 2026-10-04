@@ -556,6 +556,7 @@ $margin_pct = $margin !== null && (float)$job['agency_price'] > 0 ? $margin / (f
 $default_margin = (float)platform_setting('platform_default_margin');
 $location = (int)$job['is_remote'] === 1 ? 'Uzaktan' : trim(($job['location_city'] ?? '') . ((string)$job['location_detail'] !== '' ? ' · ' . $job['location_detail'] : ''));
 $lead = in_array($job['status'], ['submitted', 'quote_sent', 'open'], true) ? assess_lead_time($job['start_date'], $job['deadline'], $items) : null;
+$routing_ev = current(array_filter($changes, fn($e) => $e['event_type'] === 'routing')) ?: null;
 
 $steps = ['submitted' => 'İş'];
 if ($job['pricing_source'] === 'custom') $steps['quote_sent'] = 'Teklif';
@@ -621,6 +622,9 @@ require_once __DIR__ . '/../../includes/header.php';
             </div></div>
         <?php endif; ?>
 
+        <?php if ($routing_ev && in_array($job['status'], ['submitted', 'quote_sent', 'open'], true)): ?>
+            <div class="alert alert-info"><i data-lucide="route"></i><div class="small"><strong><?= e($routing_ev['field_label']) ?></strong><?= $routing_ev['new_value'] ? ' → ' . e($routing_ev['new_value']) : '' ?> <a class="link xsmall" href="<?= BASE_URL ?>/modules/platform/routing.php">Kurallar</a></div></div>
+        <?php endif; ?>
         <?php if (in_array($job['status'], ['submitted', 'quote_sent'], true)): ?>
             <?php if ($job['pricing_source'] === 'catalog' && $job['status'] === 'submitted'): ?>
                 <p class="small text-ink-2">Katalogdan iş; tutar katalogdan hesaplandı. Onayladığınızda görünürlük kurallarına göre havuza açılır.</p>

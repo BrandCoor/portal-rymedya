@@ -15,7 +15,6 @@ require_module_permission('platform.manage');
 // [tip, etiket, açıklama, (int için) min, max, birim]
 $sections = [
     'İş akışı' => [
-        'platform_auto_publish'      => ['bool', 'Katalogdan girilen işler onaysız yayına alınsın', 'Ajans katalogdan iş girdiğinde iş doğrudan havuza düşer. Kapalıyken her iş önce sizin onayınızı bekler. Özel talepler her durumda fiyat teklifi bekler.'],
         'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
         'platform_auto_invoice'      => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
         'platform_milestone_per_item' => ['bool', 'Katalog işlerinde her hizmet ayrı aşama olsun', 'Çekim, kurgu gibi kalemler ayrı ayrı teslim edilip onaylanır; onaylanan aşamanın hakedişi hemen kayda geçer. Kapalıyken iş tek aşamadır.'],
@@ -107,6 +106,17 @@ require_once __DIR__ . '/../../includes/header.php';
     </div>
     <?php if (can_access_module('platform.pricing')): ?><a href="<?= BASE_URL ?>/modules/platform/catalog.php" class="btn btn-secondary"><i data-lucide="tag"></i>Hizmet kataloğu</a><?php endif; ?>
 </div>
+
+<?php $rcount = count(array_filter(routing_rules(), fn($r) => !empty($r['enabled']))); ?>
+<section class="card" style="margin-bottom:24px">
+    <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:12px 20px;align-items:center;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+            <p class="small" style="font-weight:500">Yeni işler nereye düşsün? · Otomatik yönlendirme</p>
+            <p class="xsmall text-muted" style="margin-top:2px;max-width:560px">Tutar, acil durum, termin, iş türü, hizmet, ajans, şehir ve anahtar kelimeye göre işin "Aksiyon bekleyen"e mi, doğrudan "Atama"ya mı gideceğini ya da ekibe ayrılacağını belirleyin. <?= $rcount ?> aktif kural · kurala uymayan katalog işleri <?= platform_setting('platform_auto_publish') === '1' ? 'atamaya gider' : 'onay bekler' ?>.</p>
+        </div>
+        <a href="<?= BASE_URL ?>/modules/platform/routing.php" class="btn btn-primary btn-sm"><i data-lucide="route"></i>Yönlendirme kuralları</a>
+    </div>
+</section>
 
 <form method="POST" action="" class="stack-lg">
     <?= csrf_field() ?>

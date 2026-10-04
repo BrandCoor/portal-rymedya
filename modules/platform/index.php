@@ -111,6 +111,7 @@ $sql = "
     SELECT j.*, c.company_title AS agency_name, u.full_name AS assignee_name,
            (SELECT COUNT(*) FROM platform_applications a WHERE a.job_id = j.id AND a.status = 'pending') AS pending_apps,
            (SELECT COUNT(*) FROM platform_job_issues pi WHERE pi.job_id = j.id AND pi.status = 'open') AS open_issues,
+           (SELECT rc.field_label FROM platform_job_changes rc WHERE rc.job_id = j.id AND rc.event_type = 'routing' AND rc.field_label LIKE 'Kural uygulandı:%' ORDER BY rc.id DESC LIMIT 1) AS route_label,
            (SELECT COUNT(*) FROM platform_milestones pm WHERE pm.job_id = j.id AND pm.status IN ('open', 'in_review', 'revision', 'approved')) AS ms_count,
            (SELECT COUNT(*) FROM platform_milestones pm WHERE pm.job_id = j.id AND pm.status = 'approved') AS ms_done
     FROM platform_jobs j
@@ -155,6 +156,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <p class="sub">İşler, atamalar, kalite kontrol ve teslimler.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="<?= BASE_URL ?>/modules/platform/routing.php" class="btn btn-secondary"><i data-lucide="route"></i>Yönlendirme</a>
         <a href="<?= BASE_URL ?>/modules/platform/settings.php" class="btn btn-secondary"><i data-lucide="sliders-horizontal"></i>Kurallar</a>
         <button @click="openNew = true" class="btn btn-primary"><i data-lucide="plus"></i>Yeni iş</button>
     </div>
@@ -233,6 +235,7 @@ require_once __DIR__ . '/../../includes/header.php';
                             <span class="code-tag"><?= e($j['job_code']) ?></span>
                             <span><?= e(job_category_label($j['category'])) ?></span>
                             <?php if ((int)$j['is_rush'] === 1): ?><?= ui_badge('Acil', 'accent') ?><?php endif; ?>
+                            <?php if ($j['route_label'] && in_array($j['status'], ['submitted', 'quote_sent'], true)): ?><span class="xsmall text-muted" title="Otomatik yönlendirme"><?= e(mb_substr($j['route_label'], 17)) ?></span><?php endif; ?>
                             <?php if ($j['pricing_source'] === 'custom'): ?><?= ui_badge('Özel', 'neutral') ?><?php endif; ?>
                             <?php if ((int)$j['pending_apps'] > 0): ?><?= ui_badge($j['pending_apps'] . ' teklif', 'info') ?><?php endif; ?>
                             <?php if ((int)$j['open_issues'] > 0): ?><?= ui_badge('Sorun bildirildi', 'danger', true) ?><?php endif; ?>
