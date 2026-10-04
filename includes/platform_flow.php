@@ -70,6 +70,45 @@ const JOB_EVENT_TYPES = [
  * MIGRATION (v6)
  * ====================================================================
  */
+/**
+ * v8: yerinde (fiziki) işler teslim bağlantısı gerektirmez
+ */
+function run_platform_migrations_v8(): void {
+    global $db;
+    if (!column_exists('platform_milestones', 'needs_delivery')) {
+        $db->query("ALTER TABLE `platform_milestones` ADD COLUMN `needs_delivery` TINYINT(1) NOT NULL DEFAULT 1");
+    }
+    if (!column_exists('platform_jobs', 'raw_delivery')) {
+        $db->query("ALTER TABLE `platform_jobs` ADD COLUMN `raw_delivery` TINYINT(1) NOT NULL DEFAULT 0");
+    }
+    // Henüz teslim edilmemiş yerinde aşamalar (çekim, drone, fotoğraf) teslimsiz olur
+    foreach ($db->query("SELECT m.*, j.category AS job_category, j.raw_delivery FROM platform_milestones m JOIN platform_jobs j ON j.id = m.job_id WHERE m.status IN ('open', 'pending_freelancer', 'proposed') AND m.no_work = 0")->fetchAll() as $m) {
+        $st = $db->prepare("SELECT ji.*, ps.category FROM platform_job_items ji LEFT JOIN platform_services ps ON ps.id = ji.service_id WHERE ji.milestone_id = ?");
+        $st->execute([$m['id']]);
+        if (milestone_physical(['category' => $m['job_category'], 'raw_delivery' => $m['raw_delivery']], $st->fetchAll(), (int)$m['is_extra'] === 1)) {
+            $db->prepare("UPDATE platform_milestones SET needs_delivery = 0 WHERE id = ?")->execute([$m['id']]);
+        }
+    }
+}
+
+/**
+ * Aşama yerinde (fiziki) bir iş mi? Çekim, drone, fotoğraf gibi işler sahada
+ * yapılır; teslim bağlantısı istenmez, "yapıldı" olarak işaretlenir.
+ * Ajans ham dosya teslimi istediyse (raw_delivery) teslim gerekir.
+ */
+function milestone_physical(array $job, array $items, bool $is_extra = false): bool {
+    if ((int)($job['raw_delivery'] ?? 0) === 1) return false;
+    if ($items) {
+        foreach ($items as $it) {
+            if (!(JOB_CATEGORIES[$it['category'] ?? 'other']['onsite'] ?? false)) return false;
+        }
+        return true;
+    }
+    if ($is_extra) return false;
+    // Kalemsiz (özel talep) işler: yalnızca saf çekim türleri; komple prodüksiyon teslimlidir
+    return in_array($job['category'] ?? '', ['shooting', 'drone', 'photo'], true);
+}
+
 function run_platform_migrations_v6(): void {
     global $db;
     $add = function (string $table, string $column, string $ddl) use ($db) {
@@ -305,7 +344,7 @@ function milestones_create_default(int $job_id, bool $single = false): void {
     $fee = (float)$job['freelancer_fee'];
     $agency = (float)$job['agency_price'];
     $items = array_values(array_filter(job_items($job_id), fn($i) => ($i['status'] ?? 'active') === 'active'));
-    $ins = $db->prepare("INSERT INTO platform_milestones (job_id, seq, title, description, fee, agency_amount, due_date, status, created_by_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'system')");
+    $ins = $db->prepare("INSERT INTO platform_milestones (job_id, seq, title, description, fee, agency_amount, due_date, status, created_by_type, needs_delivery) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'system', ?)");
     if (!$single && $items && count($items) > 1 && platform_setting('platform_milestone_per_item') === '1') {
         $base_fee = array_sum(array_map(fn($i) => (float)$i['freelancer_unit_fee'] * (float)$i['quantity'], $items));
         $base_ag = array_sum(array_map(fn($i) => (float)$i['agency_unit_price'] * (float)$i['quantity'], $items));
@@ -321,11 +360,11 @@ function milestones_create_default(int $job_id, bool $single = false): void {
             $sum_fee += $mf; $sum_ag += $ma;
             $onsite = JOB_CATEGORIES[$it['category'] ?? 'other']['onsite'] ?? false;
             $due = $onsite && $job['start_date'] ? $job['start_date'] : $job['deadline'];
-            $ins->execute([$job_id, $n + 1, $it['name'] . ((float)$it['quantity'] != 1 ? ' × ' . qty_label((float)$it['quantity']) : ''), null, $mf, $ma, $due]);
+            $ins->execute([$job_id, $n + 1, $it['name'] . ((float)$it['quantity'] != 1 ? ' × ' . qty_label((float)$it['quantity']) : ''), null, $mf, $ma, $due, milestone_physical($job, [$it]) ? 0 : 1]);
             $db->prepare("UPDATE platform_job_items SET milestone_id = ? WHERE id = ?")->execute([(int)$db->lastInsertId(), $it['id']]);
         }
     } else {
-        $ins->execute([$job_id, 1, count($items) === 1 ? ($items[0]['name'] . ((float)$items[0]['quantity'] != 1 ? ' × ' . qty_label((float)$items[0]['quantity']) : '')) : 'İşin tamamı', null, $fee, $agency, $job['deadline']]);
+        $ins->execute([$job_id, 1, count($items) === 1 ? ($items[0]['name'] . ((float)$items[0]['quantity'] != 1 ? ' × ' . qty_label((float)$items[0]['quantity']) : '')) : 'İşin tamamı', null, $fee, $agency, milestone_physical($job, $items) && $job['start_date'] ? $job['start_date'] : $job['deadline'], milestone_physical($job, $items) ? 0 : 1]);
         $mid = (int)$db->lastInsertId();
         $db->prepare("UPDATE platform_job_items SET milestone_id = ? WHERE job_id = ? AND milestone_id IS NULL")->execute([$mid, $job_id]);
     }
@@ -368,9 +407,9 @@ function milestones_sync(int $job_id): void {
 /**
  * Teslim yapılacak sıradaki aşama
  */
-function milestone_next(int $job_id): ?array {
+function milestone_next(int $job_id, bool $delivery_only = false): ?array {
     global $db;
-    $st = $db->prepare("SELECT * FROM platform_milestones WHERE job_id = ? AND status IN ('open', 'revision') AND no_work = 0 ORDER BY status = 'revision' DESC, seq, id LIMIT 1");
+    $st = $db->prepare("SELECT * FROM platform_milestones WHERE job_id = ? AND status IN ('open', 'revision') AND no_work = 0" . ($delivery_only ? " AND needs_delivery = 1" : "") . " ORDER BY status = 'revision' DESC, seq, id LIMIT 1");
     $st->execute([$job_id]);
     return $st->fetch() ?: null;
 }
@@ -399,7 +438,8 @@ function milestone_approve(array $job, array $m, string $by = 'agency', ?int $ra
     $db->prepare("UPDATE platform_deliveries SET status = 'approved', reviewed_at = NOW() WHERE job_id = ? AND milestone_id = ? AND status = 'sent'")->execute([$job_id, $m['id']]);
     $fl = $job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id']) ? (int)$job['assigned_user_id'] : null;
     $db->prepare("UPDATE platform_milestones SET status = 'approved', approved_at = NOW(), freelancer_user_id = ? WHERE id = ?")->execute([$fl, $m['id']]);
-    $label = $by === 'system' ? 'Aşama otomatik onaylandı: ' . $m['title'] : 'Aşama onaylandı: ' . $m['title'];
+    $label = ['system' => 'Aşama otomatik onaylandı: ', 'onsite' => 'Yerinde iş tamamlandı: '][$by] ?? 'Aşama onaylandı: ';
+    $label .= $m['title'];
     $opt = ['milestone_id' => (int)$m['id'], 'amount' => (float)$m['fee'], 'visibility' => milestone_internal($m) ? 'freelancer' : 'all'];
     if ($by === 'system') $opt += ['actor' => 'system', 'user_id' => null];
     job_event($job_id, $by === 'system' ? 'auto_approved' : 'milestone_approved', $label, $opt);
@@ -410,13 +450,69 @@ function milestone_approve(array $job, array $m, string $by = 'agency', ?int $ra
         job_complete(get_job($job_id), $rating, $review);
         return true;
     }
-    // Sıradaki aşama
-    $db->prepare("UPDATE platform_jobs SET status = 'in_progress', delivered_at = NULL WHERE id = ?")->execute([$job_id]);
+    // Sıradaki aşama: başka bir aşama incelemede/revizyondaysa iş o durumda kalır
+    $other = $db->query("SELECT status FROM platform_milestones WHERE job_id = {$job_id} AND id != " . (int)$m['id'] . " AND status IN ('in_review', 'revision')")->fetchAll(PDO::FETCH_COLUMN);
+    $cur = $db->query("SELECT status FROM platform_jobs WHERE id = {$job_id}")->fetchColumn();
+    if (in_array('in_review', $other, true) && in_array($cur, ['qa_review', 'delivered'], true)) {
+        // durum korunur
+    } elseif (in_array('revision', $other, true)) {
+        $db->prepare("UPDATE platform_jobs SET status = 'revision', delivered_at = NULL WHERE id = ?")->execute([$job_id]);
+    } else {
+        $db->prepare("UPDATE platform_jobs SET status = 'in_progress', delivered_at = NULL WHERE id = ?")->execute([$job_id]);
+    }
     $next = milestone_next($job_id);
     if ($fl) {
         notify_user($fl, "{$job['job_code']} · \"{$m['title']}\" onaylandı" . ((float)$m['fee'] > 0 ? ', hakedişiniz (' . format_money((float)$m['fee']) . ') kayda geçti' : '') . ($next ? ". Sıradaki aşama: {$next['title']}" : '.'), "/platform/job.php?id={$job_id}", $job_id);
     }
     return false;
+}
+
+/**
+ * Yerinde (fiziki) aşamayı "yapıldı" olarak işaretler — teslim bağlantısı istenmez.
+ * Onay şekli ayardan gelir (platform_onsite_confirm):
+ *   auto   → bildirildiği anda onaylanır, hakediş kayda geçer, ajansa bilgi gider
+ *   staff  → ekip onaylar (kalite kontrol listesine düşer)
+ *   agency → ajans "yapıldığını" onaylar (otomatik onay süresi geçerli)
+ * Ekip kendisi işaretlerse doğrudan onaylanır.
+ * Döner: 'approved' | 'staff' | 'agency' | hata metni
+ */
+function milestone_mark_done(array $job, array $m, string $by_type, ?int $user_id, string $note = ''): string {
+    global $db;
+    $job_id = (int)$job['id'];
+    if ((int)$m['job_id'] !== $job_id || (int)$m['needs_delivery'] !== 0 || !in_array($m['status'], ['open', 'revision'], true)) {
+        return 'Bu aşama yerinde iş olarak işaretlenemez.';
+    }
+    $day = milestone_work_day($job, $m);
+    if ($by_type !== 'staff' && $day && $day > date('Y-m-d')) {
+        return 'Yerinde iş ' . format_date($day) . ' tarihinden itibaren tamamlandı olarak işaretlenebilir.';
+    }
+    $mode = $by_type === 'staff' ? 'auto' : platform_setting('platform_onsite_confirm');
+    job_event($job_id, 'milestone', 'Yerinde iş yapıldı bildirildi: ' . $m['title'], ['new' => $note !== '' ? $note : null, 'milestone_id' => (int)$m['id'], 'visibility' => milestone_internal($m) ? 'freelancer' : 'all']);
+    if ($mode === 'staff' || $mode === 'agency') {
+        $status = $mode === 'staff' ? 'qa' : 'sent';
+        $db->prepare("INSERT INTO platform_deliveries (job_id, milestone_id, submitted_by_user_id, submitted_by_type, url, note, status, created_at) VALUES (?, ?, ?, ?, '', ?, ?, NOW())")
+           ->execute([$job_id, $m['id'], $user_id, $by_type, $note, $status]);
+        $db->prepare("UPDATE platform_milestones SET status = 'in_review' WHERE id = ?")->execute([$m['id']]);
+        $db->prepare("UPDATE platform_jobs SET status = ?, delivered_at = ?, first_delivered_at = COALESCE(first_delivered_at, NOW()) WHERE id = ?")
+           ->execute([$mode === 'staff' ? 'qa_review' : 'delivered', $mode === 'staff' ? null : date('Y-m-d H:i:s'), $job_id]);
+        if ($mode === 'staff') {
+            notify_staff("{$job['job_code']} · \"{$m['title']}\" yapıldı olarak bildirildi; onayınızı bekliyor.", $job_id);
+        } else {
+            notify_contact_users($job['agency_contact_id'], "{$job['job_code']} · \"{$m['title']}\" tamamlandı. Yapıldığını onaylayın.", "/platform/job.php?id={$job_id}", $job_id);
+        }
+        return $mode;
+    }
+    $db->prepare("UPDATE platform_jobs SET first_delivered_at = COALESCE(first_delivered_at, NOW()) WHERE id = ?")->execute([$job_id]);
+    milestone_approve($job, $m, 'onsite');
+    if (!milestone_internal($m)) {
+        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} · \"{$m['title']}\" tamamlandı. Bir sorun varsa iş sayfasından bildirebilirsiniz.", "/platform/job.php?id={$job_id}", $job_id);
+    }
+    return 'approved';
+}
+
+/** Yerinde işin yapılacağı gün (başlangıç / çekim günü, yoksa aşama hedefi) */
+function milestone_work_day(array $job, array $m): ?string {
+    return $job['start_date'] ?: ($m['due_date'] ?: null);
 }
 
 /**
@@ -462,15 +558,16 @@ function extra_add_from_catalog(array $job, array $items, string $note = ''): ?i
 /**
  * $origin: 'agency' (ajans ekledi, ajans onayı gerekmez) | 'staff' (ajans onayı gerekir) | 'staff_internal' (ajansa yansımaz)
  */
-function extra_create(array $job, string $title, string $note, float $agency_amount, float $fee, ?string $due, string $origin, array $items = [], bool $no_work = false): int {
+function extra_create(array $job, string $title, string $note, float $agency_amount, float $fee, ?string $due, string $origin, array $items = [], bool $no_work = false, ?bool $physical = null): int {
     global $db;
     $job_id = (int)$job['id'];
     $seq = (int)$db->query("SELECT COALESCE(MAX(seq), 0) + 1 FROM platform_milestones WHERE job_id = {$job_id}")->fetchColumn();
     $has_fl = $job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id']);
     $status = $origin === 'staff' && $agency_amount > 0 ? 'proposed' : ($has_fl && !$no_work ? 'pending_freelancer' : 'open');
     [$actor, $uid] = job_event_actor();
-    $db->prepare("INSERT INTO platform_milestones (job_id, seq, title, description, fee, agency_amount, due_date, status, is_extra, no_work, created_by_type, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)")
-       ->execute([$job_id, $seq, $title, $note !== '' ? $note : null, round($fee, 2), round($agency_amount, 2), $due, $status, $no_work ? 1 : 0, $actor, $uid]);
+    $physical ??= $items ? milestone_physical($job, array_map(fn($i) => $i + ['category' => $i['category'] ?? 'other'], $items)) : false;
+    $db->prepare("INSERT INTO platform_milestones (job_id, seq, title, description, fee, agency_amount, due_date, status, is_extra, no_work, created_by_type, created_by_user_id, needs_delivery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)")
+       ->execute([$job_id, $seq, $title, $note !== '' ? $note : null, round($fee, 2), round($agency_amount, 2), $due, $status, $no_work ? 1 : 0, $actor, $uid, $physical || $no_work ? 0 : 1]);
     $mid = (int)$db->lastInsertId();
     if ($items) {
         $ins = $db->prepare("INSERT INTO platform_job_items (job_id, service_id, name, unit, quantity, agency_unit_price, freelancer_unit_fee, milestone_id, is_extra, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)");

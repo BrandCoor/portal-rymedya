@@ -264,7 +264,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!is_safe_url($url)) {
             $done('Geçerli bir teslim bağlantısı girin.', 'error');
         }
-        job_submit_delivery($job, $url, trim($_POST['note'] ?? ''), 'staff', $staff_id, (int)($_POST['milestone_id'] ?? 0) ?: null);
+        if (!job_submit_delivery($job, $url, trim($_POST['note'] ?? ''), 'staff', $staff_id, (int)($_POST['milestone_id'] ?? 0) ?: null)) {
+            $done('Teslim bağlantısı gerektiren açık aşama yok; yerinde işleri aşamalar kartından "Yapıldı" ile kapatın.', 'error', '#asamalar');
+        }
         $done('Teslimat ajansa gönderildi.');
     }
     if ($action === 'force_complete' && in_array($job['status'], ['delivered', 'qa_review', 'in_progress', 'revision'], true)) {
@@ -338,9 +340,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $title = mb_substr(trim((string)($r['title'] ?? '')), 0, 190) ?: $m['title'];
             $fee = parse_money((string)($r['fee'] ?? $m['fee']));
             $due = valid_date((string)($r['due_date'] ?? '')) ?: $m['due_date'];
-            if ($title !== $m['title'] || abs($fee - (float)$m['fee']) > 0.009 || (string)$due !== (string)$m['due_date']) {
-                $db->prepare("UPDATE platform_milestones SET title = ?, fee = ?, due_date = ? WHERE id = ?")->execute([$title, $fee, $due, $mid]);
+            $nd = $m['status'] === 'open' && isset($r['nd_shown']) ? (!empty($r['needs_delivery']) ? 1 : 0) : (int)$m['needs_delivery'];
+            if ($title !== $m['title'] || abs($fee - (float)$m['fee']) > 0.009 || (string)$due !== (string)$m['due_date'] || $nd !== (int)$m['needs_delivery']) {
+                $db->prepare("UPDATE platform_milestones SET title = ?, fee = ?, due_date = ?, needs_delivery = ? WHERE id = ?")->execute([$title, $fee, $due, $nd, $mid]);
                 $diff = [];
+                if ($nd !== (int)$m['needs_delivery']) $diff[] = $nd ? 'teslim bağlantısı gerekir' : 'yerinde iş (teslim yok)';
                 if ($title !== $m['title']) $diff[] = "ad: {$title}";
                 if (abs($fee - (float)$m['fee']) > 0.009) $diff[] = 'ücret: ' . format_money((float)$m['fee']) . ' → ' . format_money($fee);
                 if ((string)$due !== (string)$m['due_date']) $diff[] = 'termin: ' . format_date($due);
@@ -381,6 +385,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $done($closed ? 'Son aşama onaylandı; iş tamamlandı.' : 'Aşama onaylandı; hakediş kayda geçti.', 'success', '#asamalar');
     }
 
+    if ($action === 'milestone_done' && in_array($job['status'], ['assigned', 'in_progress', 'revision'], true)) {
+        $m = get_milestone((int)($_POST['milestone_id'] ?? 0));
+        $r = $m ? milestone_mark_done($job, $m, 'staff', $staff_id, trim($_POST['note'] ?? '')) : 'Aşama bulunamadı.';
+        $done($r === 'approved' ? "\"{$m['title']}\" yapıldı olarak kapatıldı; hakediş kayda geçti." : $r, $r === 'approved' ? 'success' : 'error', '#asamalar');
+    }
+
     // ---------- Ek kalem ----------
     if ($action === 'extra_propose' && !in_array($job['status'], ['completed', 'cancelled', 'submitted', 'quote_sent'], true)) {
         $mode  = $_POST['mode'] ?? 'agency';
@@ -398,7 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $done('Freelancer ücreti ajans tutarından yüksek olamaz.', 'error', '#asamalar');
         }
         extra_create($job, $title, $note, $ag, $fee, valid_date($_POST['due_date'] ?? '') ?: $job['deadline'],
-                     $mode === 'agency' ? 'staff' : 'staff_internal', [], $mode === 'bonus');
+                     $mode === 'agency' ? 'staff' : 'staff_internal', [], $mode === 'bonus', !empty($_POST['physical']));
         $done(['agency' => 'Ek kalem ajansın onayına gönderildi.', 'internal' => 'İç ek kalem eklendi.', 'bonus' => 'Prim eklendi; hakediş kaydı oluştu.'][$mode] ?? 'Eklendi.', 'success', '#asamalar');
     }
     if ($action === 'extra_cancel') {
@@ -700,7 +710,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <p class="small text-ink-2">İş ekibinizde.<?php if ($job['internal_project_id']): ?> <a class="link" href="<?= BASE_URL ?>/modules/projects/detail.php?id=<?= (int)$job['internal_project_id'] ?>">ERP projesine git</a><?php endif; ?></p>
                 <form method="POST" action="" class="stack-sm"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="staff_deliver">
-                    <?php $deliverable = array_values(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'revision'], true) && (int)$m['no_work'] === 0)); if (count($deliverable) > 1): ?>
+                    <?php $deliverable = array_values(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'revision'], true) && (int)$m['no_work'] === 0 && (int)$m['needs_delivery'] === 1)); if (count($deliverable) > 1): ?>
                     <select class="select" name="milestone_id"><?php foreach ($deliverable as $dm): ?><option value="<?= (int)$dm['id'] ?>" <?= $next_ms && (int)$next_ms['id'] === (int)$dm['id'] ? 'selected' : '' ?>><?= (int)$dm['seq'] ?>. <?= e($dm['title']) ?></option><?php endforeach; ?></select>
                     <?php endif; ?>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -730,7 +740,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <?php if ($dm): ?><p class="small">Aşama: <strong><?= e($dm['title']) ?></strong><?= $ms_totals['count'] > 1 ? ' · ' . (int)$dm['seq'] . '/' . $ms_totals['count'] : '' ?></p><?php endif; ?>
                 <div class="panel" style="padding:14px">
                     <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
-                        <a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i data-lucide="external-link"></i>Teslimatı aç</a>
+                        <?php if ((string)$d['url'] === ''): ?><span class="small" style="font-weight:500"><i data-lucide="map-pin-check" style="width:14px;height:14px;vertical-align:-2px"></i> Yerinde iş yapıldı bildirildi</span><?php else: ?><a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i data-lucide="external-link"></i>Teslimatı aç</a><?php endif; ?>
                         <span class="xsmall text-muted"><?= e($job['assignee_name'] ?? '') ?> · <?= format_date($d['created_at'], true) ?></span>
                     </div>
                     <?php if ($d['note']): ?><p class="small prose-text" style="margin-top:10px"><?= e($d['note']) ?></p><?php endif; ?>
@@ -739,7 +749,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <input type="hidden" name="delivery_id" value="<?= (int)$d['id'] ?>">
                     <textarea class="textarea" name="feedback" rows="2" placeholder="Not (onayda isteğe bağlı, düzeltmede zorunlu)"></textarea>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary" name="action" value="qa_approve"><i data-lucide="check"></i>Onayla, ajansa ilet</button>
+                        <button class="btn btn-primary" name="action" value="qa_approve"><i data-lucide="check"></i><?= $dm && (int)$dm['needs_delivery'] === 0 ? 'Onayla (hakediş kayda geçer)' : 'Onayla, ajansa ilet' ?></button>
                         <button class="btn btn-secondary" name="action" value="qa_reject">Düzeltme iste</button>
                     </div>
                     <p class="xsmall text-muted">Kalite kontrolden ilk seferde geçme, freelancer puanının %20'sidir.</p>
@@ -815,7 +825,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <?php foreach ($milestones as $m): ?>
                     <tr style="<?= $m['status'] === 'cancelled' ? 'opacity:.5' : '' ?>">
                         <td><div style="font-weight:500"><?= (int)$m['seq'] ?>. <?= e($m['title']) ?></div>
-                            <div class="xsmall text-muted"><?= (int)$m['is_extra'] === 1 ? ((int)$m['no_work'] === 1 ? 'Prim' : ((float)$m['agency_amount'] > 0 ? 'Ek kalem' : 'İç ek kalem')) . ' · ' . e(JOB_CHANGE_ACTORS[$m['created_by_type']] ?? $m['created_by_type']) : 'Ana kapsam' ?><?= $m['description'] ? ' · ' . e($m['description']) : '' ?></div></td>
+                            <div class="xsmall text-muted"><?= (int)$m['is_extra'] === 1 ? ((int)$m['no_work'] === 1 ? 'Prim' : ((float)$m['agency_amount'] > 0 ? 'Ek kalem' : 'İç ek kalem')) . ' · ' . e(JOB_CHANGE_ACTORS[$m['created_by_type']] ?? $m['created_by_type']) : 'Ana kapsam' ?><?= (int)$m['needs_delivery'] === 0 && (int)$m['no_work'] === 0 ? ' · yerinde iş, teslim yok' : '' ?><?= $m['description'] ? ' · ' . e($m['description']) : '' ?></div></td>
                         <td><?= milestone_badge($m['status']) ?></td>
                         <td class="small"><?= $m['due_date'] ? format_date($m['due_date']) : '—' ?><?php if ($m['due_date'] && in_array($m['status'], ['open', 'revision'], true) && $m['due_date'] < date('Y-m-d')): ?> <?= ui_badge('Gecikti', 'danger') ?><?php endif; ?></td>
                         <td class="r num"><?= (float)$m['agency_amount'] > 0 ? format_money((float)$m['agency_amount']) : '—' ?></td>
@@ -823,6 +833,9 @@ require_once __DIR__ . '/../../includes/header.php';
                         <td class="r" style="white-space:nowrap">
                             <?php if ((int)$m['is_extra'] === 1 && in_array($m['status'], ['proposed', 'pending_freelancer', 'open'], true) && $ms_edit): ?>
                                 <form method="POST" action="" style="display:inline" onsubmit="return confirm('Ek kalem iptal edilsin mi? Tutarlar işten düşülür.');"><?= csrf_field() ?><input type="hidden" name="action" value="extra_cancel"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>"><button class="btn btn-ghost btn-sm">İptal</button></form>
+                            <?php endif; ?>
+                            <?php if ((int)$m['needs_delivery'] === 0 && (int)$m['no_work'] === 0 && in_array($m['status'], ['open', 'revision'], true) && in_array($job['status'], ['assigned', 'in_progress', 'revision'], true)): ?>
+                                <form method="POST" action="" style="display:inline" onsubmit="return confirm('Yerinde iş yapıldı olarak kapatılsın mı? Hakediş kayda geçer.');"><?= csrf_field() ?><input type="hidden" name="action" value="milestone_done"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>"><button class="btn btn-secondary btn-sm">Yapıldı</button></form>
                             <?php endif; ?>
                             <?php if ($m['status'] === 'in_review' && $job['status'] === 'delivered'): ?>
                                 <form method="POST" action="" style="display:inline" onsubmit="return confirm('Aşama ajans adına onaylansın mı?');"><?= csrf_field() ?><input type="hidden" name="action" value="milestone_approve"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>"><button class="btn btn-secondary btn-sm">Onayla</button></form>
@@ -842,7 +855,10 @@ require_once __DIR__ . '/../../includes/header.php';
             <p class="xsmall text-muted">Açık aşamaların adı, ücreti ve hedef tarihi düzenlenebilir; freelancer ücreti aşama toplamına eşitlenir. Onaylanan aşamalar sabittir. Değişiklikler iş kaydına yazılır ve atanan freelancer'a bildirilir.</p>
             <?php foreach ($milestones as $m): if (!in_array($m['status'], ['open', 'revision', 'in_review'], true)) continue; ?>
                 <div class="grid grid-cols-1 sm:grid-cols-12 gap-2" style="align-items:center">
-                    <input class="input sm:col-span-6" name="ms[<?= (int)$m['id'] ?>][title]" value="<?= e($m['title']) ?>">
+                    <div class="sm:col-span-6" style="display:flex;flex-direction:column;gap:4px">
+                        <input class="input" name="ms[<?= (int)$m['id'] ?>][title]" value="<?= e($m['title']) ?>">
+                        <?php if ($m['status'] === 'open' && (int)$m['no_work'] === 0): ?><input type="hidden" name="ms[<?= (int)$m['id'] ?>][nd_shown]" value="1"><label class="check xsmall"><input type="checkbox" name="ms[<?= (int)$m['id'] ?>][needs_delivery]" value="1" <?= (int)$m['needs_delivery'] === 1 ? 'checked' : '' ?>>Teslim bağlantısı gerekir <span class="text-faint">(kapalıysa yerinde iş: "yapıldı" ile tamamlanır)</span></label><?php endif; ?>
+                    </div>
                     <input class="input sm:col-span-2" type="number" step="0.01" min="0" name="ms[<?= (int)$m['id'] ?>][fee]" value="<?= e(number_format((float)$m['fee'], 2, '.', '')) ?>">
                     <input class="input sm:col-span-3" type="date" name="ms[<?= (int)$m['id'] ?>][due_date]" value="<?= e($m['due_date'] ?? '') ?>">
                     <label class="check xsmall sm:col-span-1" title="Kaldır"><?php if ($m['status'] === 'open'): ?><input type="checkbox" name="ms[<?= (int)$m['id'] ?>][delete]" value="1">Sil<?php endif; ?></label>
@@ -869,6 +885,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <div class="field"><label class="label">Freelancer ücreti</label><input class="input" type="number" step="0.01" min="0" name="fee"><span class="hint" x-show="mode === 'agency'">Atanmış freelancer yoksa veya ekip yapacaksa boş bırakın.</span></div>
                 <div class="field" x-show="mode !== 'bonus'"><label class="label">Hedef tarih</label><input class="input" type="date" name="due_date" value="<?= e($job['deadline']) ?>"></div>
                 <div class="field sm:col-span-2"><label class="label">Açıklama</label><input class="input" name="note" placeholder="Ajansa / freelancer'a görünür not"></div>
+                <label class="check small sm:col-span-2" x-show="mode !== 'bonus'"><input type="checkbox" name="physical" value="1">Yerinde iş (ek çekim günü gibi) — teslim bağlantısı istenmez, "yapıldı" ile tamamlanır</label>
             </div>
             <p class="xsmall text-muted" x-show="mode === 'agency'">Ajans onaylarsa iş tutarına eklenir; ardından atanan freelancer kabul eder.</p>
             <p class="xsmall text-muted" x-show="mode === 'internal'">Ajans görmez; atanan freelancer kabul ederse ücretine eklenir.</p>
@@ -1009,7 +1026,7 @@ require_once __DIR__ . '/../../includes/header.php';
             <?php foreach ($deliveries as $i => $d): ?>
             <div class="card-pad-sm" style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
                 <div style="flex:1;min-width:200px">
-                    <a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="small link" style="font-weight:500">Sürüm <?= count($deliveries) - $i ?></a>
+                    <?php if ((string)$d['url'] === ''): ?><span class="small" style="font-weight:500">Yerinde iş yapıldı bildirimi</span><?php else: ?><a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="small link" style="font-weight:500">Sürüm <?= count($deliveries) - $i ?></a><?php endif; ?>
                     <span class="xsmall text-muted"> · <?= $d['submitted_by_type'] === 'staff' ? 'Ekip' : 'Freelancer' ?> · <?= format_date($d['created_at'], true) ?></span>
                     <?php if ($d['note']): ?><p class="small prose-text" style="margin-top:4px"><?= e($d['note']) ?></p><?php endif; ?>
                     <?php if ($d['feedback']): ?><p class="small" style="margin-top:4px;color:var(--warning)">Geri bildirim: <?= e($d['feedback']) ?></p><?php endif; ?>

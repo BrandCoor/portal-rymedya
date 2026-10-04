@@ -259,9 +259,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $back('error', 'Geçerli bir teslim bağlantısı girin (https://...).', '#teslim');
                 }
                 $mid = (int)($_POST['milestone_id'] ?? 0) ?: null;
-                job_submit_delivery($job, $url, trim($_POST['note'] ?? ''), 'freelancer', $uid, $mid);
+                if (!job_submit_delivery($job, $url, trim($_POST['note'] ?? ''), 'freelancer', $uid, $mid)) {
+                    $back('error', 'Teslim bağlantısı gerektiren açık aşama yok. Yerinde işleri "Yapıldı" ile bildirin.');
+                }
                 notify_staff("{$job['job_code']} teslim edildi ({$me_name})" . (platform_setting('platform_qa_required') === '1' ? ', kalite kontrol bekliyor.' : ', ajansa iletildi.'), $job_id);
                 $back('success', 'Teslimatınız gönderildi.');
+            }
+            if ($action === 'mark_done' && in_array($job['status'], ['in_progress', 'revision'], true)) {
+                $m = get_milestone((int)($_POST['milestone_id'] ?? 0));
+                if (!$m) {
+                    $back('error', 'Aşama bulunamadı.');
+                }
+                $r = milestone_mark_done($job, $m, 'freelancer', $uid, trim($_POST['note'] ?? ''));
+                $msg = ['approved' => "\"{$m['title']}\" tamamlandı; hakedişiniz kayda geçti.", 'staff' => "\"{$m['title']}\" bildirildi; ekip onayından sonra hakedişiniz kayda geçer.", 'agency' => "\"{$m['title']}\" bildirildi; müşteri onayından sonra hakedişiniz kayda geçer."];
+                $back(isset($msg[$r]) ? 'success' : 'error', $msg[$r] ?? $r);
             }
             if (in_array($action, ['extra_accept', 'extra_decline'], true)) {
                 $m = get_milestone((int)($_POST['milestone_id'] ?? 0));
@@ -326,18 +337,29 @@ $sent_delivery = job_deliveries($job_id, ['sent']);
 $review_ms = $sent_delivery && $sent_delivery[0]['milestone_id'] ? get_milestone((int)$sent_delivery[0]['milestone_id']) : null;
 $open_left = count(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'in_review', 'revision'], true)));
 $is_final_review = $review_ms ? $open_left <= 1 : true;
-$deliverable_ms = array_values(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'revision'], true) && (int)$m['no_work'] === 0));
+$deliverable_ms = array_values(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'revision'], true) && (int)$m['no_work'] === 0 && (int)$m['needs_delivery'] === 1));
+// Yerinde (fiziki) işler: teslim bağlantısı yok, "yapıldı" olarak işaretlenir
+$physical_ms = array_values(array_filter($milestones, fn($m) => in_array($m['status'], ['open', 'revision'], true) && (int)$m['no_work'] === 0 && (int)$m['needs_delivery'] === 0));
+$review_physical = $sent_delivery && (string)$sent_delivery[0]['url'] === '';
 
-// Akış adımları
+// Akış adımları (yalnızca yerinde işlerden oluşan işte teslim/onay adımları gösterilmez)
+$live_ms = array_filter($milestones, fn($m) => in_array($m['status'], MILESTONE_LIVE, true) && (int)$m['no_work'] === 0);
+$only_onsite = $live_ms && !array_filter($live_ms, fn($m) => (int)$m['needs_delivery'] === 1);
+$onsite_mode = platform_setting('platform_onsite_confirm');
 if ($role === 'agency') {
     $steps = ['submitted' => 'İş'];
     if ($job['pricing_source'] === 'custom') {
         $steps['quote_sent'] = 'Teklif';
     }
-    $steps += ['open' => 'Ekip ataması', 'in_progress' => 'Üretim', 'delivered' => 'Teslim', 'completed' => 'Tamamlandı'];
+    $steps += ['open' => 'Ekip ataması', 'in_progress' => $only_onsite ? 'Çekim / yerinde iş' : 'Üretim'];
+    if (!$only_onsite || $onsite_mode === 'agency') $steps['delivered'] = $only_onsite ? 'Onayınız' : 'Teslim';
+    $steps['completed'] = 'Tamamlandı';
     $map = ['assigned' => 'in_progress', 'qa_review' => 'in_progress', 'revision' => 'in_progress'];
 } else {
-    $steps = ['assigned' => 'Atandı', 'in_progress' => 'Üretim', 'qa_review' => 'Kalite kontrol', 'delivered' => 'Müşteri onayı', 'completed' => 'Tamamlandı'];
+    $steps = ['assigned' => 'Atandı', 'in_progress' => $only_onsite ? 'Çekim / yerinde iş' : 'Üretim'];
+    if (!$only_onsite || $onsite_mode === 'staff') $steps['qa_review'] = $only_onsite ? 'Ekip onayı' : 'Kalite kontrol';
+    if (!$only_onsite || $onsite_mode === 'agency') $steps['delivered'] = 'Müşteri onayı';
+    $steps['completed'] = 'Tamamlandı';
     $map = ['revision' => 'in_progress', 'open' => null];
 }
 $cur_key   = array_key_exists($job['status'], $map) ? $map[$job['status']] : $job['status'];
@@ -438,17 +460,17 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
         <section class="card card-emphasis" x-data="{ mode: null, rating: 0, hover: 0 }">
             <div class="card-pad">
                 <p class="eyebrow">Onayınız bekleniyor<?= count($milestones) > 1 && $review_ms ? ' · Aşama ' . (int)$review_ms['seq'] . ' / ' . $ms_totals['count'] : '' ?></p>
-                <h2 class="h2" style="margin-top:6px"><?= $review_ms && count($milestones) > 1 ? e($review_ms['title']) . ' teslim edildi' : 'İşiniz teslim edildi' ?></h2>
-                <p class="small text-muted" style="margin-top:6px"><?= $is_final_review ? 'Teslim bağlantısını inceleyin. Onayladığınızda iş kapanır ve faturanız düzenlenir.' : 'Bu aşamayı onayladığınızda ekip sıradaki aşamaya geçer.' ?>
+                <h2 class="h2" style="margin-top:6px"><?= $review_ms && count($milestones) > 1 ? e($review_ms['title']) . ($review_physical ? ' tamamlandı' : ' teslim edildi') : ($review_physical ? 'Yerinde iş tamamlandı' : 'İşiniz teslim edildi') ?></h2>
+                <p class="small text-muted" style="margin-top:6px"><?= $review_physical ? 'Ekip işin sahada yapıldığını bildirdi. Doğruysa onaylayın; bir sorun varsa "Sorun bildir" ile iletin.' : ($is_final_review ? 'Teslim bağlantısını inceleyin. Onayladığınızda iş kapanır ve faturanız düzenlenir.' : 'Bu aşamayı onayladığınızda ekip sıradaki aşamaya geçer.') ?>
                     <?php if ((int)platform_setting('platform_auto_approve_days') > 0): ?><span class="xsmall">Teslimden itibaren <?= (int)platform_setting('platform_auto_approve_days') ?> gün içinde yanıt verilmezse otomatik onaylanır.</span><?php endif; ?></p>
                 <?php if ($sent_delivery): ?>
-                    <a href="<?= e($sent_delivery[0]['url']) ?>" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-top:14px"><i data-lucide="external-link"></i>Teslimatı aç</a>
+                    <?php if (!$review_physical): ?><a href="<?= e($sent_delivery[0]['url']) ?>" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-top:14px"><i data-lucide="external-link"></i>Teslimatı aç</a><?php endif; ?>
                     <?php if (!empty($sent_delivery[0]['note'])): ?><p class="small prose-text" style="margin-top:10px"><?= e($sent_delivery[0]['note']) ?></p><?php endif; ?>
                 <?php endif; ?>
                 <div class="hairline" style="margin:18px 0"></div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button type="button" class="btn btn-primary" @click="mode = 'approve'"><i data-lucide="check"></i><?= $is_final_review ? 'Onayla ve kapat' : 'Aşamayı onayla' ?></button>
-                    <button type="button" class="btn btn-secondary" @click="mode = 'revision'">Revizyon iste <span class="text-muted num" style="margin-left:4px"><?= (int)$job['revision_count'] ?>/<?= $free_revs ?></span></button>
+                    <button type="button" class="btn btn-primary" @click="mode = 'approve'"><i data-lucide="check"></i><?= $review_physical ? ($is_final_review ? 'Yapıldı, işi kapat' : 'Yapıldığını onayla') : ($is_final_review ? 'Onayla ve kapat' : 'Aşamayı onayla') ?></button>
+                    <?php if (!$review_physical): ?><button type="button" class="btn btn-secondary" @click="mode = 'revision'">Revizyon iste <span class="text-muted num" style="margin-left:4px"><?= (int)$job['revision_count'] ?>/<?= $free_revs ?></span></button><?php endif; ?>
                 </div>
                 <?php if ((int)$job['revision_count'] >= $free_revs): ?>
                     <p class="xsmall text-muted" style="margin-top:10px">Ücretsiz revizyon hakkınız doldu; ek revizyonlar ayrıca fiyatlandırılabilir.</p>
@@ -637,6 +659,27 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                 <div class="prose-text" style="margin-top:4px;color:inherit"><?= e($fb[0]['feedback'] ?? '') ?></div>
             </div></div>
         <?php endif; ?>
+        <?php foreach ($physical_ms as $pm): $wday = milestone_work_day($job, $pm); $ready = !$wday || $wday <= date('Y-m-d'); ?>
+        <section class="card card-emphasis" x-data="{ open: false }"><div class="card-pad">
+            <p class="eyebrow">Yerinde iş<?= $ms_totals['count'] > 1 ? ' · Aşama ' . (int)$pm['seq'] . ' / ' . $ms_totals['count'] : '' ?></p>
+            <h2 class="h2" style="margin-top:6px"><?= e($pm['title']) ?></h2>
+            <p class="small text-muted" style="margin-top:6px"><?= $wday ? 'Çekim / iş günü: <strong>' . format_date($wday) . '</strong>' . ($job['location_city'] ? ' · ' . e($job['location_city']) . ($job['location_detail'] ? ', ' . e($job['location_detail']) : '') : '') . '. ' : '' ?>Teslim bağlantısı gerekmez; iş bittiğinde "Yapıldı" deyin.</p>
+            <?php if ($ready): ?>
+                <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+                    <form method="POST" action=""><?= csrf_field() ?><input type="hidden" name="action" value="mark_done"><input type="hidden" name="milestone_id" value="<?= (int)$pm['id'] ?>"><button class="btn btn-primary"><i data-lucide="check"></i>Yapıldı</button></form>
+                    <button type="button" class="btn btn-ghost" @click="open = !open">Not ekleyerek bildir</button>
+                </div>
+                <form x-show="open" x-cloak method="POST" action="" class="stack-sm" style="margin-top:12px"><?= csrf_field() ?>
+                    <input type="hidden" name="action" value="mark_done"><input type="hidden" name="milestone_id" value="<?= (int)$pm['id'] ?>">
+                    <textarea name="note" rows="2" class="textarea" placeholder="ör. Çekim 18:00'de bitti, kartlar ekibe teslim edildi"></textarea>
+                    <div><button class="btn btn-primary btn-sm">Yapıldı olarak bildir</button></div>
+                </form>
+            <?php else: ?>
+                <p class="xsmall text-muted" style="margin-top:12px"><i data-lucide="calendar-clock" style="width:13px;height:13px;vertical-align:-2px"></i> İş gününden itibaren "Yapıldı" olarak işaretleyebilirsiniz.</p>
+            <?php endif; ?>
+        </div></section>
+        <?php endforeach; ?>
+        <?php if ($deliverable_ms || !$physical_ms): ?>
         <section class="card card-emphasis" id="teslim" x-data="{ release: false }"><div class="card-pad">
             <?php $nx = $deliverable_ms[0] ?? null; ?>
             <p class="eyebrow"><?= $job['status'] === 'revision' ? 'Revize teslim' : 'Teslim' ?><?= $nx && $ms_totals['count'] > 1 ? ' · Aşama ' . (int)$nx['seq'] . ' / ' . $ms_totals['count'] : '' ?></p>
@@ -678,11 +721,12 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
             </form>
             <?php endif; ?>
         </div></section>
+        <?php endif; ?>
 
     <?php elseif ($is_assignee && in_array($job['status'], ['qa_review', 'delivered'], true)): ?>
         <div class="alert alert-info"><i data-lucide="eye"></i><div>
             <strong><?= e(job_status_label($job['status'], 'freelancer')) ?>.</strong>
-            <?= $job['status'] === 'qa_review' ? 'Ekibimiz teslimatınızı kontrol ediyor. Onaylanırsa müşteriye iletilir.' : 'Teslimatınız müşteriye iletildi; onay bekleniyor.' ?>
+            <?= $job['status'] === 'qa_review' ? 'Ekibimiz bildiriminizi kontrol ediyor.' : 'Müşteri onayı bekleniyor.' ?>
         </div></div>
 
     <?php elseif ($is_assignee && $job['status'] === 'completed'): ?>
@@ -717,7 +761,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
             <div class="card-pad-sm" style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;<?= $m['status'] === 'cancelled' ? 'opacity:.5' : '' ?>">
                 <span class="badge badge-square" style="flex-shrink:0;<?= $m['status'] === 'approved' ? 'background:var(--success-soft);color:var(--success)' : '' ?>"><?php $ms_no++; ?><?= $m['status'] === 'approved' ? '✓' : $ms_no ?></span>
                 <div style="flex:1;min-width:200px">
-                    <p style="font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><?= e($m['title']) ?> <?= milestone_badge($m['status'], $role) ?><?php if ((int)$m['is_extra'] === 1): ?><?= ui_badge('Ek kalem', 'accent') ?><?php endif; ?></p>
+                    <p style="font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><?= e($m['title']) ?> <?= milestone_badge($m['status'], $role) ?><?php if ((int)$m['is_extra'] === 1): ?><?= ui_badge('Ek kalem', 'accent') ?><?php endif; ?><?php if ((int)$m['needs_delivery'] === 0 && (int)$m['no_work'] === 0): ?><?= ui_badge('Yerinde · teslim yok', 'neutral') ?><?php endif; ?></p>
                     <p class="xsmall text-muted" style="margin-top:2px"><?= $m['due_date'] ? 'Hedef ' . format_date($m['due_date']) : '' ?><?= $m['approved_at'] ? ' · onay ' . format_date($m['approved_at']) : '' ?><?= $m['description'] ? ' · ' . e($m['description']) : '' ?></p>
                     <?php if ($role === 'agency' && $m['status'] === 'proposed'): ?>
                         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap" x-data="{ no: false }">
@@ -807,7 +851,11 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
             <?php foreach ($deliveries as $i => $d): ?>
             <div class="card-pad-sm">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+                    <?php if ((string)$d['url'] === ''): ?>
+                        <span class="small" style="display:inline-flex;gap:6px;align-items:center;font-weight:500"><i data-lucide="map-pin-check" style="width:14px;height:14px"></i>Yerinde iş yapıldı bildirimi</span>
+                    <?php else: ?>
                     <a href="<?= e($d['url']) ?>" target="_blank" rel="noopener" class="small link" style="display:inline-flex;gap:6px;align-items:center;font-weight:500"><i data-lucide="external-link" style="width:14px;height:14px"></i>Sürüm <?= count($deliveries) - $i ?></a>
+                    <?php endif; ?>
                     <?= delivery_status_badge($d['status'], $role) ?>
                 </div>
                 <?php if (!empty($d['note'])): ?><p class="small prose-text" style="margin-top:6px"><?= e($d['note']) ?></p><?php endif; ?>

@@ -68,6 +68,17 @@ Gizlilik kuralları:
 - Ekip aşama adını, ücretini ve hedef tarihini düzenleyebilir, aşama ekleyip silebilir; freelancer ücreti aşama toplamına eşitlenir, ajans fiyatı değişmez.
 - Ajans X gün içinde onay ya da revizyon vermezse aşama otomatik onaylanır (Kurallar → "Teslim otomatik onay süresi", 0 = kapalı).
 
+### 2.1.1 Yerinde işler (çekim, drone, fotoğraf)
+
+Sahada yapılan işlerde teslim bağlantısı istenmez:
+
+- Çekim gibi aşamalar "Yerinde · teslim yok" olarak açılır; freelancer çekim gününden itibaren **Yapıldı** der (isterse not ekler).
+- Onay şekli Kurallar → "Yerinde işler nasıl tamamlansın?" ayarından: *freelancer bildirince onaylansın* (varsayılan; ajansa bilgi gider, sorun varsa "Sorun bildir"), *ekip onaylasın* veya *ajans onaylasın*.
+- Kurgu, renk, ses, motion gibi işler her zaman bağlantıyla teslim edilir ve kalite kontrol / ajans onayından geçer.
+- Ajans iş girerken "Ham görüntü / dosya teslimi istiyorum" işaretlerse çekim aşaması da bağlantıyla teslim edilir.
+- Ekip bir aşamayı aşamalar kartından "Teslim bağlantısı gerekir" anahtarıyla değiştirebilir ve yerinde aşamayı "Yapıldı" ile kendisi kapatabilir. Ek kalem eklerken "Yerinde iş" işaretlenebilir.
+- Yalnızca yerinde işten oluşan işlerde kalite kontrol ve teslim adımları akıştan çıkar.
+
 ### 2.2 Ek kalemler ve prim
 
 | Kim ekler | Ajans görür mü | Akış |

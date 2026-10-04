@@ -17,6 +17,7 @@ $sections = [
     'İş akışı' => [
         'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
         'platform_auto_invoice'      => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
+        'platform_onsite_confirm'    => ['choice', 'Yerinde işler (çekim vb.) nasıl tamamlansın?', 'Çekim, drone, fotoğraf gibi sahada yapılan işler teslim bağlantısı istemez; freelancer "Yapıldı" der. Ajans ham görüntü teslimi istediyse bağlantıyla teslim edilir.', ['auto' => 'Freelancer bildirince onaylansın', 'staff' => 'Ekip onaylasın', 'agency' => 'Ajans onaylasın']],
         'platform_milestone_per_item' => ['bool', 'Katalog işlerinde her hizmet ayrı aşama olsun', 'Çekim, kurgu gibi kalemler ayrı ayrı teslim edilip onaylanır; onaylanan aşamanın hakedişi hemen kayda geçer. Kapalıyken iş tek aşamadır.'],
         'platform_auto_approve_days' => ['int', 'Teslim otomatik onay süresi', 'Ajans teslimi bu süre içinde onaylamaz veya revizyon istemezse aşama otomatik onaylanır. 0 ise kapalı.', 0, 60, 'gün'],
         'platform_max_revisions'     => ['int', 'Ücretsiz revizyon hakkı', 'Ajansa gösterilir; aşıldığında ek ücret uyarısı çıkar.', 0, 20, 'adet'],

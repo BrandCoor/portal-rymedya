@@ -87,6 +87,7 @@ const PLATFORM_DEFAULTS = [
     'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
     'platform_default_margin'        => '25',
     // Yeni işlerin varsayılan görünürlük / dağıtım kuralları (iş sayfasından tek tek değiştirilebilir)
+    'platform_onsite_confirm'        => 'auto', // Yerinde işin "yapıldı" onayı: auto | staff | agency
     'platform_default_visibility'    => 'pool',
     'platform_default_dispatch'      => 'first_come',
     'platform_default_min_tier'      => 'standard',
@@ -1271,11 +1272,15 @@ function job_unassign(int $job_id, string $by = 'staff', string $reason = ''): v
 /**
  * Teslim: sıradaki (veya seçilen) aşama için. Kalite kontrol açıksa önce ekibe düşer.
  */
-function job_submit_delivery(array $job, string $url, string $note, string $by_type, ?int $user_id, ?int $milestone_id = null): void {
+function job_submit_delivery(array $job, string $url, string $note, string $by_type, ?int $user_id, ?int $milestone_id = null): bool {
     global $db;
-    $m = $milestone_id ? get_milestone($milestone_id) : milestone_next((int)$job['id']);
-    if ($m && ((int)$m['job_id'] !== (int)$job['id'] || !in_array($m['status'], ['open', 'revision'], true))) {
-        $m = milestone_next((int)$job['id']);
+    $m = $milestone_id ? get_milestone($milestone_id) : milestone_next((int)$job['id'], true);
+    if ($m && ((int)$m['job_id'] !== (int)$job['id'] || !in_array($m['status'], ['open', 'revision'], true) || (int)$m['needs_delivery'] !== 1)) {
+        $m = milestone_next((int)$job['id'], true);
+    }
+    // Aşamalı işte teslim edilecek (bağlantılı) aşama kalmadıysa teslim alınmaz; yerinde işler "yapıldı" ile kapanır
+    if (!$m && job_milestones((int)$job['id'])) {
+        return false;
     }
     $qa = $by_type === 'freelancer' && (platform_setting('platform_qa_required') === '1' || ($m && milestone_internal($m)));
     $db->prepare("INSERT INTO platform_deliveries (job_id, milestone_id, submitted_by_user_id, submitted_by_type, url, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())")
@@ -1290,6 +1295,7 @@ function job_submit_delivery(array $job, string $url, string $note, string $by_t
     if (!$qa) {
         notify_contact_users($job['agency_contact_id'], "{$job['job_code']} · \"{$title}\" teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }
+    return true;
 }
 
 function job_qa_decision(array $job, int $delivery_id, bool $approve, string $feedback = ''): void {
@@ -1299,8 +1305,8 @@ function job_qa_decision(array $job, int $delivery_id, bool $approve, string $fe
     $d = $d->fetch();
     $m = $d && $d['milestone_id'] ? get_milestone((int)$d['milestone_id']) : null;
     $title = $m['title'] ?? 'Teslim';
-    if ($approve && $m && milestone_internal($m)) {
-        // Ajansa yansımayan iç ek iş: ekip onayı yeterli
+    if ($approve && $m && (milestone_internal($m) || (int)$m['needs_delivery'] === 0)) {
+        // Ajansa yansımayan iç ek iş veya yerinde iş: ekip onayı yeterli
         $db->prepare("UPDATE platform_deliveries SET status = 'sent', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback ?: null, $delivery_id, $job['id']]);
         job_event((int)$job['id'], 'qa_approved', 'Kalite kontrolden geçti: ' . $title, ['new' => $feedback !== '' ? $feedback : null, 'milestone_id' => (int)$m['id'], 'visibility' => 'freelancer']);
         milestone_approve($job, $m, 'staff');
