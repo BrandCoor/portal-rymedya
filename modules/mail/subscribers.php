@@ -184,7 +184,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
     <?php endif; ?>
 </div>
-<p class="xsmall text-muted" style="margin-top:12px">Ticari elektronik ileti (kampanya, tanıtım) göndermek için alıcının onayı gerekir ve gönderici olarak İYS'ye kayıt yükümlülüğü olabilir. Bilgilendirme amaçlı e-postalar (sipariş, fatura, duyuru) bu kapsamda değildir. Kampanya gönderirken "yalnızca ticari izni olanlar" seçeneğini kullanın.</p>
+<p class="xsmall text-muted" style="margin-top:12px">Ticari elektronik ileti (kampanya, tanıtım) göndermek için alıcının onayı gerekir ve gönderici olarak İYS'ye kayıt yükümlülüğü olabilir. Bilgilendirme amaçlı e-postalar (iş, fatura, duyuru) bu kapsamda değildir. Kampanya gönderirken "yalnızca ticari izni olanlar" seçeneğini kullanın.</p>
 
 <!-- ABONE EKLE -->
 <div x-show="add" x-cloak class="modal-backdrop" @keydown.escape.window="add = false">

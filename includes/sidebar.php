@@ -21,8 +21,23 @@ function nav_link(string $href, string $icon, string $label, string|array $match
 $platform_pending = 0;
 if (can_access_module('platform.manage')) {
     try {
-        $platform_pending = (int)$db->query("SELECT (SELECT COUNT(*) FROM platform_jobs WHERE status IN ('submitted', 'qa_review')) + (SELECT COUNT(*) FROM freelancer_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM agency_profiles WHERE status = 'pending')")->fetchColumn();
+        $platform_pending = (int)$db->query("SELECT (SELECT COUNT(*) FROM platform_jobs WHERE status IN ('submitted', 'qa_review')) + (SELECT COUNT(*) FROM freelancer_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM agency_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM platform_job_issues WHERE status = 'open')")->fetchColumn();
     } catch (Throwable $e) {
+    }
+    // İş akışı otomasyonları (saatte en fazla bir kez, yanıt gönderildikten sonra)
+    if ((int)get_setting('platform_automation_last_run', '0') < time() - 3600) {
+        register_shutdown_function(function () {
+            if (function_exists('fastcgi_finish_request')) {
+                while (ob_get_level() > 0) { @ob_end_flush(); }
+                @fastcgi_finish_request();
+            }
+            ignore_user_abort(true);
+            try {
+                platform_run_automations();
+            } catch (Throwable $e) {
+                error_log('Platform otomasyonu: ' . $e->getMessage());
+            }
+        });
     }
 }
 ?>

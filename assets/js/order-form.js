@@ -1,5 +1,5 @@
 /**
- * Sipariş formu: canlı tutar ve termin (aynı gün / acil iş) değerlendirmesi.
+ * İş formu: canlı tutar ve termin (aynı gün / acil iş) değerlendirmesi.
  * Sunucudaki assess_lead_time() ve price_order() kurallarının aynısıdır;
  * nihai kontrol her zaman sunucuda yapılır.
  *
@@ -53,7 +53,7 @@ function orderForm(cfg) {
             if (ref < today) { this.lead = { level: 'block', message: what + ' tarihi geçmiş bir gün olamaz.' }; return; }
             if (ref === today && this.rules.sameDay) { this.lead = { level: 'block', message: 'Aynı gün başlayan işler kabul edilmiyor. Lütfen daha ileri bir tarih seçin.' }; return; }
             if (hours < block) {
-                this.lead = { level: 'block', message: block > this.rules.block ? 'Seçtiğiniz hizmetler için en az ' + block + ' saat önceden sipariş gerekir.' : 'İşler en az ' + block + ' saat önceden girilmelidir.' };
+                this.lead = { level: 'block', message: block > this.rules.block ? 'Seçtiğiniz hizmetler için en az ' + block + ' saat önceden iş girişi gerekir.' : 'İşler en az ' + block + ' saat önceden girilmelidir.' };
                 return;
             }
             if (hours < warn) {

@@ -29,14 +29,14 @@ if ($profile['status'] !== 'approved'): ?>
             <h1 class="h1" style="margin-top:14px">Başvurunuz alındı</h1>
             <p class="text-muted" style="margin-top:8px">
                 <?= $role === 'agency'
-                    ? 'Ajans hesabınız platform ekibi tarafından onaylandığında sipariş verebileceksiniz. Bu genellikle bir iş günü içinde tamamlanır.'
+                    ? 'Ajans hesabınız platform ekibi tarafından onaylandığında iş girebileceksiniz. Bu genellikle bir iş günü içinde tamamlanır.'
                     : 'Profiliniz değerlendiriliyor. Onaylandığınızda uzmanlık alanınıza ve şehrinize uygun işler iş havuzunuzda görünecek.' ?>
             </p>
             <div class="hairline" style="margin:24px 0"></div>
             <ol class="stack-sm small text-ink-2" style="list-style:none;padding:0">
                 <li style="display:flex;gap:10px"><span class="badge tone-success badge-square">1</span>Hesap oluşturuldu</li>
                 <li style="display:flex;gap:10px"><span class="badge tone-warning badge-square">2</span>Ekip incelemesi</li>
-                <li style="display:flex;gap:10px"><span class="badge badge-square">3</span><?= $role === 'agency' ? 'İlk siparişinizi verin' : 'İlk işinizi alın' ?></li>
+                <li style="display:flex;gap:10px"><span class="badge badge-square">3</span><?= $role === 'agency' ? 'İlk işinizi girin' : 'İlk işinizi alın' ?></li>
             </ol>
             <div style="margin-top:24px;display:flex;gap:8px">
                 <a href="<?= BASE_URL ?>/platform/profile.php" class="btn btn-primary">Profili tamamla</a>
@@ -62,14 +62,14 @@ if ($role === 'agency'):
     <div class="page-head">
         <div>
             <h1 class="h1">Merhaba <?= e($first) ?></h1>
-            <p class="sub">Siparişlerinizin güncel durumu.</p>
+            <p class="sub">İşlerinizin güncel durumu.</p>
         </div>
-        <a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent btn-lg"><i data-lucide="plus"></i>Yeni sipariş</a>
+        <a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent btn-lg"><i data-lucide="plus"></i>Yeni iş</a>
     </div>
 
     <div class="card" style="margin-bottom:24px">
         <div class="kpi-grid">
-            <div class="kpi"><div class="kpi-label">Devam eden</div><div class="kpi-value"><?= count($active) ?></div><div class="kpi-meta">aktif sipariş</div></div>
+            <div class="kpi"><div class="kpi-label">Devam eden</div><div class="kpi-value"><?= count($active) ?></div><div class="kpi-meta">aktif iş</div></div>
             <div class="kpi"><div class="kpi-label">Onayınızı bekleyen</div><div class="kpi-value" style="<?= $waiting ? 'color:var(--accent)' : '' ?>"><?= count($waiting) ?></div><div class="kpi-meta">teslimat veya fiyat</div></div>
             <div class="kpi"><div class="kpi-label">Bu yıl harcama</div><div class="kpi-value"><?= format_money($year_spend) ?></div><div class="kpi-meta"><?= count($completed) ?> tamamlanan iş</div></div>
             <div class="kpi"><div class="kpi-label">Açık bakiye</div><div class="kpi-value"><?= format_money(max(0, $balance)) ?></div><div class="kpi-meta"><a class="link" href="<?= BASE_URL ?>/modules/contacts/statement_print.php" target="_blank">Ekstreyi görüntüle</a></div></div>
@@ -87,11 +87,11 @@ if ($role === 'agency'):
 
     <section>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h2 class="h2">Devam eden siparişler</h2>
+            <h2 class="h2">Devam eden işler</h2>
             <a href="<?= BASE_URL ?>/platform/jobs.php?f=all" class="small link">Tümü</a>
         </div>
         <?php if (!$active): ?>
-            <div class="card"><?= ui_empty('Aktif siparişiniz yok', 'Hizmet kataloğundan seçim yaparak dakikalar içinde sipariş verebilirsiniz.', 'clapperboard', '<a href="' . BASE_URL . '/platform/job_new.php" class="btn btn-primary"><i data-lucide="plus"></i>Sipariş oluştur</a>') ?></div>
+            <div class="card"><?= ui_empty('Aktif işiniz yok', 'Hizmet kataloğundan seçim yaparak dakikalar içinde iş girebilirsiniz.', 'clapperboard', '<a href="' . BASE_URL . '/platform/job_new.php" class="btn btn-primary"><i data-lucide="plus"></i>İş gir</a>') ?></div>
         <?php else: ?>
             <div class="stack-sm"><?php foreach ($active as $j) if (!in_array($j['status'], ['quote_sent', 'delivered'], true)) platform_job_row($j, 'agency'); ?></div>
         <?php endif; ?>

@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new = $action === 'approve' ? 'approved' : 'suspended';
         $db->prepare("UPDATE agency_profiles SET status = ? WHERE user_id = ?")->execute([$new, $uid]);
         if ($new === 'approved') {
-            notify_user($uid, 'Ajans hesabınız onaylandı. Hizmet kataloğundan sipariş verebilirsiniz.', '/platform/job_new.php');
+            notify_user($uid, 'Ajans hesabınız onaylandı. Hizmet kataloğundan iş girebilirsiniz.', '/platform/job_new.php');
         }
         log_activity('platform', "Ajans {$a['company_title']}: " . ($new === 'approved' ? 'onaylandı' : 'askıya alındı'), 'agency', $uid, '/modules/platform/agencies.php');
         set_flash('success', "{$a['company_title']} " . ($new === 'approved' ? 'onaylandı.' : 'askıya alındı.'));
@@ -76,7 +76,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <div>
         <div class="crumb"><a href="<?= BASE_URL ?>/modules/platform/index.php">İş merkezi</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Ajanslar</span></div>
         <h1 class="h1">Ajanslar</h1>
-        <p class="sub">Platformdan sipariş veren ajanslar. Onaylanmayan ajans sipariş veremez.</p>
+        <p class="sub">Platformdan iş giren ajanslar. Onaylanmayan ajans iş giremez.</p>
     </div>
 </div>
 
@@ -101,7 +101,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <p class="xsmall text-muted" style="margin-top:2px"><?= e($a['authorized_person'] ?? '') ?> · <?= e($a['email'] ?? '') ?> · <?= e($a['phone'] ?? '') ?><?= $a['city'] ? ' · ' . e($a['city']) : '' ?></p>
             </div>
             <div style="display:flex;gap:22px;text-align:right" class="small">
-                <div><p class="xsmall text-muted">Sipariş</p><p class="num"><?= (int)$a['job_count'] ?><?= (int)$a['active_count'] ? ' <span class="text-muted">(' . (int)$a['active_count'] . ' aktif)</span>' : '' ?></p></div>
+                <div><p class="xsmall text-muted">İş</p><p class="num"><?= (int)$a['job_count'] ?><?= (int)$a['active_count'] ? ' <span class="text-muted">(' . (int)$a['active_count'] . ' aktif)</span>' : '' ?></p></div>
                 <div><p class="xsmall text-muted">Ciro</p><p class="money"><?= format_money((float)$a['revenue']) ?></p></div>
                 <div><p class="xsmall text-muted">Bakiye</p><p class="num" style="<?= (float)$a['balance'] > 0 ? 'color:var(--warning)' : '' ?>"><?= format_money((float)$a['balance']) ?></p></div>
                 <div><p class="xsmall text-muted">Verdiği puan</p><p class="num"><?= $a['avg_rating_given'] !== null ? number_format((float)$a['avg_rating_given'], 1, ',', '') : '—' ?></p></div>
@@ -110,13 +110,13 @@ require_once __DIR__ . '/../../includes/header.php';
                 <?php if ($a['status'] !== 'approved'): ?>
                     <form method="POST" action=""><?= csrf_field() ?><input type="hidden" name="action" value="approve"><input type="hidden" name="user_id" value="<?= (int)$a['user_id'] ?>"><input type="hidden" name="back_status" value="<?= e($status) ?>"><button class="btn btn-primary btn-sm">Onayla</button></form>
                 <?php else: ?>
-                    <form method="POST" action="" onsubmit="return confirm('Ajans askıya alınsın mı? Oturumu kapatılır ve sipariş veremez.');"><?= csrf_field() ?><input type="hidden" name="action" value="suspend"><input type="hidden" name="user_id" value="<?= (int)$a['user_id'] ?>"><input type="hidden" name="back_status" value="<?= e($status) ?>"><button class="btn btn-secondary btn-sm">Askıya al</button></form>
+                    <form method="POST" action="" onsubmit="return confirm('Ajans askıya alınsın mı? Oturumu kapatılır ve iş giremez.');"><?= csrf_field() ?><input type="hidden" name="action" value="suspend"><input type="hidden" name="user_id" value="<?= (int)$a['user_id'] ?>"><input type="hidden" name="back_status" value="<?= e($status) ?>"><button class="btn btn-secondary btn-sm">Askıya al</button></form>
                 <?php endif; ?>
                 <button type="button" class="icon-btn" @click="more = !more" aria-label="Detay"><i data-lucide="more-horizontal"></i></button>
             </div>
         </div>
         <div x-show="more" x-cloak class="card-foot stack">
-            <p class="xsmall text-muted">Kayıt <?= format_date($a['user_created']) ?> · son giriş <?= $a['last_login'] ? time_ago($a['last_login']) : '—' ?> · son sipariş <?= $a['last_order'] ? format_date($a['last_order']) : '—' ?><?= $a['website'] ? ' · ' . e($a['website']) : '' ?></p>
+            <p class="xsmall text-muted">Kayıt <?= format_date($a['user_created']) ?> · son giriş <?= $a['last_login'] ? time_ago($a['last_login']) : '—' ?> · son iş <?= $a['last_order'] ? format_date($a['last_order']) : '—' ?><?= $a['website'] ? ' · ' . e($a['website']) : '' ?></p>
             <form method="POST" action="" style="display:flex;gap:8px;align-items:flex-end"><?= csrf_field() ?>
                 <input type="hidden" name="action" value="notes"><input type="hidden" name="user_id" value="<?= (int)$a['user_id'] ?>">
                 <textarea class="textarea" name="admin_notes" rows="2" placeholder="İç not (ajans görmez)" style="flex:1"><?= e($a['admin_notes'] ?? '') ?></textarea>

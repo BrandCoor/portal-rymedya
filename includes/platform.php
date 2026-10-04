@@ -5,11 +5,11 @@
  * ====================================================================
  * Roller
  *   Platform yöneticisi : RY Medya personeli (platform.manage)
- *   Ajans               : katalogdan sipariş verir veya özel teklif ister
+ *   Ajans               : katalogdan iş girer veya özel teklif ister
  *   Freelancer          : görünür kılınan işleri alır / teklif verir, teslim eder
  *
- * Sipariş akışı (katalog)
- *   Ajans hizmetleri seçer → fiyat anında hesaplanır → sipariş verir
+ * İş akışı (katalog)
+ *   Ajans hizmetleri seçer → fiyat anında hesaplanır → iş girer
  *   → (otomatik yayın veya yönetici onayı) → havuz → atama → üretim
  *   → kalite kontrol → teslim → ajans onayı → kapanış (fatura + hakediş)
  *
@@ -83,10 +83,10 @@ const PLATFORM_DEFAULTS = [
     'platform_show_agency_name'      => '0',
     'platform_qa_required'           => '1',
     'platform_auto_invoice'          => '1',
-    'platform_auto_publish'          => '1',  // Katalog siparişleri yönetici onayı beklemeden havuza düşsün
+    'platform_auto_publish'          => '1',  // Katalogdan girilen işler yönetici onayı beklemeden havuza düşsün
     'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
     'platform_default_margin'        => '25',
-    'platform_default_priority_tier' => '',   // Yeni siparişlerde öncelikli seviye (boş = yok)
+    'platform_default_priority_tier' => '',   // Yeni işlerde öncelikli seviye (boş = yok)
     'platform_default_priority_hours'=> '0',
     'platform_max_revisions'         => '2',
     'platform_freelancer_vat'        => '0',
@@ -102,6 +102,8 @@ const PLATFORM_DEFAULTS = [
     'platform_limit_gold'            => '3',
     'platform_limit_elite'           => '5',
     'platform_tier_downgrade'        => '1',  // Kurallar sağlanmazsa seviye düşebilir
+    'platform_milestone_per_item'    => '1',  // Katalog işinde her hizmet kalemi ayrı aşama
+    'platform_auto_approve_days'     => '7',  // Ajans bu kadar gün yanıtlamazsa teslim otomatik onaylanır (0 = kapalı)
     'platform_catalog_reviewed'      => '0',
 ];
 
@@ -288,7 +290,7 @@ function run_platform_migrations(): void {
 
 /**
  * ====================================================================
- * MIGRATION (v4) - katalog, sipariş kalemleri, değişiklik günlüğü,
+ * MIGRATION (v4) - katalog, iş kalemleri, değişiklik günlüğü,
  * performans metrikleri, yazışma başlıkları
  * ====================================================================
  */
@@ -577,7 +579,7 @@ function job_items(int $job_id): array {
 }
 
 /**
- * Siparişin baskın kategorisi (en yüksek tutarlı kalem)
+ * İşin baskın kategorisi (en yüksek tutarlı kalem)
  */
 function dominant_category(array $items, string $fallback = 'other'): string {
     $best = null;
@@ -636,7 +638,7 @@ function assess_lead_time(?string $start_date, ?string $deadline, array $items =
     }
     if ($hours < $rules['block_hours']) {
         $why = $rules['service_min'] >= $rules['block_hours'] && $rules['service_min'] > (int)platform_setting('platform_min_lead_hours')
-            ? 'Seçtiğiniz hizmetler için en az ' . $rules['block_hours'] . ' saat önceden sipariş gerekir.'
+            ? 'Seçtiğiniz hizmetler için en az ' . $rules['block_hours'] . ' saat önceden iş girişi gerekir.'
             : 'İşler en az ' . $rules['block_hours'] . ' saat önceden girilmelidir.';
         return array_merge($base, ['level' => 'block', 'message' => $why]);
     }
@@ -725,16 +727,15 @@ function job_deliveries(int $job_id, ?array $statuses = null): array {
 }
 
 function job_changes(int $job_id, int $limit = 50): array {
-    global $db;
-    $st = $db->prepare("SELECT c.*, u.full_name FROM platform_job_changes c LEFT JOIN users u ON u.id = c.user_id WHERE c.job_id = ? ORDER BY c.id DESC LIMIT " . (int)$limit);
-    $st->execute([$job_id]);
-    return $st->fetchAll();
+    return job_events($job_id, 'staff', $limit);
 }
 
+/**
+ * Alan değişikliği kaydı (iş kaydına "Değişiklik" olarak yazılır)
+ */
 function log_job_change(int $job_id, string $actor, ?int $user_id, string $label, $old, $new): void {
-    global $db;
-    $db->prepare("INSERT INTO platform_job_changes (job_id, user_id, actor, field_label, old_value, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
-       ->execute([$job_id, $user_id, $actor, $label, $old === null ? null : (string)$old, $new === null ? null : (string)$new]);
+    $vis = in_array($label, JOB_CHANGE_PRICE_LABELS, true) ? 'agency' : (in_array($label, ['Freelancer ücreti', 'Atama'], true) ? 'freelancer' : (in_array($label, ['Görünürlük politikası'], true) ? 'staff' : 'all'));
+    job_event($job_id, 'change', $label, ['actor' => $actor, 'user_id' => $user_id, 'old' => $old === null ? null : (string)$old, 'new' => $new === null ? null : (string)$new, 'visibility' => $vis]);
 }
 
 const DELIVERY_STATUSES = [
@@ -758,7 +759,7 @@ const JOB_CHANGE_ACTORS = ['agency' => 'Ajans', 'staff' => 'Platform ekibi', 'fr
 /**
  * Fiyat içeren değişiklik satırları freelancer'a gösterilmez
  */
-const JOB_CHANGE_PRICE_LABELS = ['Sipariş tutarı', 'Ajans fiyatı', 'Acil iş farkı'];
+const JOB_CHANGE_PRICE_LABELS = ['İş tutarı', 'Sipariş tutarı', 'Ajans fiyatı', 'Acil iş farkı'];
 
 /**
  * Freelancer'a ilişkin satırlar (kimin atandığı, hakediş, dağıtım politikası) ajansa gösterilmez
@@ -766,31 +767,7 @@ const JOB_CHANGE_PRICE_LABELS = ['Sipariş tutarı', 'Ajans fiyatı', 'Acil iş 
 const JOB_CHANGE_INTERNAL_LABELS = ['Freelancer ücreti', 'Atama', 'Görünürlük politikası'];
 
 function render_job_changes(array $changes, string $perspective = 'staff'): string {
-    if (!$changes) {
-        return '<p class="small text-muted">Kayıtlı değişiklik yok.</p>';
-    }
-    $out = '<div class="timeline">';
-    $shown = 0;
-    foreach ($changes as $c) {
-        if ($perspective === 'freelancer' && in_array($c['field_label'], array_merge(JOB_CHANGE_PRICE_LABELS, ['Görünürlük politikası']), true)) {
-            continue;
-        }
-        if ($perspective === 'agency' && in_array($c['field_label'], JOB_CHANGE_INTERNAL_LABELS, true)) {
-            continue;
-        }
-        $who = JOB_CHANGE_ACTORS[$c['actor']] ?? $c['actor'];
-        if ($perspective === 'staff' && !empty($c['full_name'])) {
-            $who .= ' · ' . $c['full_name'];
-        }
-        $old = $c['old_value'] === null || $c['old_value'] === '' ? '—' : mb_strimwidth($c['old_value'], 0, 160, '…');
-        $new = $c['new_value'] === null || $c['new_value'] === '' ? '—' : mb_strimwidth($c['new_value'], 0, 160, '…');
-        $out .= '<div class="timeline-item' . ($c['actor'] === 'agency' ? ' is-client' : '') . '">'
-            . '<p class="small"><span style="font-weight:500">' . e($c['field_label']) . '</span> <span class="text-muted">· ' . e($who) . '</span></p>'
-            . '<p class="xsmall text-muted" style="margin-top:2px"><span style="text-decoration:line-through">' . e($old) . '</span> &rarr; <span class="text-ink">' . e($new) . '</span></p>'
-            . '<p class="xsmall text-faint" style="margin-top:2px">' . format_date($c['created_at'], true) . '</p></div>';
-        $shown++;
-    }
-    return $shown ? $out . '</div>' : '<p class="small text-muted">Kayıtlı değişiklik yok.</p>';
+    return render_job_events(array_values(array_filter($changes, fn($e) => job_event_visible($e, $perspective))), $perspective);
 }
 
 /**
@@ -1127,7 +1104,7 @@ function freelancer_capacity(array $profile): array {
 }
 
 /**
- * Yeni sipariş için varsayılan dağıtım politikası
+ * Yeni iş için varsayılan dağıtım politikası
  */
 function default_job_policy(array $items, string $category, bool $is_remote): array {
     $min = 'standard';
@@ -1155,12 +1132,17 @@ function default_job_policy(array $items, string $category, bool $is_remote): ar
  */
 function job_publish(int $job_id): void {
     global $db;
+    $before = get_job($job_id);
     $db->prepare("UPDATE platform_jobs SET status = 'open', published_at = COALESCE(published_at, NOW()) WHERE id = ?")->execute([$job_id]);
     $job = get_job($job_id);
     if (!$job) {
         return;
     }
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişiniz onaylandı; ekip ataması yapılıyor.", "/platform/job.php?id={$job_id}", $job_id);
+    milestones_sync($job_id);
+    if ($before && $before['status'] !== 'open') {
+        job_event($job_id, 'published', 'Yayına alındı', ['new' => JOB_VISIBILITY[$job['visibility']] ?? $job['visibility'], 'visibility' => 'all']);
+    }
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işiniz onaylandı; ekip ataması yapılıyor.", "/platform/job.php?id={$job_id}", $job_id);
     if ($job['visibility'] === 'selected') {
         $st = $db->prepare("SELECT user_id FROM platform_job_visible_to WHERE job_id = ?");
         $st->execute([$job_id]);
@@ -1170,22 +1152,34 @@ function job_publish(int $job_id): void {
     }
 }
 
-function job_assign_freelancer(int $job_id, int $user_id, bool $atomic = false, ?float $fee = null): bool {
+/**
+ * Freelancer'ı işe atar. $via: 'self' (ilk alan alır) | 'offer' (teklif kabulü) | 'staff' (doğrudan atama)
+ */
+function job_assign_freelancer(int $job_id, int $user_id, bool $atomic = false, ?float $fee = null, string $via = 'staff'): bool {
     global $db;
-    $sql = "UPDATE platform_jobs SET status = 'assigned', assigned_type = 'freelancer', assigned_user_id = ?, assigned_at = NOW()"
+    $sql = "UPDATE platform_jobs SET status = 'assigned', assigned_type = 'freelancer', assigned_user_id = ?, assigned_at = NOW(), assigned_via = ?"
          . ($fee !== null ? ", freelancer_fee = ?" : "")
          . " WHERE id = ?" . ($atomic ? " AND status = 'open' AND assigned_user_id IS NULL" : "");
-    $params = $fee !== null ? [$user_id, $fee, $job_id] : [$user_id, $job_id];
+    $params = $fee !== null ? [$user_id, $via, $fee, $job_id] : [$user_id, $via, $job_id];
     $st = $db->prepare($sql);
     $st->execute($params);
     if ($st->rowCount() === 0) {
         return false;
     }
+    $rejected = $db->prepare("SELECT a.user_id, u.full_name FROM platform_applications a JOIN users u ON u.id = a.user_id WHERE a.job_id = ? AND a.status = 'pending' AND a.user_id != ?");
+    $rejected->execute([$job_id, $user_id]);
     $db->prepare("UPDATE platform_applications SET status = IF(user_id = ?, 'accepted', 'rejected'), reviewed_at = NOW(), reject_reason = IF(user_id = ?, reject_reason, COALESCE(reject_reason, 'İş başka bir freelancer\'a atandı.')) WHERE job_id = ? AND status = 'pending'")
        ->execute([$user_id, $user_id, $job_id]);
+    milestones_sync($job_id);
     $job = get_job($job_id);
-    notify_user($user_id, "İş size atandı: {$job['job_code']} · {$job['title']}", "/platform/job.php?id={$job_id}", $job_id);
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişinize ekip atandı.", "/platform/job.php?id={$job_id}", $job_id);
+    $via_txt = ['self' => 'İlk alan aldı', 'offer' => 'Teklif kabul edildi', 'staff' => 'Ekip tarafından atandı'][$via] ?? $via;
+    job_event($job_id, 'assigned', 'Freelancer atandı: ' . $job['assignee_name'], ['new' => $via_txt, 'amount' => (float)$job['freelancer_fee'], 'visibility' => 'freelancer']);
+    job_event($job_id, 'assigned', 'Prodüksiyon ekibi atandı', ['visibility' => 'agency']);
+    foreach ($rejected->fetchAll() as $r) {
+        job_event($job_id, 'offer_rejected', 'Teklif kapandı: ' . $r['full_name'], ['new' => 'İş başka bir freelancer\'a atandı.', 'visibility' => 'staff']);
+    }
+    notify_user($user_id, "İş size atandı: {$job['job_code']} · {$job['title']}" . ($via !== 'self' ? '. Kabul edip başlayabilir veya reddedebilirsiniz.' : ''), "/platform/job.php?id={$job_id}", $job_id);
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işinize ekip atandı.", "/platform/job.php?id={$job_id}", $job_id);
     return true;
 }
 
@@ -1211,31 +1205,40 @@ function job_take_internal(int $job_id, int $staff_user_id): ?int {
         ]);
         $project_id = (int)$db->lastInsertId();
     }
-    $db->prepare("UPDATE platform_jobs SET status = 'in_progress', assigned_type = 'internal', assigned_user_id = NULL, internal_project_id = ?, assigned_at = NOW(), published_at = COALESCE(published_at, NOW()) WHERE id = ?")
+    $db->prepare("UPDATE platform_jobs SET status = 'in_progress', assigned_type = 'internal', assigned_user_id = NULL, assigned_via = 'internal', internal_project_id = ?, assigned_at = NOW(), published_at = COALESCE(published_at, NOW()) WHERE id = ?")
        ->execute([$project_id, $job_id]);
     $db->prepare("UPDATE platform_applications SET status = 'rejected', reviewed_at = NOW(), reject_reason = COALESCE(reject_reason, 'İş ekibimiz tarafından üstlenildi.') WHERE job_id = ? AND status = 'pending'")->execute([$job_id]);
-    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} siparişiniz üretime alındı.", "/platform/job.php?id={$job_id}", $job_id);
+    milestones_sync($job_id);
+    job_event($job_id, 'internal', 'İş ekibimize alındı', ['new' => $project_id ? 'ERP projesi açıldı' : null, 'visibility' => 'staff']);
+    job_event($job_id, 'started', 'Üretime alındı', ['visibility' => 'agency']);
+    notify_contact_users($job['agency_contact_id'], "{$job['job_code']} işiniz üretime alındı.", "/platform/job.php?id={$job_id}", $job_id);
     return $project_id ?: 0;
 }
 
 /**
- * Atamayı kaldırır. $by: 'freelancer' (işi bıraktı) | 'staff' (yönetici aldı) | 'neutral'
- * Güvenilirlik metriğine işlenir.
+ * Atamayı kaldırır.
+ * $by: 'freelancer' (işi bıraktı, güvenilirliğe işlenir) | 'staff' (ekip aldı, işlenir)
+ *      | 'neutral' (freelancer kaynaklı değil) | 'declined' (atama teklifi reddedildi, işlenmez)
  */
-function job_unassign(int $job_id, string $by = 'staff'): void {
+function job_unassign(int $job_id, string $by = 'staff', string $reason = ''): void {
     global $db;
     $job = get_job($job_id);
     if (!$job) {
         return;
     }
-    $db->prepare("UPDATE platform_jobs SET status = 'open', assigned_type = NULL, assigned_user_id = NULL, assigned_at = NULL WHERE id = ?")->execute([$job_id]);
+    $db->prepare("UPDATE platform_jobs SET status = 'open', assigned_type = NULL, assigned_user_id = NULL, assigned_at = NULL, assigned_via = NULL WHERE id = ?")->execute([$job_id]);
     // Bırakan kişiye özel kabul edilmiş ücret geri alınır; katalog işinde ücret kalemlerden yeniden hesaplanır
     if ($job['pricing_source'] === 'catalog') {
-        $items = array_map(fn($i) => ['quantity' => (float)$i['quantity'], 'agency_unit_price' => (float)$i['agency_unit_price'], 'freelancer_unit_fee' => (float)$i['freelancer_unit_fee']], job_items($job_id));
+        $items = array_map(fn($i) => ['quantity' => (float)$i['quantity'], 'agency_unit_price' => (float)$i['agency_unit_price'], 'freelancer_unit_fee' => (float)$i['freelancer_unit_fee']],
+                           array_filter(job_items($job_id), fn($i) => ($i['status'] ?? 'active') === 'active' && (int)($i['is_extra'] ?? 0) === 0));
         if ($items) {
-            $db->prepare("UPDATE platform_jobs SET freelancer_fee = ? WHERE id = ?")->execute([price_order($items, (int)$job['is_rush'] === 1)['freelancer_fee'], $job_id]);
+            $extra = (float)$db->query("SELECT COALESCE(SUM(fee), 0) FROM platform_milestones WHERE job_id = {$job_id} AND is_extra = 1 AND status IN ('" . implode("','", MILESTONE_LIVE) . "', 'pending_freelancer')")->fetchColumn();
+            $db->prepare("UPDATE platform_jobs SET freelancer_fee = ? WHERE id = ?")->execute([price_order(array_values($items), (int)$job['is_rush'] === 1)['freelancer_fee'] + $extra, $job_id]);
         }
     }
+    // Freelancer kabulü bekleyen ek kalemler yeni atamada tekrar sorulur
+    $db->prepare("UPDATE platform_milestones SET status = 'open' WHERE job_id = ? AND status = 'pending_freelancer'")->execute([$job_id]);
+    milestones_sync($job_id);
     // Yalnızca "başkasına atandı" gerekçesiyle kapanan teklifler yeniden teklif verebilsin
     $reopen = $db->prepare("SELECT user_id FROM platform_applications WHERE job_id = ? AND status = 'rejected' AND reject_reason = 'İş başka bir freelancer\'a atandı.'");
     $reopen->execute([$job_id]);
@@ -1245,40 +1248,71 @@ function job_unassign(int $job_id, string $by = 'staff'): void {
     $db->prepare("UPDATE platform_applications SET status = 'withdrawn', reject_reason = NULL WHERE job_id = ? AND status = 'rejected' AND reject_reason = 'İş başka bir freelancer\'a atandı.'")->execute([$job_id]);
     if (!empty($job['assigned_user_id'])) {
         $db->prepare("UPDATE platform_applications SET status = 'withdrawn' WHERE job_id = ? AND user_id = ?")->execute([$job_id, $job['assigned_user_id']]);
-        // 'neutral': freelancer kaynaklı olmayan geri alma, güvenilirliğe işlenmez
-        if ($by !== 'neutral') {
+        if (!in_array($by, ['neutral', 'declined'], true)) {
             $col = $by === 'freelancer' ? 'releases_count' : 'removed_count';
             $db->prepare("UPDATE freelancer_profiles SET {$col} = {$col} + 1 WHERE user_id = ?")->execute([$job['assigned_user_id']]);
         }
+        $types = ['freelancer' => ['released', 'İşi bıraktı: '], 'declined' => ['award_declined', 'Atamayı reddetti: '], 'staff' => ['unassigned', 'Atama kaldırıldı: '], 'neutral' => ['unassigned', 'Atama kaldırıldı: ']];
+        [$t, $l] = $types[$by] ?? $types['staff'];
+        job_event($job_id, $t, $l . $job['assignee_name'], ['new' => $reason !== '' ? $reason : null, 'visibility' => 'freelancer']);
+        job_event($job_id, 'unassigned', 'Ekip ataması yenileniyor', ['visibility' => 'agency']);
     }
 }
 
-function job_submit_delivery(array $job, string $url, string $note, string $by_type, ?int $user_id): void {
+/**
+ * Teslim: sıradaki (veya seçilen) aşama için. Kalite kontrol açıksa önce ekibe düşer.
+ */
+function job_submit_delivery(array $job, string $url, string $note, string $by_type, ?int $user_id, ?int $milestone_id = null): void {
     global $db;
-    $qa = $by_type === 'freelancer' && platform_setting('platform_qa_required') === '1';
-    $db->prepare("INSERT INTO platform_deliveries (job_id, submitted_by_user_id, submitted_by_type, url, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
-       ->execute([$job['id'], $user_id, $by_type, $url, $note, $qa ? 'qa' : 'sent']);
+    $m = $milestone_id ? get_milestone($milestone_id) : milestone_next((int)$job['id']);
+    if ($m && ((int)$m['job_id'] !== (int)$job['id'] || !in_array($m['status'], ['open', 'revision'], true))) {
+        $m = milestone_next((int)$job['id']);
+    }
+    $qa = $by_type === 'freelancer' && (platform_setting('platform_qa_required') === '1' || ($m && milestone_internal($m)));
+    $db->prepare("INSERT INTO platform_deliveries (job_id, milestone_id, submitted_by_user_id, submitted_by_type, url, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())")
+       ->execute([$job['id'], $m['id'] ?? null, $user_id, $by_type, $url, $note, $qa ? 'qa' : 'sent']);
+    if ($m) {
+        $db->prepare("UPDATE platform_milestones SET status = 'in_review' WHERE id = ?")->execute([$m['id']]);
+    }
     $db->prepare("UPDATE platform_jobs SET status = ?, delivered_at = ?, first_delivered_at = COALESCE(first_delivered_at, NOW()) WHERE id = ?")
        ->execute([$qa ? 'qa_review' : 'delivered', $qa ? null : date('Y-m-d H:i:s'), $job['id']]);
+    $title = $m ? $m['title'] : 'Teslim';
+    job_event((int)$job['id'], 'delivered', 'Teslim gönderildi: ' . $title, ['new' => $note !== '' ? $note : $url, 'milestone_id' => $m['id'] ?? null, 'visibility' => $qa ? 'freelancer' : 'all']);
     if (!$qa) {
-        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} · \"{$title}\" teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }
 }
 
 function job_qa_decision(array $job, int $delivery_id, bool $approve, string $feedback = ''): void {
     global $db;
+    $d = $db->prepare("SELECT * FROM platform_deliveries WHERE id = ? AND job_id = ?");
+    $d->execute([$delivery_id, $job['id']]);
+    $d = $d->fetch();
+    $m = $d && $d['milestone_id'] ? get_milestone((int)$d['milestone_id']) : null;
+    $title = $m['title'] ?? 'Teslim';
+    if ($approve && $m && milestone_internal($m)) {
+        // Ajansa yansımayan iç ek iş: ekip onayı yeterli
+        $db->prepare("UPDATE platform_deliveries SET status = 'sent', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback ?: null, $delivery_id, $job['id']]);
+        job_event((int)$job['id'], 'qa_approved', 'Kalite kontrolden geçti: ' . $title, ['new' => $feedback !== '' ? $feedback : null, 'milestone_id' => (int)$m['id'], 'visibility' => 'freelancer']);
+        milestone_approve($job, $m, 'staff');
+        return;
+    }
     if ($approve) {
         $db->prepare("UPDATE platform_deliveries SET status = 'sent', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback ?: null, $delivery_id, $job['id']]);
         $db->prepare("UPDATE platform_jobs SET status = 'delivered', delivered_at = NOW() WHERE id = ?")->execute([$job['id']]);
-        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        job_event((int)$job['id'], 'qa_approved', 'Kalite kontrolden geçti: ' . $title, ['new' => $feedback !== '' ? $feedback : null, 'milestone_id' => $m['id'] ?? null, 'visibility' => 'freelancer']);
+        job_event((int)$job['id'], 'delivered', 'Teslim edildi: ' . $title, ['milestone_id' => $m['id'] ?? null, 'visibility' => 'agency']);
+        notify_contact_users($job['agency_contact_id'], "{$job['job_code']} · \"{$title}\" teslim edildi. İnceleyip onaylayabilirsiniz.", "/platform/job.php?id={$job['id']}", (int)$job['id']);
         if (!empty($job['assigned_user_id'])) {
-            notify_user((int)$job['assigned_user_id'], "Teslimatınız kalite kontrolden geçti ve müşteriye iletildi: {$job['job_code']}", "/platform/job.php?id={$job['id']}", (int)$job['id']);
+            notify_user((int)$job['assigned_user_id'], "Teslimatınız kalite kontrolden geçti ve müşteriye iletildi: {$job['job_code']} · {$title}", "/platform/job.php?id={$job['id']}", (int)$job['id']);
         }
     } else {
         $db->prepare("UPDATE platform_deliveries SET status = 'qa_rejected', reviewed_at = NOW(), feedback = ? WHERE id = ? AND job_id = ?")->execute([$feedback, $delivery_id, $job['id']]);
+        if ($m) $db->prepare("UPDATE platform_milestones SET status = 'revision' WHERE id = ?")->execute([$m['id']]);
         $db->prepare("UPDATE platform_jobs SET status = 'revision' WHERE id = ?")->execute([$job['id']]);
+        job_event((int)$job['id'], 'qa_rejected', 'Kalite kontrol düzeltme istedi: ' . $title, ['new' => $feedback, 'milestone_id' => $m['id'] ?? null, 'visibility' => 'freelancer']);
         if (!empty($job['assigned_user_id'])) {
-            notify_user((int)$job['assigned_user_id'], "Kalite kontrol düzeltme istedi ({$job['job_code']}): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
+            notify_user((int)$job['assigned_user_id'], "Kalite kontrol düzeltme istedi ({$job['job_code']} · {$title}): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
         }
     }
 }
@@ -1286,26 +1320,59 @@ function job_qa_decision(array $job, int $delivery_id, bool $approve, string $fe
 function job_request_revision(array $job, string $feedback): void {
     global $db;
     $last = job_deliveries((int)$job['id'], ['sent']);
+    $m = $last && $last[0]['milestone_id'] ? get_milestone((int)$last[0]['milestone_id']) : null;
     if ($last) {
         $db->prepare("UPDATE platform_deliveries SET status = 'revision', feedback = ?, reviewed_at = NOW() WHERE id = ?")->execute([$feedback, $last[0]['id']]);
     }
-    $db->prepare("UPDATE platform_jobs SET status = 'revision', revision_count = revision_count + 1 WHERE id = ?")->execute([$job['id']]);
+    if ($m) $db->prepare("UPDATE platform_milestones SET status = 'revision' WHERE id = ?")->execute([$m['id']]);
+    $db->prepare("UPDATE platform_jobs SET status = 'revision', revision_count = revision_count + 1, delivered_at = NULL WHERE id = ?")->execute([$job['id']]);
+    $n = (int)$job['revision_count'] + 1;
+    job_event((int)$job['id'], 'revision', "Revizyon {$n}: " . ($m['title'] ?? 'Teslim'), ['new' => $feedback, 'milestone_id' => $m['id'] ?? null, 'visibility' => 'all']);
     if (!empty($job['assigned_user_id'])) {
-        notify_user((int)$job['assigned_user_id'], "Revizyon istendi ({$job['job_code']}): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
+        notify_user((int)$job['assigned_user_id'], "Revizyon istendi ({$job['job_code']}" . ($m ? ' · ' . $m['title'] : '') . "): " . mb_substr($feedback, 0, 140), "/platform/job.php?id={$job['id']}", (int)$job['id']);
     }
 }
 
+/**
+ * İşi kapatır: açık aşamalar onaylanır (hakediş kaydı), bekleyen ek kalem
+ * önerileri iptal edilir, ajansa satış faturası kesilir.
+ */
 function job_complete(array $job, ?int $agency_rating = null, string $agency_review = ''): void {
     global $db;
     $job_id = (int)$job['id'];
 
-    $last = job_deliveries($job_id, ['sent']);
-    if ($last) {
-        $db->prepare("UPDATE platform_deliveries SET status = 'approved', reviewed_at = NOW() WHERE id = ?")->execute([$last[0]['id']]);
+    if (!job_milestones($job_id)) {
+        milestones_create_default($job_id);
     }
+    // Bekleyen öneriler kapsama girmeden iptal
+    foreach (job_milestones($job_id) as $m) {
+        if (in_array($m['status'], ['proposed', 'pending_freelancer'], true)) {
+            $db->prepare("UPDATE platform_milestones SET status = 'cancelled' WHERE id = ?")->execute([$m['id']]);
+            $db->prepare("UPDATE platform_job_items SET status = 'cancelled' WHERE milestone_id = ?")->execute([$m['id']]);
+            if ($m['status'] === 'pending_freelancer') {
+                $db->prepare("UPDATE platform_jobs SET agency_price = GREATEST(0, agency_price - ?), freelancer_fee = GREATEST(0, freelancer_fee - ?) WHERE id = ?")->execute([(float)$m['agency_amount'], (float)$m['fee'], $job_id]);
+            }
+            job_event($job_id, 'extra', 'Ek kalem iş kapanırken iptal edildi: ' . $m['title'], ['milestone_id' => (int)$m['id'], 'visibility' => milestone_internal($m) ? 'freelancer' : 'all', 'actor' => 'system', 'user_id' => null]);
+        }
+    }
+    $job = get_job($job_id);
+    $fl = $job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id']) ? (int)$job['assigned_user_id'] : null;
+    foreach (job_milestones($job_id) as $m) {
+        if (in_array($m['status'], ['open', 'in_review', 'revision'], true)) {
+            $db->prepare("UPDATE platform_milestones SET status = 'approved', approved_at = NOW(), freelancer_user_id = ? WHERE id = ?")->execute([$fl, $m['id']]);
+            job_event($job_id, 'milestone_approved', 'Aşama kapanışla onaylandı: ' . $m['title'], ['milestone_id' => (int)$m['id'], 'amount' => (float)$m['fee'], 'visibility' => milestone_internal($m) ? 'freelancer' : 'all']);
+        }
+        if (($m['status'] === 'approved' || in_array($m['status'], ['open', 'in_review', 'revision'], true)) && empty($m['purchase_invoice_id'])) {
+            milestone_invoice($job, get_milestone((int)$m['id']));
+        }
+    }
+
+    $db->prepare("UPDATE platform_deliveries SET status = 'approved', reviewed_at = NOW() WHERE job_id = ? AND status = 'sent'")->execute([$job_id]);
     $db->prepare("UPDATE platform_jobs SET status = 'completed', completed_at = NOW(), agency_rating = COALESCE(?, agency_rating), agency_review = COALESCE(?, agency_review) WHERE id = ?")
        ->execute([$agency_rating, $agency_review !== '' ? $agency_review : null, $job_id]);
+    job_event($job_id, 'completed', 'İş tamamlandı', ['new' => $agency_rating ? "Ajans puanı {$agency_rating}/5" . ($agency_review !== '' ? " · {$agency_review}" : '') : null, 'visibility' => 'all']);
 
+    $job = get_job($job_id);
     if (empty($job['sales_invoice_id']) && !empty($job['agency_contact_id']) && (float)$job['agency_price'] > 0 && platform_setting('platform_auto_invoice') === '1') {
         $vat = (float)get_setting('default_vat_rate', '20');
         $tax = calculate_tax_breakdown((float)$job['agency_price'], $vat, '0/10', 0);
@@ -1316,23 +1383,12 @@ function job_complete(array $job, ?int $agency_rating = null, string $agency_rev
         ")->execute([$no, $job['agency_contact_id'], $job['internal_project_id'] ?: null, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'], "Platform işi {$job['job_code']}: {$job['title']}"]);
         $db->prepare("UPDATE platform_jobs SET sales_invoice_id = ? WHERE id = ?")->execute([(int)$db->lastInsertId(), $job_id]);
         recalculate_contact_balance((int)$job['agency_contact_id']);
+        job_event($job_id, 'invoice', "Satış faturası: {$no}", ['amount' => (float)$tax['grand_total'], 'visibility' => 'agency', 'actor' => 'system', 'user_id' => null]);
     }
 
-    if ($job['assigned_type'] === 'freelancer' && empty($job['purchase_invoice_id']) && !empty($job['assignee_contact_id']) && (float)$job['freelancer_fee'] > 0) {
-        $vat = (float)platform_setting('platform_freelancer_vat');
-        $tax = calculate_tax_breakdown((float)$job['freelancer_fee'], $vat, '0/10', 0);
-        $no  = generate_invoice_number('purchase');
-        $db->prepare("
-            INSERT INTO invoices (invoice_type, invoice_number, contact_id, project_id, issue_date, subtotal, vat_rate, vat_amount, withholding_rate, withholding_amount, stoppage_rate, stoppage_amount, grand_total, payment_status, notes, created_at)
-            VALUES ('purchase', ?, ?, ?, CURRENT_DATE(), ?, ?, ?, '0/10', 0, 0, 0, ?, 'unpaid', ?, NOW())
-        ")->execute([$no, $job['assignee_contact_id'], $job['internal_project_id'] ?: null, $tax['subtotal'], $tax['vat_rate'], $tax['vat_amount'], $tax['grand_total'], "Platform işi hakedişi {$job['job_code']}: {$job['title']}"]);
-        $db->prepare("UPDATE platform_jobs SET purchase_invoice_id = ? WHERE id = ?")->execute([(int)$db->lastInsertId(), $job_id]);
-        recalculate_contact_balance((int)$job['assignee_contact_id']);
-        notify_user((int)$job['assigned_user_id'], "{$job['job_code']} tamamlandı. Hakedişiniz (" . format_money((float)$job['freelancer_fee']) . ") kazançlarınıza eklendi.", "/platform/earnings.php", $job_id);
-    }
-
-    if ($job['assigned_type'] === 'freelancer' && !empty($job['assigned_user_id'])) {
-        recompute_freelancer_metrics((int)$job['assigned_user_id']);
+    if ($fl) {
+        notify_user($fl, "{$job['job_code']} tamamlandı. Toplam hakedişiniz: " . format_money((float)$job['freelancer_fee']) . '.', '/platform/earnings.php', $job_id);
+        recompute_freelancer_metrics($fl);
     }
 }
 
@@ -1340,6 +1396,7 @@ function rate_freelancer(array $job, int $rating): void {
     global $db;
     $rating = max(1, min(5, $rating));
     $db->prepare("UPDATE platform_jobs SET freelancer_rating = ? WHERE id = ?")->execute([$rating, $job['id']]);
+    job_event((int)$job['id'], 'rating', "Ekip değerlendirmesi: {$rating}/5", ['visibility' => 'freelancer']);
     if (!empty($job['assigned_user_id'])) {
         recompute_freelancer_metrics((int)$job['assigned_user_id']);
     }
@@ -1357,13 +1414,14 @@ function platform_delete_job(int $job_id, bool $with_invoices = false): bool {
         return false;
     }
     if ($with_invoices) {
-        foreach (['sales_invoice_id', 'purchase_invoice_id'] as $col) {
-            if (!empty($job[$col])) {
-                delete_invoice_cascade((int)$job[$col]);
-            }
+        $ids = array_filter([(int)$job['sales_invoice_id'], (int)$job['purchase_invoice_id']]);
+        $mi = $db->prepare("SELECT purchase_invoice_id FROM platform_milestones WHERE job_id = ? AND purchase_invoice_id IS NOT NULL");
+        $mi->execute([$job_id]);
+        foreach (array_unique([...$ids, ...array_map('intval', $mi->fetchAll(PDO::FETCH_COLUMN))]) as $iid) {
+            delete_invoice_cascade($iid);
         }
     }
-    foreach (['platform_job_items', 'platform_applications', 'platform_messages', 'platform_deliveries', 'platform_job_visible_to', 'platform_job_changes'] as $t) {
+    foreach (['platform_job_items', 'platform_applications', 'platform_messages', 'platform_deliveries', 'platform_job_visible_to', 'platform_job_changes', 'platform_milestones', 'platform_job_issues'] as $t) {
         $db->prepare("DELETE FROM {$t} WHERE job_id = ?")->execute([$job_id]);
     }
     $db->prepare("DELETE FROM activity_log WHERE entity_type = 'job' AND entity_id = ?")->execute([$job_id]);

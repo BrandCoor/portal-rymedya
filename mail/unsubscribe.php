@@ -49,7 +49,7 @@ if ($sub && $_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="small text-muted" style="margin-top:8px">Bu bağlantı süresi dolmuş veya hatalı olabilir. Listeden çıkmak için bize e-posta ile yazabilirsiniz<?= site_setting('portal_support_email') !== '' ? ': ' . e(site_setting('portal_support_email')) : '' ?>.</p>
         <?php elseif ($sub['status'] === 'unsubscribed'): ?>
             <h1 class="h2">Listeden çıktınız</h1>
-            <p class="small text-muted" style="margin-top:8px"><strong><?= e($sub['email']) ?></strong> adresine artık duyuru ve kampanya e-postası göndermeyeceğiz. Siparişleriniz ve hesabınızla ilgili bilgilendirmeler gelmeye devam eder.</p>
+            <p class="small text-muted" style="margin-top:8px"><strong><?= e($sub['email']) ?></strong> adresine artık duyuru ve kampanya e-postası göndermeyeceğiz. İşleriniz ve hesabınızla ilgili bilgilendirmeler gelmeye devam eder.</p>
             <form method="POST" style="margin-top:20px"><input type="hidden" name="action" value="resubscribe"><button class="btn btn-secondary">Yanlışlıkla mı oldu? Yeniden abone ol</button></form>
         <?php else: ?>
             <h1 class="h2">E-posta listesinden çık</h1>

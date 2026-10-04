@@ -133,7 +133,7 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
 
         <?php if ($role === 'agency'): ?>
         <section class="card">
-            <div class="card-head"><div><p class="card-title">Fatura bilgileri</p><p class="card-sub">Tamamlanan siparişlerin faturası bu bilgilerle kesilir.</p></div></div>
+            <div class="card-head"><div><p class="card-title">Fatura bilgileri</p><p class="card-sub">Tamamlanan işlerin faturası bu bilgilerle kesilir.</p></div></div>
             <div class="card-pad grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="field"><label class="label">Web sitesi</label><input class="input" type="text" name="website" value="<?= e($profile['website'] ?? '') ?>"></div>
                 <div class="field"><label class="label">Vergi dairesi</label><input class="input" type="text" name="tax_office" value="<?= e($contact['tax_office'] ?? '') ?>"></div>
@@ -178,7 +178,7 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <div class="card-head"><div><p class="card-title">E-posta tercihleri</p><p class="card-sub"><?= e($contact['email'] ?? '') ?></p></div></div>
         <div class="divide">
             <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">
-                <div><p class="small" style="font-weight:500">İş bildirimleri</p><p class="xsmall text-muted"><?= $role === 'agency' ? 'Sipariş onayı, teslimat, revizyon ve fatura gibi gelişmeler.' : 'Atama, teklif sonucu, kalite kontrol, ödeme ve seviye değişiklikleri.' ?></p></div>
+                <div><p class="small" style="font-weight:500">İş bildirimleri</p><p class="xsmall text-muted"><?= $role === 'agency' ? 'İş onayı, teslimat, revizyon ve fatura gibi gelişmeler.' : 'Atama, teklif sonucu, kalite kontrol, ödeme ve seviye değişiklikleri.' ?></p></div>
                 <label class="switch"><input type="checkbox" name="notify_email" value="1" <?= $prefs['notify'] ? 'checked' : '' ?>><span></span></label>
             </div>
             <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">

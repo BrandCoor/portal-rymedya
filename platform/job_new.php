@@ -1,9 +1,9 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - YENİ SİPARİŞ (AJANS)
+ * RY MEDYA PLATFORM - YENİ İŞ (AJANS)
  * ====================================================================
- * Katalog siparişi: hizmet seç → fiyat anında hesaplanır → sipariş ver.
+ * Katalogdan iş: hizmet seç → fiyat anında hesaplanır → iş gir.
  * Özel talep     : katalog dışı işler için ekip fiyat teklifi hazırlar.
  * Termin kuralı  : aynı gün / çok yakın tarihli işler engellenir;
  *                  yakın tarihli işler acil iş farkıyla kabul edilir.
@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $items       = $mode === 'catalog' ? build_order_items((array)($_POST['qty'] ?? [])) : [];
 
     if ($mode === 'catalog' && !$items) $errors[] = 'En az bir hizmet seçin.';
-    if ($title === '') $errors[] = 'Sipariş başlığı zorunlu.';
+    if ($title === '') $errors[] = 'İş başlığı zorunlu.';
     if (mb_strlen($description) < 20) $errors[] = 'Brief en az birkaç cümle olmalı.';
     if (!$deadline) $errors[] = 'Teslim tarihi zorunlu.';
     if ($start_date && $deadline && $deadline < $start_date) $errors[] = 'Teslim tarihi başlangıçtan önce olamaz.';
@@ -75,17 +75,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($items) {
             save_job_items($job_id, $items);
         }
+        job_event($job_id, 'created', 'İş girildi: ' . $title, ['new' => ($mode === 'custom' ? 'Özel teklif talebi' : count($items) . ' hizmet kalemi') . ($rush ? ' · acil' : ''), 'amount' => $price['agency_price'] ?? null, 'visibility' => 'agency']);
 
         $company = $_SESSION['client_user']['company_name'] ?? '';
         if ($auto) {
             job_publish($job_id);
-            notify_staff("Yeni sipariş yayına alındı: {$code} · {$title} ({$company}) · " . format_money($price['agency_price']) . ($rush ? ' · ACİL' : ''), $job_id);
-            set_flash('success', "Siparişiniz alındı ({$code}). Ekip ataması başladı.");
+            notify_staff("Yeni iş yayına alındı: {$code} · {$title} ({$company}) · " . format_money($price['agency_price']) . ($rush ? ' · ACİL' : ''), $job_id);
+            set_flash('success', "İşiniz alındı ({$code}). Ekip ataması başladı.");
         } else {
-            notify_staff(($mode === 'custom' ? 'Özel teklif talebi: ' : 'Yeni sipariş onay bekliyor: ') . "{$code} · {$title} ({$company})" . ($rush ? ' · ACİL' : ''), $job_id);
+            notify_staff(($mode === 'custom' ? 'Özel teklif talebi: ' : 'Yeni iş onay bekliyor: ') . "{$code} · {$title} ({$company})" . ($rush ? ' · ACİL' : ''), $job_id);
             set_flash('success', $mode === 'custom'
                 ? "Talebiniz alındı ({$code}). Ekibimiz fiyat teklifini kısa süre içinde paylaşacak."
-                : "Siparişiniz alındı ({$code}). Ekip onayının ardından üretime alınacak.");
+                : "İşiniz alındı ({$code}). Ekip onayının ardından üretime alınacak.");
         }
         redirect(BASE_URL . "/platform/job.php?id={$job_id}");
     }
@@ -107,7 +108,7 @@ foreach ($services as $s) {
     $grouped[$s['category']][] = $s;
 }
 
-platform_header('Yeni sipariş', 'new');
+platform_header('Yeni iş', 'new');
 ?>
 <?php
 $order_cfg = [
@@ -120,9 +121,9 @@ $order_cfg = [
 <div x-data="orderForm(<?= e(json_encode($order_cfg, JSON_UNESCAPED_UNICODE)) ?>)" x-init="init()">
     <div class="page-head">
         <div>
-            <div class="crumb"><a href="<?= BASE_URL ?>/platform/jobs.php">Siparişler</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Yeni</span></div>
-            <h1 class="h1"><?= $mode === 'custom' ? 'Özel iş talebi' : 'Yeni sipariş' ?></h1>
-            <p class="sub"><?= $mode === 'custom' ? 'Katalogda olmayan işler için ekibimiz size özel fiyat hazırlar.' : 'Hizmetleri seçin, tutar anında hesaplanır. Sipariş verdiğiniz anda ekip ataması başlar.' ?></p>
+            <div class="crumb"><a href="<?= BASE_URL ?>/platform/jobs.php">İşler</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Yeni</span></div>
+            <h1 class="h1"><?= $mode === 'custom' ? 'Özel iş talebi' : 'Yeni iş' ?></h1>
+            <p class="sub"><?= $mode === 'custom' ? 'Katalogda olmayan işler için ekibimiz size özel fiyat hazırlar.' : 'Hizmetleri seçin, tutar anında hesaplanır. İşi girdiğiniz anda ekip ataması başlar.' ?></p>
         </div>
         <?php if ($services): ?>
         <div class="seg">
@@ -145,7 +146,7 @@ $order_cfg = [
             <!-- 1. HİZMETLER -->
             <section class="card">
                 <div class="card-head">
-                    <div><p class="card-title">1 · Hizmetler</p><p class="card-sub">Birden fazla hizmeti aynı siparişte birleştirebilirsiniz.</p></div>
+                    <div><p class="card-title">1 · Hizmetler</p><p class="card-sub">Birden fazla hizmeti aynı işte birleştirebilirsiniz.</p></div>
                 </div>
                 <div class="divide">
                     <?php foreach ($grouped as $cat => $list): ?>
@@ -186,7 +187,7 @@ $order_cfg = [
                 <div class="card-head"><div><p class="card-title"><?= $mode === 'catalog' ? '2 · ' : '1 · ' ?>İş detayları</p><p class="card-sub">Brief ne kadar net olursa üretim o kadar hızlı ilerler.</p></div></div>
                 <div class="card-pad stack">
                     <div class="field">
-                        <label class="label">Sipariş başlığı <span class="req">*</span></label>
+                        <label class="label">İş başlığı <span class="req">*</span></label>
                         <input class="input" type="text" name="title" required value="<?= $val('title') ?>" placeholder="Örn. Yaz kampanyası ürün çekimi ve 30 sn reklam kurgusu">
                     </div>
                     <?php if ($mode === 'custom'): ?>
@@ -253,7 +254,7 @@ $order_cfg = [
         <!-- ÖZET -->
         <aside>
             <div class="card sticky-summary">
-                <div class="card-head"><p class="card-title">Sipariş özeti</p></div>
+                <div class="card-head"><p class="card-title">İş özeti</p></div>
                 <div class="card-pad stack-sm">
                     <?php if ($mode === 'catalog'): ?>
                         <template x-if="!lines().length"><p class="small text-muted">Henüz hizmet seçmediniz.</p></template>
@@ -276,10 +277,10 @@ $order_cfg = [
                     <ul class="stack-sm xsmall text-muted" style="list-style:none;padding:0">
                         <li style="display:flex;gap:8px"><i data-lucide="shield-check" style="width:14px;height:14px;flex-shrink:0"></i>Teslimat size ulaşmadan önce kalite kontrolden geçer.</li>
                         <li style="display:flex;gap:8px"><i data-lucide="repeat" style="width:14px;height:14px;flex-shrink:0"></i><?= (int)platform_setting('platform_max_revisions') ?> revizyon hakkı dahil.</li>
-                        <li style="display:flex;gap:8px"><i data-lucide="calendar-clock" style="width:14px;height:14px;flex-shrink:0"></i>En az <?= $rules['block_hours'] ?> saat önceden sipariş; <?= $rules['warn_hours'] ?> saatten kısa süreli işler acil sayılır.</li>
+                        <li style="display:flex;gap:8px"><i data-lucide="calendar-clock" style="width:14px;height:14px;flex-shrink:0"></i>En az <?= $rules['block_hours'] ?> saat önceden iş girişi; <?= $rules['warn_hours'] ?> saatten kısa süreli işler acil sayılır.</li>
                     </ul>
                     <button type="submit" class="btn btn-accent btn-lg btn-block" style="margin-top:16px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !rushAck)<?= $mode === 'catalog' ? ' || !lines().length' : '' ?>">
-                        <?= $mode === 'catalog' ? 'Siparişi ver' : 'Teklif iste' ?>
+                        <?= $mode === 'catalog' ? 'İşi gönder' : 'Teklif iste' ?>
                     </button>
                 </div>
             </div>

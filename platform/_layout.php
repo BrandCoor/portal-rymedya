@@ -9,8 +9,8 @@ function platform_nav(string $role): array {
     return $role === 'agency'
         ? [
             'index'   => ['Genel bakış', 'layout-grid', '/platform/index.php'],
-            'new'     => ['Yeni sipariş', 'plus', '/platform/job_new.php'],
-            'jobs'    => ['Siparişlerim', 'briefcase', '/platform/jobs.php'],
+            'new'     => ['Yeni iş', 'plus', '/platform/job_new.php'],
+            'jobs'    => ['İşlerim', 'briefcase', '/platform/jobs.php'],
             'finance' => ['Ekstre', 'receipt-text', '/modules/contacts/statement_print.php'],
             'profile' => ['Hesap', 'circle-user-round', '/platform/profile.php'],
         ]
@@ -28,6 +28,11 @@ function platform_header(string $title, string $active = ''): void {
     $cu    = $_SESSION['client_user'] ?? [];
     $notif = portal_notifications((int)($_SESSION['client_user_id'] ?? 0), 8);
     $nav   = platform_nav($role);
+    try {
+        $todo = platform_todo_count($role, (int)($_SESSION['client_user_id'] ?? 0), (int)($_SESSION['client_contact_id'] ?? 0));
+    } catch (Throwable $e) {
+        $todo = 0;
+    }
     ?>
 <!DOCTYPE html>
 <html lang="tr">
@@ -43,13 +48,13 @@ function platform_header(string $title, string $active = ''): void {
 
         <nav class="portal-nav">
             <?php foreach ($nav as $k => [$label, $icon, $href]): ?>
-                <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>" <?= $k === 'finance' ? 'target="_blank"' : '' ?>><i data-lucide="<?= $icon ?>"></i><?= e($label) ?></a>
+                <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>" <?= $k === 'finance' ? 'target="_blank"' : '' ?>><i data-lucide="<?= $icon ?>"></i><?= e($label) ?><?php if ($k === 'jobs' && $todo > 0): ?><span class="nav-count" style="margin-left:2px" title="İşlem bekleyen"><?= $todo > 99 ? '99+' : $todo ?></span><?php endif; ?></a>
             <?php endforeach; ?>
         </nav>
 
         <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
             <?php if ($role === 'agency'): ?>
-                <a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent btn-sm hidden md:inline-flex"><i data-lucide="plus"></i>Yeni sipariş</a>
+                <a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent btn-sm hidden md:inline-flex"><i data-lucide="plus"></i>Yeni iş</a>
             <?php endif; ?>
             <div class="relative" x-data="{ open: false }">
                 <button @click="open = !open" class="icon-btn" aria-label="Bildirimler">
@@ -95,7 +100,7 @@ function platform_header(string $title, string $active = ''): void {
 
 <nav class="mobile-tabbar">
     <?php foreach ($nav as $k => [$label, $icon, $href]): ?>
-        <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>"><i data-lucide="<?= $icon ?>"></i><?= e($label) ?></a>
+        <a href="<?= BASE_URL . $href ?>" class="<?= $active === $k ? 'is-active' : '' ?>" style="position:relative"><i data-lucide="<?= $icon ?>"></i><?= e($label) ?><?php if ($k === 'jobs' && $todo > 0): ?><span class="dot-count" style="top:2px;right:18%"><?= $todo > 9 ? '9+' : $todo ?></span><?php endif; ?></a>
     <?php endforeach; ?>
 </nav>
 
@@ -118,7 +123,7 @@ function platform_footer(): void {
 }
 
 /**
- * Sipariş / iş satırı (listelerde)
+ * İş / iş satırı (listelerde)
  */
 function platform_job_row(array $j, string $perspective): void {
     $price = $perspective === 'freelancer' ? $j['freelancer_fee'] : ($j['agency_price'] ?? $j['budget']);
@@ -175,7 +180,7 @@ function platform_message_box(array $messages, string $self_type, string $placeh
 }
 
 /**
- * Sipariş kalemleri tablosu
+ * İş kalemleri tablosu
  */
 function platform_items_table(array $items, string $perspective, array $job): void {
     if (!$items) {

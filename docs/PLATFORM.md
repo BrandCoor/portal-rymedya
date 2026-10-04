@@ -2,8 +2,8 @@
 
 Portal, iç ERP'nin yanında bir **prodüksiyon iş platformu** olarak da çalışır:
 
-- Ajanslar **hizmet kataloğundan** sipariş verir; tutar anında hesaplanır.
-- Sipariş doğrudan iş havuzuna düşer.
+- Ajanslar **hizmet kataloğundan** iş girer; tutar anında hesaplanır.
+- İş doğrudan iş havuzuna düşer.
 - İşi RY Medya ekibi veya freelancer'lar yapar.
 - Süreç teslim, değerlendirme ve ödemeye kadar platform üzerinde ilerler.
 
@@ -14,7 +14,7 @@ Portal, iç ERP'nin yanında bir **prodüksiyon iş platformu** olarak da çalı
                  │ PLATFORM YÖNETİCİSİ (RY Medya)       │  modules/platform/*
                  │ katalog · kurallar · atama · denetim │  izinler: platform.manage / .pricing / .delete
                  └────────┬──────────────────┬────────┘
-          sipariş / onay  │                  │  iş / hakediş / değerlendirme
+          iş / onay  │                  │  iş / hakediş / değerlendirme
                           ▼                  ▼
               ┌────────────────────┐  ┌────────────────────┐
               │ AJANS (iş veren)    │  │ FREELANCER (iş alan) │  /platform/*
@@ -25,7 +25,7 @@ Portal, iç ERP'nin yanında bir **prodüksiyon iş platformu** olarak da çalı
 | Rol | Görür | Yapar |
 |-----|-------|-------|
 | **Platform yöneticisi** | İki fiyat ve marj, tüm yazışma başlıkları, performans karneleri | Katalog ve fiyatlar, kurallar, atama, teklif kabul/ret, kalite kontrol, iptal, ödeme, seviye, kalıcı silme |
-| **Ajans** | Kendi siparişleri, kendi fiyatı, kalite kontrolden geçmiş teslimatlar, faturaları | Katalog siparişi veya özel talep, düzenleme (kapsamlı), teklif onayı, teslim onayı + puan, revizyon, iptal (atama öncesi) |
+| **Ajans** | Kendi işleri, kendi fiyatı, kalite kontrolden geçmiş teslimatlar, faturaları | Katalogdan iş veya özel talep, düzenleme (kapsamlı), teklif onayı, teslim onayı + puan, revizyon, iptal (atama öncesi) |
 | **Freelancer** | Kendisine açılan işler, kendi hakedişi, kendi teslimatları ve yazışması, ret gerekçeleri, performans karnesi | İşi al / teklif ver, geri çek, başla, bırak (gerekçeli), teslim et, ekiple yaz |
 
 Gizlilik kuralları:
@@ -35,12 +35,12 @@ Gizlilik kuralları:
 - Ajans adını görmek ayara bağlıdır.
 - Her freelancer'ın ekiple yazışması **kendine özeldir**. Bir teklif verenin yazışmasını diğeri göremez.
 
-## 2. Sipariş akışı (sadeleştirilmiş)
+## 2. İş akışı (sadeleştirilmiş)
 
 ```
  AJANS                                PLATFORM                          FREELANCER
  Katalogdan hizmet seç ──► fiyat anında hesaplanır
- Sipariş ver ─────────────► [open] havuz (otomatik yayın açıksa)  ──► işi al / teklif ver
+ İş gir ─────────────► [open] havuz (otomatik yayın açıksa)  ──► işi al / teklif ver
                              (kapalıysa [submitted] → "Onayla ve yayınla")
  Özel talep ──────────────► [submitted] → fiyat → [quote_sent] → ajans onayı → [open]
 
@@ -55,8 +55,45 @@ Gizlilik kuralları:
                                           [completed] faturalar + performans puanı güncellenir
 ```
 
-- Katalog siparişlerinde fiyat pazarlığı yoktur; ajans fiyatı sipariş anında görür.
+- Katalogdan girilen işlerde fiyat pazarlığı yoktur; ajans fiyatı işi girerken görür.
 - Yönetici onayı yalnızca "otomatik yayın" kapalıysa veya özel taleplerde gerekir.
+
+### 2.1 Aşamalar (milestone)
+
+İş, ayrı ayrı teslim edilip onaylanan aşamalara bölünür (freelancer.com mantığı; ajans ile freelancer yine birbirini görmez):
+
+- Katalog işinde her hizmet kalemi bir aşamadır (çekim kalemleri önce, hedef tarihi başlangıç günü). Özel talepte tek aşama vardır. Ayar: Kurallar → "Katalog işlerinde her hizmet ayrı aşama olsun".
+- Freelancer teslim ederken aşamayı seçer → kalite kontrol → ajans "Aşamayı onayla" der → o aşamanın hakedişi (alış faturası) anında kayda geçer, iş sıradaki aşamaya döner.
+- Son aşama onaylanınca iş kapanır, ajansa toplam tutardan tek satış faturası kesilir.
+- Ekip aşama adını, ücretini ve hedef tarihini düzenleyebilir, aşama ekleyip silebilir; freelancer ücreti aşama toplamına eşitlenir, ajans fiyatı değişmez.
+- Ajans X gün içinde onay ya da revizyon vermezse aşama otomatik onaylanır (Kurallar → "Teslim otomatik onay süresi", 0 = kapalı).
+
+### 2.2 Ek kalemler ve prim
+
+| Kim ekler | Ajans görür mü | Akış |
+|---|---|---|
+| Ajans, katalogdan ("Ek kalem ekle") | Evet, katalog fiyatıyla | Tutar işe eklenir → atanmış freelancer kabul eder |
+| Ekip, "Ajansa öner" | Evet | Ajans onaylar → freelancer kabul eder |
+| Ekip, "İç ek iş" | Hayır | Freelancer kabul eder; teslimini ekip onaylar |
+| Ekip, "Prim" | Hayır | İş gerektirmez; doğrudan hakediş kaydı oluşur |
+
+Freelancer ek kalemi kabul etmezse kalem iptal olur ve tutarlar geri alınır; ajansa "ekibimiz iletişime geçecek" bilgisi gider.
+
+### 2.3 Atama kabulü ve teklifler
+
+- Ekibin veya teklif kabulüyle yapılan atamada freelancer "Kabul et ve başla" ya da gerekçeli "Reddet" seçer. Reddetmek puanı etkilemez, iş havuza döner.
+- Teklif verirken ücret, teslim süresi (gün) ve müsaitlik girilir; bekleyen teklif güncellenebilir. Freelancer bekleyen teklif sayısını ve ortalamasını görür.
+
+### 2.4 İş kaydı ve sorun bildirimi
+
+- Her işlem (iş girişi, yayın, teklif, atama, teslim, kalite kontrol, revizyon, aşama onayı, ek kalem, fatura, ödeme, puan, sorun, hatırlatma, alan değişiklikleri) kim / ne zaman / eski → yeni / tutar olarak "İş kaydı"na yazılır.
+- Herkes yalnızca kendine açık kalemleri görür: ajans freelancer adını, tekliflerini, ücretini görmez; freelancer ajans fiyatını ve adını görmez. Kayıt CSV olarak indirilebilir.
+- Ajans ve atanan freelancer "Sorun bildir" ile gerekçeli bildirim açar (gecikme, kalite, iletişim, kapsam, ödeme). İş merkezinde kırmızı uyarı çıkar; ekip çözüm notuyla kapatır, bildiren kişiye iletilir.
+
+### 2.5 Otomasyonlar
+
+`cron/platform.php` (saatte bir önerilir; tanımlı değilse personel paneli açıldıkça saatte bir çalışır):
+otomatik aşama onayı · teslimden bir gün önce freelancer'a hatırlatma · teslim tarihi geçen işler için ekibe ve freelancer'a uyarı · başlangıcı 48 saat içinde olup atanmamış işler için ekibe uyarı. Her uyarı iş kaydına yazılır ve bir kez gönderilir.
 
 ## 3. Termin kuralları (aynı gün / acil iş)
 
@@ -64,9 +101,9 @@ Referans tarih, çekim/başlangıç tarihidir; girilmemişse teslim tarihi kulla
 
 | Durum | Sonuç | Ayar |
 |-------|-------|------|
-| Geçmiş tarih | Sipariş alınmaz | — |
-| Aynı gün başlangıç | Sipariş alınmaz | `Aynı gün başlayan işler alınmasın` |
-| Başlangıca kalan süre < en kısa sipariş süresi | Sipariş alınmaz | `En kısa sipariş süresi` (varsayılan 24 sa); hizmete özel süre katalogdan (ör. drone 72 sa) |
+| Geçmiş tarih | İş girilemez | — |
+| Aynı gün başlangıç | İş girilemez | `Aynı gün başlayan işler alınmasın` |
+| Başlangıca kalan süre < en kısa iş giriş süresi | İş girilemez | `En kısa iş giriş süresi` (varsayılan 24 sa); hizmete özel süre katalogdan (ör. drone 72 sa) |
 | Kalan süre < acil iş eşiği | Uyarı çıkar. Ajans "acil iş koşullarını" onaylamadan gönderemez. | `Acil iş eşiği` (72 sa) |
 | Acil iş | Tutara acil farkı eklenir. Farkın bir kısmı freelancer'a prim olarak geçer. | `Acil iş farkı` (%25), `freelancer payı` (%60) |
 
@@ -164,7 +201,7 @@ Her işin sayfasındaki **Görünürlük ve dağıtım** bölümü:
 - **Ajans silme:** işi olan ajans yalnızca "işleriyle birlikte sil" seçeneğiyle silinir.
 - **Freelancer silme:** aktif işleri havuza döner.
 - Faturası veya cari hareketi olan cari kart muhasebe geçmişi için korunur.
-- **Katalog kalemi:** silinebilir veya pasife alınabilir. Geçmiş siparişler kendi ad ve fiyat kopyasını taşır.
+- **Katalog kalemi:** silinebilir veya pasife alınabilir. Geçmiş işler kendi ad ve fiyat kopyasını taşır.
 
 ## 9. Hizmet kataloğu
 
@@ -173,23 +210,20 @@ Her işin sayfasındaki **Görünürlük ve dağıtım** bölümü:
 - ajans fiyatı ve freelancer ücreti (marj otomatik görünür)
 - birim
 - en düşük seviye
-- en kısa sipariş süresi
+- en kısa iş giriş süresi
 - aktif / pasif durumu
 
-Toplu yüzde güncelleme yapılabilir; sonuçlar 50 TL'ye yuvarlanır. Fiyat değişikliği yalnızca yeni siparişleri etkiler. Kurulumda örnek fiyatlar yüklenir. Fiyatlar gözden geçirilene kadar iş merkezinde uyarı görünür.
+Toplu yüzde güncelleme yapılabilir; sonuçlar 50 TL'ye yuvarlanır. Fiyat değişikliği yalnızca yeni işleri etkiler. Kurulumda örnek fiyatlar yüklenir. Fiyatlar gözden geçirilene kadar iş merkezinde uyarı görünür.
 
 ## 10. Giriş, kayıt ve muhasebe
 
 - Personel girişinde **"Müşteri / Ajans / Freelancer Girişi"** butonu vardır. Portal girişi `/client/login.php`, hesap türüne göre yönlendirir.
 - Yeni ajans ve freelancer hesapları onay bekler.
 - Kayıt hız sınırı IP başına uygulanır ve personel giriş kilidini etkilemez.
-- İş tamamlanınca:
-  - Ajansa satış faturası kesilir.
-  - Freelancer'a hakediş (alış faturası) oluşur.
-  - Ödeme iş sayfasından kasa veya banka seçilerek kaydedilir.
+- Her onaylanan aşama için freelancer'a hakediş (alış faturası) oluşur; ödeme iş sayfasındaki "Hakediş ödemeleri" kartından aşama aşama kaydedilir.
+- İş tamamlanınca ajansa toplam tutardan satış faturası kesilir.
 
 ## 11. Bilinen sınırlar
 
 - Teslimatlar bağlantı olarak paylaşılır; dosya yükleme yoktur.
 - SMS bildirimi yoktur. E-posta bildirimleri için bkz. KULLANIM_KILAVUZU → E-posta.
-- Teslimden X gün sonra otomatik onay için zamanlanmış görev (cron) gerekir.

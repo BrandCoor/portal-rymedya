@@ -6,7 +6,7 @@ Canlı adres: `https://portal.rymedya.com.tr`.
 
 Portalın iki yüzü vardır:
 - **İç ERP:** RY Medya personeli için.
-- **İş Platformu:** Ajanslar hizmet kataloğundan sipariş verir (fiyat anında, aynı gün / acil iş kuralları), iş havuza düşer; işi RY Medya ekibi veya seviyesine göre kapasitesi sınırlı freelancer'lar yapar. Ayrıntılar: [docs/PLATFORM.md](docs/PLATFORM.md).
+- **İş Platformu:** Ajanslar hizmet kataloğundan iş girer (fiyat anında, aynı gün / acil iş kuralları), iş havuza düşer; işi RY Medya ekibi veya seviyesine göre kapasitesi sınırlı freelancer'lar yapar. Ayrıntılar: [docs/PLATFORM.md](docs/PLATFORM.md).
 
 | Giriş | Adres |
 |-------|-------|
@@ -44,7 +44,7 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 | Bildirimler | `modules/notifications` | Müşteri hareketleri, görev atamaları, tüm aktivite günlüğü |
 | Müşteri Portalı | `client/` | Projeler, kurgu onayı, teslim dosyaları, teklif kabul/ret, ekstre |
 | **İş Platformu (yönetici)** | `modules/platform` | İş merkezi, hizmet kataloğu, termin ve seviye kuralları, teklif kabul/ret, kişiye özel yazışma, kalite kontrol, performans karneleri, kalıcı silme |
-| **Ajans & Freelancer Paneli** | `platform/` | Katalog siparişi, sipariş düzenleme, iş havuzu, teklif, teslim, performans karnesi, kazançlar |
+| **Ajans & Freelancer Paneli** | `platform/` | Katalogdan iş, iş düzenleme, iş havuzu, teklif, teslim, performans karnesi, kazançlar |
 
 ## Kurulum
 
@@ -64,4 +64,10 @@ Toplu e-postalar ve gönderilemeyen bildirimlerin yeniden denenmesi için cPanel
 
 ```
 php /home/KULLANICI/public_html/cron/mail-queue.php
+```
+
+İş platformu otomasyonları (otomatik aşama onayı, teslim hatırlatmaları, gecikme uyarıları) için saatte bir:
+
+```
+php /home/KULLANICI/public_html/cron/platform.php
 ```

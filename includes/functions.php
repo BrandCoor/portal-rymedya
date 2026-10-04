@@ -993,7 +993,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1106,6 +1106,7 @@ function run_migrations(): void {
         run_platform_migrations();
         run_platform_migrations_v4();
         run_mail_migrations();
+        run_platform_migrations_v6();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1234,6 +1235,7 @@ require_once __DIR__ . '/settings_schema.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/platform.php';
+require_once __DIR__ . '/platform_flow.php';
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur
 run_migrations();

@@ -24,10 +24,10 @@ mark_notifications_read($uid);
 platform_header('Bildirimler', '');
 ?>
 <div style="max-width:760px;margin:0 auto">
-    <div class="page-head"><div><h1 class="h1">Bildirimler</h1><p class="sub">Siparişler, atamalar ve teslimatlarla ilgili son 100 bildirim.</p></div></div>
+    <div class="page-head"><div><h1 class="h1">Bildirimler</h1><p class="sub">İşler, atamalar ve teslimatlarla ilgili son 100 bildirim.</p></div></div>
     <div class="card">
         <?php if (!$items): ?>
-            <?= ui_empty('Bildiriminiz yok', 'Siparişlerinizde bir gelişme olduğunda burada görünecek.', 'bell') ?>
+            <?= ui_empty('Bildiriminiz yok', 'İşlerinizde bir gelişme olduğunda burada görünecek.', 'bell') ?>
         <?php else: ?>
         <div class="divide">
             <?php $day = null; foreach ($items as $n): $d = substr($n['created_at'], 0, 10); ?>

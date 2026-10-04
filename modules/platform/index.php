@@ -3,8 +3,8 @@
  * ====================================================================
  * PLATFORM YÖNETİMİ - İŞ MERKEZİ
  * ====================================================================
- * Gelen siparişler, havuzdaki işler, teklifler, kalite kontrol, üretim
- * ve tamamlanan işler tek ekranda. Yönetici adına sipariş oluşturma,
+ * Gelen işler, havuzdaki işler, teklifler, kalite kontrol, üretim
+ * ve tamamlanan işler tek ekranda. Yönetici adına iş oluşturma,
  * toplu kalıcı silme (platform.delete).
  */
 
@@ -109,7 +109,10 @@ $gcount = fn($key) => array_sum(array_map(fn($s) => (int)($counts[$s] ?? 0), $gr
 $in = implode(',', array_fill(0, count($groups[$g]['statuses']), '?'));
 $sql = "
     SELECT j.*, c.company_title AS agency_name, u.full_name AS assignee_name,
-           (SELECT COUNT(*) FROM platform_applications a WHERE a.job_id = j.id AND a.status = 'pending') AS pending_apps
+           (SELECT COUNT(*) FROM platform_applications a WHERE a.job_id = j.id AND a.status = 'pending') AS pending_apps,
+           (SELECT COUNT(*) FROM platform_job_issues pi WHERE pi.job_id = j.id AND pi.status = 'open') AS open_issues,
+           (SELECT COUNT(*) FROM platform_milestones pm WHERE pm.job_id = j.id AND pm.status IN ('open', 'in_review', 'revision', 'approved')) AS ms_count,
+           (SELECT COUNT(*) FROM platform_milestones pm WHERE pm.job_id = j.id AND pm.status = 'approved') AS ms_done
     FROM platform_jobs j
     LEFT JOIN contacts c ON j.agency_contact_id = c.id
     LEFT JOIN users u ON j.assigned_user_id = u.id
@@ -136,6 +139,7 @@ $pending_apps_total = (int)$db->query("SELECT COUNT(*) FROM platform_application
 $late = (int)$db->query("SELECT COUNT(*) FROM platform_jobs WHERE deadline < CURRENT_DATE() AND status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "')")->fetchColumn();
 // Başlangıcına 48 saatten az kalmış ama hâlâ atanmamış işler
 $at_risk = $db->query("SELECT id, job_code, title, start_date, deadline FROM platform_jobs WHERE status IN ('submitted', 'quote_sent', 'open') AND COALESCE(start_date, deadline) <= DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY) ORDER BY COALESCE(start_date, deadline) LIMIT 5")->fetchAll();
+$issue_jobs = $db->query("SELECT j.id, j.job_code, COUNT(*) AS n FROM platform_job_issues i JOIN platform_jobs j ON j.id = i.job_id WHERE i.status = 'open' GROUP BY j.id, j.job_code ORDER BY MIN(i.created_at) LIMIT 8")->fetchAll();
 $pending_people = (int)$db->query("SELECT (SELECT COUNT(*) FROM freelancer_profiles WHERE status = 'pending') + (SELECT COUNT(*) FROM agency_profiles WHERE status = 'pending')")->fetchColumn();
 $agencies = $db->query("SELECT id, company_title FROM contacts WHERE type = 'agency' ORDER BY company_title")->fetchAll();
 $services = catalog_services();
@@ -148,7 +152,7 @@ require_once __DIR__ . '/../../includes/header.php';
 <div class="page-head">
     <div>
         <h1 class="h1">İş merkezi</h1>
-        <p class="sub">Siparişler, atamalar, kalite kontrol ve teslimler.</p>
+        <p class="sub">İşler, atamalar, kalite kontrol ve teslimler.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="<?= BASE_URL ?>/modules/platform/settings.php" class="btn btn-secondary"><i data-lucide="sliders-horizontal"></i>Kurallar</a>
@@ -157,10 +161,16 @@ require_once __DIR__ . '/../../includes/header.php';
 </div>
 
 <?php if ($catalog_unreviewed && can_access_module('platform.pricing')): ?>
-    <div class="alert alert-warning" style="margin-bottom:12px"><i data-lucide="tag"></i><div>Hizmet kataloğu örnek fiyatlarla kuruldu. Ajanslar sipariş vermeden önce <a class="link" href="<?= BASE_URL ?>/modules/platform/catalog.php">fiyatları gözden geçirin</a>.</div></div>
+    <div class="alert alert-warning" style="margin-bottom:12px"><i data-lucide="tag"></i><div>Hizmet kataloğu örnek fiyatlarla kuruldu. Ajanslar iş girmeden önce <a class="link" href="<?= BASE_URL ?>/modules/platform/catalog.php">fiyatları gözden geçirin</a>.</div></div>
 <?php endif; ?>
 <?php if ($pending_people > 0): ?>
     <div class="alert alert-info" style="margin-bottom:12px"><i data-lucide="user-check"></i><div><strong><?= $pending_people ?></strong> yeni ajans / freelancer başvurusu onay bekliyor. <a class="link" href="<?= BASE_URL ?>/modules/platform/freelancers.php?status=pending">Freelancer'lar</a> · <a class="link" href="<?= BASE_URL ?>/modules/platform/agencies.php?status=pending">Ajanslar</a></div></div>
+<?php endif; ?>
+<?php if ($issue_jobs): ?>
+    <div class="alert alert-danger" style="margin-bottom:12px"><i data-lucide="triangle-alert"></i><div>
+        <strong>Açık sorun bildirimi:</strong>
+        <?php foreach ($issue_jobs as $i => $r): ?><?= $i ? ', ' : ' ' ?><a class="link" href="<?= BASE_URL ?>/modules/platform/job.php?id=<?= (int)$r['id'] ?>#sorunlar"><?= e($r['job_code']) ?></a><?php endforeach; ?>
+    </div></div>
 <?php endif; ?>
 <?php if ($at_risk): ?>
     <div class="alert alert-danger" style="margin-bottom:12px"><i data-lucide="alarm-clock"></i><div>
@@ -171,7 +181,7 @@ require_once __DIR__ . '/../../includes/header.php';
 
 <div class="card" style="margin:12px 0 24px">
     <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-        <div class="kpi"><div class="kpi-label">Onay bekleyen</div><div class="kpi-value"><?= (int)($counts['submitted'] ?? 0) ?></div><div class="kpi-meta">sipariş / özel talep</div></div>
+        <div class="kpi"><div class="kpi-label">Onay bekleyen</div><div class="kpi-value"><?= (int)($counts['submitted'] ?? 0) ?></div><div class="kpi-meta">iş / özel talep</div></div>
         <div class="kpi"><div class="kpi-label">Bekleyen teklif</div><div class="kpi-value"><?= $pending_apps_total ?></div><div class="kpi-meta">freelancer teklifi</div></div>
         <div class="kpi"><div class="kpi-label">Kalite kontrol</div><div class="kpi-value" style="<?= ($counts['qa_review'] ?? 0) ? 'color:var(--accent)' : '' ?>"><?= (int)($counts['qa_review'] ?? 0) ?></div><div class="kpi-meta">teslim inceleme</div></div>
         <div class="kpi"><div class="kpi-label">Üretimde</div><div class="kpi-value"><?= $gcount('active') ?></div><div class="kpi-meta"><?= $late ? "<span style='color:var(--danger)'>{$late} geciken</span>" : 'gecikme yok' ?></div></div>
@@ -225,6 +235,8 @@ require_once __DIR__ . '/../../includes/header.php';
                             <?php if ((int)$j['is_rush'] === 1): ?><?= ui_badge('Acil', 'accent') ?><?php endif; ?>
                             <?php if ($j['pricing_source'] === 'custom'): ?><?= ui_badge('Özel', 'neutral') ?><?php endif; ?>
                             <?php if ((int)$j['pending_apps'] > 0): ?><?= ui_badge($j['pending_apps'] . ' teklif', 'info') ?><?php endif; ?>
+                            <?php if ((int)$j['open_issues'] > 0): ?><?= ui_badge('Sorun bildirildi', 'danger', true) ?><?php endif; ?>
+                            <?php if ((int)$j['ms_count'] > 1 && !in_array($j['status'], ['completed', 'cancelled'], true)): ?><span class="xsmall text-muted"><?= (int)$j['ms_done'] ?>/<?= (int)$j['ms_count'] ?> aşama</span><?php endif; ?>
                         </div>
                     </td>
                     <td class="small"><?= e($j['agency_name'] ?? 'İç iş') ?></td>

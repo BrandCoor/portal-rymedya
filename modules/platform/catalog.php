@@ -3,9 +3,9 @@
  * ====================================================================
  * PLATFORM YÖNETİMİ - HİZMET KATALOĞU (FİYAT LİSTESİ)
  * ====================================================================
- * Ajansın sipariş ekranındaki hizmetler ve birim fiyatları.
+ * Ajansın iş ekranındaki hizmetler ve birim fiyatları.
  * Her kalem: ajans fiyatı, freelancer ücreti, en düşük seviye,
- * en kısa sipariş süresi (ör. drone için uçuş izni).
+ * en kısa iş giriş süresi (ör. drone için uçuş izni).
  * Yetki: platform.pricing · silme: platform.delete
  */
 
@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $mark_reviewed();
         log_activity('platform', "Hizmet kataloğu: {$name} " . ($id ? 'güncellendi' : 'eklendi'), null, null, '/modules/platform/catalog.php');
-        set_flash('success', $id ? 'Hizmet güncellendi. Yeni fiyat bundan sonraki siparişlerde geçerli.' : 'Hizmet kataloğa eklendi.');
+        set_flash('success', $id ? 'Hizmet güncellendi. Yeni fiyat bundan sonraki işlerde geçerli.' : 'Hizmet kataloğa eklendi.');
         redirect($self);
     }
 
@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($self);
         }
         $id = (int)($_POST['id'] ?? 0);
-        // Geçmiş siparişlerin kalemleri kendi ad/fiyat kopyasını taşır; bağ koparılır
+        // Geçmiş işlerin kalemleri kendi ad/fiyat kopyasını taşır; bağ koparılır
         $db->prepare("UPDATE platform_job_items SET service_id = NULL WHERE service_id = ?")->execute([$id]);
         $db->prepare("DELETE FROM platform_services WHERE id = ?")->execute([$id]);
         set_flash('success', 'Hizmet katalogdan silindi.');
@@ -122,7 +122,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <div>
         <div class="crumb"><a href="<?= BASE_URL ?>/modules/platform/index.php">İş merkezi</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Hizmet kataloğu</span></div>
         <h1 class="h1">Hizmet kataloğu</h1>
-        <p class="sub">Ajanslar bu listeden sipariş verir; tutar ve freelancer hakedişi otomatik hesaplanır. Fiyat değişiklikleri yalnızca yeni siparişlere uygulanır.</p>
+        <p class="sub">Ajanslar bu listeden iş girer; tutar ve freelancer hakedişi otomatik hesaplanır. Fiyat değişiklikleri yalnızca yeni işlere uygulanır.</p>
     </div>
     <div style="display:flex;gap:8px">
         <button type="button" class="btn btn-primary" @click="edit(<?= e(json_encode($blank)) ?>)"><i data-lucide="plus"></i>Hizmet ekle</button>
@@ -161,12 +161,12 @@ require_once __DIR__ . '/../../includes/header.php';
                         <td class="r num" style="color:<?= $mp < 15 ? 'var(--warning)' : 'var(--success)' ?>">%<?= number_format($mp, 0) ?></td>
                         <td><?= tier_badge($s['min_tier']) ?></td>
                         <td class="r num"><?= (int)$s['min_lead_hours'] > $base_lead ? (int)$s['min_lead_hours'] . ' sa' : '<span class="text-faint">genel</span>' ?></td>
-                        <td class="r xsmall text-muted"><?= $u ? (int)$u['jobs'] . ' sipariş' : '—' ?></td>
+                        <td class="r xsmall text-muted"><?= $u ? (int)$u['jobs'] . ' iş' : '—' ?></td>
                         <td class="r" style="white-space:nowrap">
                             <button type="button" class="btn btn-ghost btn-sm" @click="edit(<?= e(json_encode($s)) ?>)">Düzenle</button>
                             <form method="POST" action="" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="btn btn-ghost btn-sm"><?= (int)$s['is_active'] === 1 ? 'Pasife al' : 'Aktifleştir' ?></button></form>
                             <?php if ($can_delete): ?>
-                            <form method="POST" action="" style="display:inline" onsubmit="return confirm('Hizmet katalogdan silinsin mi? Geçmiş siparişler etkilenmez.');"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="icon-btn" aria-label="Sil" style="display:inline-grid;color:var(--danger)"><i data-lucide="trash-2"></i></button></form>
+                            <form method="POST" action="" style="display:inline" onsubmit="return confirm('Hizmet katalogdan silinsin mi? Geçmiş işler etkilenmez.');"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="icon-btn" aria-label="Sil" style="display:inline-grid;color:var(--danger)"><i data-lucide="trash-2"></i></button></form>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -197,14 +197,14 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="modal-body stack">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="field sm:col-span-2"><label class="label">Hizmet adı <span class="req">*</span></label><input class="input" name="name" x-model="f.name" required></div>
-                <div class="field sm:col-span-2"><label class="label">Açıklama</label><input class="input" name="description" x-model="f.description" placeholder="Ajansın sipariş ekranında görünür"></div>
+                <div class="field sm:col-span-2"><label class="label">Açıklama</label><input class="input" name="description" x-model="f.description" placeholder="Ajansın iş ekranında görünür"></div>
                 <div class="field"><label class="label">Kategori</label><select class="select" name="category" x-model="f.category"><?php foreach (JOB_CATEGORIES as $ck => $cv): ?><option value="<?= $ck ?>"><?= e($cv['label']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label class="label">Birim</label><select class="select" name="unit" x-model="f.unit"><?php foreach (SERVICE_UNITS as $uk => $ul): ?><option value="<?= e($uk) ?>"><?= e($ul) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label class="label">Ajans fiyatı (KDV hariç) <span class="req">*</span></label><div class="input-group"><input class="input" type="number" step="0.01" min="0" name="agency_price" x-model.number="f.agency_price" required><span class="addon">TL</span></div></div>
                 <div class="field"><label class="label">Freelancer ücreti</label><div class="input-group"><input class="input" type="number" step="0.01" min="0" name="freelancer_fee" x-model.number="f.freelancer_fee"><span class="addon">TL</span></div>
                     <span class="hint" x-show="f.agency_price > 0" x-text="'Marj: ' + Math.round(((f.agency_price || 0) - (f.freelancer_fee || 0)) / f.agency_price * 100) + '%'"></span></div>
                 <div class="field"><label class="label">En düşük freelancer seviyesi</label><select class="select" name="min_tier" x-model="f.min_tier"><?php foreach (FREELANCER_TIERS as $tk => $tv): ?><option value="<?= $tk ?>"><?= e($tv['label']) ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label class="label">En kısa sipariş süresi</label><div class="input-group"><input class="input" type="number" min="0" max="720" name="min_lead_hours" x-model.number="f.min_lead_hours"><span class="addon">saat</span></div><span class="hint">Genel kural <?= $base_lead ?> saat; daha uzun süre gerekiyorsa girin.</span></div>
+                <div class="field"><label class="label">En kısa iş giriş süresi</label><div class="input-group"><input class="input" type="number" min="0" max="720" name="min_lead_hours" x-model.number="f.min_lead_hours"><span class="addon">saat</span></div><span class="hint">Genel kural <?= $base_lead ?> saat; daha uzun süre gerekiyorsa girin.</span></div>
                 <div class="field"><label class="label">Sıra</label><input class="input" type="number" name="sort_order" x-model.number="f.sort_order"></div>
                 <label class="check" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="is_active" value="1" :checked="f.is_active == 1">Katalogda görünsün</label>
             </div>

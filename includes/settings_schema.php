@@ -82,7 +82,7 @@ const SETTINGS_SCHEMA = [
             'login_staff_quote'            => ['textarea', 'Sol panel sloganı', 'Tekliften teslime kadar her işin *tek bir yerde* takibi.', ''],
             'login_staff_points'           => ['points', 'Sol panel maddeleri', [
                 ['clapperboard', 'Projeler ve setler.', 'Çekim günleri, ekip maliyeti, kurgu revizyonları.'],
-                ['inbox', 'İş platformu.', 'Ajans siparişleri, freelancer ataması, kalite kontrol.'],
+                ['inbox', 'İş platformu.', 'Ajans işleri, freelancer ataması, kalite kontrol.'],
                 ['landmark', 'Finans.', 'Fatura, tahsilat, kasa ve raporlar.'],
             ], 'Simge adları lucide.dev/icons listesinden yazılır (ör. camera, film, users).', 3],
             'login_staff_show_portal'      => ['bool', 'Portal giriş butonunu göster', '1', ''],
@@ -100,9 +100,9 @@ const SETTINGS_SCHEMA = [
             'login_portal_subtitle'         => ['text', 'Alt metin', 'Müşteri, ajans ve freelancer hesapları için ortak giriş.', ''],
             'login_portal_email_placeholder'=> ['text', 'E-posta alanı örneği', 'ornek@sirket.com', ''],
             'login_portal_eyebrow'          => ['text', 'Sol panel üst etiketi', 'Prodüksiyon platformu', ''],
-            'login_portal_quote'            => ['textarea', 'Sol panel sloganı', 'Siparişi verin, ekibi biz kuralım. *Teslime kadar* her adımı buradan izleyin.', ''],
+            'login_portal_quote'            => ['textarea', 'Sol panel sloganı', 'İşi gönderin, ekibi biz kuralım. *Teslime kadar* her adımı buradan izleyin.', ''],
             'login_portal_points'           => ['points', 'Sol panel maddeleri', [
-                ['building-2', 'Ajanslar', 'hizmetleri seçip anında fiyat görür, işi tek adımda sipariş eder.'],
+                ['building-2', 'Ajanslar', 'hizmetleri seçip anında fiyat görür, işini tek adımda girer.'],
                 ['users-round', 'Freelancer\'lar', 'seviyelerine uygun işleri alır, teslim eder, kazancını takip eder.'],
                 ['film', 'Müşteriler', 'projelerini, kurgu versiyonlarını ve faturalarını görür.'],
             ], '', 3],
@@ -122,7 +122,7 @@ const SETTINGS_SCHEMA = [
         'fields' => [
             'register_agency_title'       => ['text', 'Ajans · başlık', 'Ajans hesabı oluşturun', ''],
             'register_agency_eyebrow'     => ['text', 'Ajans · sol panel etiketi', 'Ajanslar için', ''],
-            'register_agency_quote'       => ['textarea', 'Ajans · slogan', 'Fiyat listesinden seçin, *anında* sipariş verin. Gerisini ekip halleder.', ''],
+            'register_agency_quote'       => ['textarea', 'Ajans · slogan', 'Fiyat listesinden seçin, *anında* iş girin. Gerisini ekip halleder.', ''],
             'register_agency_points'      => ['points', 'Ajans · maddeler', [
                 ['tags', 'Şeffaf fiyat.', 'Hizmet kataloğundan seçtiğiniz anda toplam tutarı görürsünüz.'],
                 ['shield-check', 'Kalite kontrol.', 'Her teslimat size ulaşmadan önce ekibimiz tarafından incelenir.'],
@@ -171,9 +171,9 @@ const SETTINGS_SCHEMA = [
             'mail_subject_prefix'   => ['text', 'Bildirim konu öneki', '', 'Ör. [RY Medya]. Bildirim e-postalarının konusunun başına eklenir.'],
             'mail_button_text'      => ['text', 'Bildirim butonu metni', 'Görüntüle', ''],
             'mail_footer_text'      => ['textarea', 'E-posta alt bilgisi', 'Bu e-posta, hesabınızla ilgili bir gelişme olduğu için gönderilmiştir.', 'Tüm e-postaların altında görünür.'],
-            'mail_notify_portal'    => ['bool', 'Ajans, freelancer ve müşterilere iş bildirimleri', '1', 'Sipariş onayı, atama, teslim, revizyon, teklif sonucu, seviye değişikliği, ödeme, yeni kurgu versiyonu, fatura gibi bildirimler.'],
+            'mail_notify_portal'    => ['bool', 'Ajans, freelancer ve müşterilere iş bildirimleri', '1', 'İş onayı, atama, teslim, revizyon, teklif sonucu, seviye değişikliği, ödeme, yeni kurgu versiyonu, fatura gibi bildirimler.'],
             'mail_notify_staff'     => ['bool', 'Personele kendisine atanan işler', '1', 'Görev ataması, kurgu ataması, müşteri revizyon talebi gibi kişiye özel bildirimler.'],
-            'mail_staff_inbox'      => ['email', 'Ekip gelen kutusu', '', 'Doluysa platformdaki tüm ekip bildirimlerinin (yeni sipariş, teklif, teslim) kopyası bu adrese gider.'],
+            'mail_staff_inbox'      => ['email', 'Ekip gelen kutusu', '', 'Doluysa platformdaki tüm ekip bildirimlerinin (yeni iş, teklif, teslim) kopyası bu adrese gider.'],
             'mail_register_confirm' => ['bool', 'Kayıt olana "başvurunuz alındı" e-postası', '1', ''],
             'mail_batch_size'       => ['number', 'Toplu gönderimde parti büyüklüğü', '20', 'Her adımda gönderilecek e-posta sayısı. Hosting saatlik limitine göre ayarlayın.', [1, 200, 'e-posta']],
         ],

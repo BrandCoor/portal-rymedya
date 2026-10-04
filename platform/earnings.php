@@ -3,7 +3,7 @@
  * ====================================================================
  * RY MEDYA PLATFORM - KAZANÇ (FREELANCER)
  * ====================================================================
- * Tamamlanan her iş için oluşan hakediş (alış faturası) ve ödeme durumu.
+ * Onaylanan her aşama için oluşan hakediş (alış faturası) ve ödeme durumu.
  */
 
 require_once __DIR__ . '/../config/db.php';
@@ -14,22 +14,27 @@ require_once __DIR__ . '/_layout.php';
 $profile = require_platform_role('freelancer');
 $uid = (int)$_SESSION['client_user_id'];
 
+// Aşama bazlı hakediş: her onaylanan aşama ayrı satır
 $st = $db->prepare("
-    SELECT j.id, j.job_code, j.title, j.completed_at, j.freelancer_fee, j.currency, j.freelancer_rating,
-           i.grand_total, i.paid_amount, i.payment_status
-    FROM platform_jobs j
-    LEFT JOIN invoices i ON i.id = j.purchase_invoice_id
-    WHERE j.assigned_user_id = ? AND j.status = 'completed'
-    ORDER BY j.completed_at DESC
+    SELECT j.id, j.job_code, j.title, j.status AS job_status, j.currency, j.freelancer_rating,
+           m.title AS ms_title, m.is_extra, m.no_work, m.fee AS freelancer_fee, m.approved_at AS completed_at,
+           (SELECT COUNT(*) FROM platform_milestones x WHERE x.job_id = j.id AND x.status IN ('" . implode("','", MILESTONE_LIVE) . "')) AS ms_count,
+           i.invoice_number, i.grand_total, i.paid_amount, i.payment_status
+    FROM platform_milestones m
+    JOIN platform_jobs j ON j.id = m.job_id
+    LEFT JOIN invoices i ON i.id = m.purchase_invoice_id
+    WHERE m.freelancer_user_id = ? AND m.status = 'approved'
+    ORDER BY m.approved_at DESC, m.id DESC
 ");
 $st->execute([$uid]);
 $rows = $st->fetchAll();
+$job_count = count(array_unique(array_column($rows, 'id')));
 
 $total   = array_sum(array_map(fn($r) => (float)($r['grand_total'] ?? $r['freelancer_fee']), $rows));
 $paid    = array_sum(array_map(fn($r) => (float)($r['paid_amount'] ?? 0), $rows));
 $pending = $total - $paid;
 
-$in_progress = $db->prepare("SELECT COALESCE(SUM(freelancer_fee), 0) FROM platform_jobs WHERE assigned_user_id = ? AND status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "')");
+$in_progress = $db->prepare("SELECT COALESCE(SUM(m.fee), 0) FROM platform_milestones m JOIN platform_jobs j ON j.id = m.job_id WHERE j.assigned_user_id = ? AND j.status IN ('" . implode("','", JOB_ACTIVE_STATUSES) . "') AND m.status IN ('open', 'in_review', 'revision')");
 $in_progress->execute([$uid]);
 
 // Aylık hakediş (son 6 ay)
@@ -55,7 +60,7 @@ $pay_status = ['paid' => ['Ödendi', 'success'], 'partial' => ['Kısmi ödendi',
 <div class="page-head">
     <div>
         <h1 class="h1">Kazanç</h1>
-        <p class="sub">Tamamlanan her iş için hakediş kaydı oluşur; ödemeler IBAN'ınıza yapılır.</p>
+        <p class="sub">Ajansın onayladığı her aşama için hakediş kaydı oluşur; ödemeler IBAN'ınıza yapılır.</p>
     </div>
 </div>
 
@@ -66,10 +71,10 @@ $pay_status = ['paid' => ['Ödendi', 'success'], 'partial' => ['Kısmi ödendi',
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" style="margin-bottom:24px">
     <div class="card lg:col-span-2">
         <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-            <div class="kpi"><div class="kpi-label">Toplam hakediş</div><div class="kpi-value"><?= format_money($total) ?></div><div class="kpi-meta"><?= count($rows) ?> tamamlanan iş</div></div>
+            <div class="kpi"><div class="kpi-label">Toplam hakediş</div><div class="kpi-value"><?= format_money($total) ?></div><div class="kpi-meta"><?= count($rows) ?> onaylı aşama · <?= $job_count ?> iş</div></div>
             <div class="kpi"><div class="kpi-label">Ödenen</div><div class="kpi-value" style="color:var(--success)"><?= format_money($paid) ?></div><div class="kpi-meta">hesabınıza aktarılan</div></div>
             <div class="kpi"><div class="kpi-label">Ödeme bekleyen</div><div class="kpi-value"><?= format_money(max(0, $pending)) ?></div><div class="kpi-meta">onaylanmış hakediş</div></div>
-            <div class="kpi"><div class="kpi-label">Devam eden işlerden</div><div class="kpi-value text-muted"><?= format_money($in_progress_total) ?></div><div class="kpi-meta">teslim ve onay sonrası</div></div>
+            <div class="kpi"><div class="kpi-label">Devam eden aşamalardan</div><div class="kpi-value text-muted"><?= format_money($in_progress_total) ?></div><div class="kpi-meta">aşama onaylandıkça kayda geçer</div></div>
         </div>
     </div>
     <div class="card">
@@ -88,15 +93,15 @@ $pay_status = ['paid' => ['Ödendi', 'success'], 'partial' => ['Kısmi ödendi',
 <section class="card">
     <div class="card-head"><p class="card-title">Hakedişler</p></div>
     <?php if (!$rows): ?>
-        <?= ui_empty('Henüz tamamlanan işiniz yok', 'İlk işinizi tamamladığınızda hakedişiniz burada görünür.', 'wallet', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzu</a>') ?>
+        <?= ui_empty('Henüz onaylanan aşamanız yok', 'Teslim ettiğiniz aşama onaylandığında hakedişiniz burada görünür.', 'wallet', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzu</a>') ?>
     <?php else: ?>
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>İş</th><th>Tamamlanma</th><th class="r">Hakediş</th><th class="r">Ödenen</th><th>Durum</th></tr></thead>
+            <thead><tr><th>İş / aşama</th><th>Onay</th><th class="r">Hakediş</th><th class="r">Ödenen</th><th>Durum</th></tr></thead>
             <tbody>
             <?php foreach ($rows as $r): [$pl, $pt] = $pay_status[$r['payment_status'] ?? 'unpaid'] ?? ['—', 'neutral']; ?>
                 <tr class="row-link" onclick="location.href='<?= BASE_URL ?>/platform/job.php?id=<?= (int)$r['id'] ?>'">
-                    <td><span class="code-tag"><?= e($r['job_code']) ?></span><div style="font-weight:500"><?= e($r['title']) ?></div><?php if ($r['freelancer_rating']): ?><div style="margin-top:2px"><?= render_stars((float)$r['freelancer_rating']) ?></div><?php endif; ?></td>
+                    <td><span class="code-tag"><?= e($r['job_code']) ?></span><div style="font-weight:500"><?= e($r['title']) ?></div><div class="xsmall text-muted"><?= (int)$r['ms_count'] > 1 || (int)$r['is_extra'] === 1 ? e($r['ms_title']) . ((int)$r['no_work'] === 1 ? ' · prim' : ((int)$r['is_extra'] === 1 ? ' · ek kalem' : '')) . ' · ' : '' ?><?= $r['invoice_number'] ? e($r['invoice_number']) : 'kayıt hazırlanıyor' ?></div><?php if ($r['freelancer_rating'] && $r['job_status'] === 'completed'): ?><div style="margin-top:2px"><?= render_stars((float)$r['freelancer_rating']) ?></div><?php endif; ?></td>
                     <td class="small"><?= format_date($r['completed_at']) ?></td>
                     <td class="r money"><?= format_money((float)($r['grand_total'] ?? $r['freelancer_fee']), $r['currency']) ?></td>
                     <td class="r num" style="color:var(--success)"><?= format_money((float)($r['paid_amount'] ?? 0), $r['currency']) ?></td>

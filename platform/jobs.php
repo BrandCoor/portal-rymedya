@@ -1,7 +1,7 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - SİPARİŞLERİM (AJANS) / İŞLERİM (FREELANCER)
+ * RY MEDYA PLATFORM - İŞLERİM (AJANS) / İŞLERİM (FREELANCER)
  * ====================================================================
  */
 
@@ -66,20 +66,20 @@ $app_status = [
     'withdrawn' => ['Geri çekildi', 'neutral'],
 ];
 
-$title = $role === 'agency' ? 'Siparişler' : 'İşlerim';
+$title = $role === 'agency' ? 'İşler' : 'İşlerim';
 platform_header($title, 'jobs');
 ?>
 <div class="page-head">
     <div>
         <h1 class="h1"><?= $title ?></h1>
-        <p class="sub"><?= $role === 'agency' ? 'Verdiğiniz tüm siparişler ve durumları.' : 'Size atanan işler ve verdiğiniz teklifler.' ?></p>
+        <p class="sub"><?= $role === 'agency' ? 'Girdiğiniz tüm işler ve durumları.' : 'Size atanan işler ve verdiğiniz teklifler.' ?></p>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
         <form method="GET" action="" class="searchbox hidden sm:block" style="width:240px">
             <input type="hidden" name="f" value="<?= e($tab) ?>">
             <i data-lucide="search"></i><input type="search" name="q" value="<?= e($q) ?>" placeholder="Başlık veya kod" style="width:100%">
         </form>
-        <?php if ($role === 'agency'): ?><a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent"><i data-lucide="plus"></i>Yeni sipariş</a><?php endif; ?>
+        <?php if ($role === 'agency'): ?><a href="<?= BASE_URL ?>/platform/job_new.php" class="btn btn-accent"><i data-lucide="plus"></i>Yeni iş</a><?php endif; ?>
     </div>
 </div>
 
@@ -123,7 +123,7 @@ platform_header($title, 'jobs');
 <?php elseif (!$jobs): ?>
     <div class="card">
         <?php if ($role === 'agency'): ?>
-            <?= ui_empty($q !== '' ? 'Aramanızla eşleşen sipariş yok' : 'Bu listede sipariş yok', $tab === 'action' ? 'Onayınızı bekleyen teklif veya teslimat bulunmuyor.' : 'Hizmet kataloğundan birkaç adımda sipariş verebilirsiniz.', 'briefcase', '<a class="btn btn-accent" href="' . BASE_URL . '/platform/job_new.php">Yeni sipariş</a>') ?>
+            <?= ui_empty($q !== '' ? 'Aramanızla eşleşen iş yok' : 'Bu listede iş yok', $tab === 'action' ? 'Onayınızı bekleyen teklif veya teslimat bulunmuyor.' : 'Hizmet kataloğundan birkaç adımda iş girebilirsiniz.', 'briefcase', '<a class="btn btn-accent" href="' . BASE_URL . '/platform/job_new.php">Yeni iş</a>') ?>
         <?php else: ?>
             <?= ui_empty('Bu listede iş yok', 'Size uygun işler iş havuzunda listelenir.', 'radar', '<a class="btn btn-secondary" href="' . BASE_URL . '/platform/pool.php">İş havuzu</a>') ?>
         <?php endif; ?>

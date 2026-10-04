@@ -93,7 +93,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 4. Toplu gönderimler ve tekrar denemeler için zamanlanmış görev (cron) tanımlayın: cPanel → Cron Jobs → her 5 dakikada `php /home/KULLANICI/public_html/cron/mail-queue.php`
 
 **İşe bağlı e-postalar (otomatik):**
-- **Ajans:** sipariş yayında, ekip atandı, üretime başlandı, teslim edildi, fiyat teklifi, tamamlandı, ekipten mesaj, hesap onayı
+- **Ajans:** iş yayında, ekip atandı, üretime başlandı, teslim edildi, fiyat teklifi, tamamlandı, ekipten mesaj, hesap onayı
 - **Freelancer:** atama, teklif sonucu (ret gerekçesiyle), kalite kontrol, revizyon, hakediş/ödeme, seviye değişikliği, size özel iş, ekipten mesaj
 - **Müşteri:** onaya sunulan kurgu versiyonu, paylaşılan teslim dosyası, fatura, yeni teklif
 - **Personel:** görev/kurgu ataması, müşteri revizyonu
@@ -112,7 +112,18 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 - Kampanya ve tanıtım içerikli e-postalar için alıcı onayı gerekir; İYS yükümlülüğünü kontrol edin. Kayıt formundaki bülten kutusunu işaretleyenler "ticari izin var" olarak işaretlenir.
 - **Gönderim kayıtları:** her e-postanın durumu, hata mesajı ve içeriği görüntülenebilir.
 
-## 8. Yetkiler
+## 8. İş platformu: günlük akış (İş merkezi)
+
+1. Ajans işi girer. Katalog işi otomatik yayına çıkar; özel talepte fiyatı girip teklifi gönderin.
+2. Atama: freelancer işi alır, teklif verir (ücret + teslim süresi) veya siz doğrudan atarsınız. Atanan kişi işi kabul eder ya da cezasız reddeder.
+3. Aşamalar kartında işin parçalarını görürsünüz. "Düzenle" ile ad, ücret, hedef tarih değiştirilir; "Ek kalem / prim" ile ajansa ek iş önerilir, ajansa yansımayan iç iş ya da prim eklenir.
+4. Teslim kalite kontrolde size düşer: "Onayla, ajansa ilet" veya "Düzeltme iste". Ajans aşamayı onaylayınca hakediş kaydı oluşur; gerekirse "Aşamayı ajans adına onayla" ya da "İşi ajans adına tamamla".
+5. Hakediş ödemeleri kartından her aşamanın ödemesini kasa/banka seçerek kaydedin.
+6. Sorun bildirimleri iş merkezinde kırmızı uyarı olarak görünür; iş sayfasındaki "Sorun bildirimleri" kartından çözüm notuyla kapatın.
+7. İş kaydı her işlemi kalem kalem tutar; CSV ile dışa aktarılabilir.
+8. Kurallar ekranından aşama bölme ve otomatik onay süresini ayarlayın. Hatırlatma ve otomatik onay için cron: `php /home/KULLANICI/public_html/cron/platform.php` (saatte bir).
+
+## 9. Yetkiler
 
 | İzin | Ne açar? |
 |------|----------|
@@ -122,7 +133,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 | `reports.view` | Yönetim raporları (ilk kurulumda finans yetkisi olan rollere otomatik verilir) |
 | `proposals.manage`, `inventory.manage` | Teklifler, ekipman |
 | `personnel.manage`, `settings.manage` | Personel, ayarlar ve roller |
-| `platform.manage` | İş merkezi: siparişler, atama, teklifler, kalite kontrol, freelancer/ajans yönetimi |
+| `platform.manage` | İş merkezi: işler, atama, teklifler, kalite kontrol, freelancer/ajans yönetimi |
 | `platform.pricing` | Hizmet kataloğu ve fiyatlar |
 | `platform.delete` | Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog kalemi) |
 | `mail.manage` | E-posta merkezi: aboneler, toplu gönderim, gönderim kayıtları |

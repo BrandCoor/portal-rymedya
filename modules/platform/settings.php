@@ -14,19 +14,21 @@ require_module_permission('platform.manage');
 
 // [tip, etiket, açıklama, (int için) min, max, birim]
 $sections = [
-    'Sipariş akışı' => [
-        'platform_auto_publish'      => ['bool', 'Katalog siparişleri onaysız yayına alınsın', 'Ajans katalogdan sipariş verdiğinde iş doğrudan havuza düşer. Kapalıyken her sipariş önce sizin onayınızı bekler. Özel talepler her durumda fiyat teklifi bekler.'],
+    'İş akışı' => [
+        'platform_auto_publish'      => ['bool', 'Katalogdan girilen işler onaysız yayına alınsın', 'Ajans katalogdan iş girdiğinde iş doğrudan havuza düşer. Kapalıyken her iş önce sizin onayınızı bekler. Özel talepler her durumda fiyat teklifi bekler.'],
         'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
         'platform_auto_invoice'      => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
+        'platform_milestone_per_item' => ['bool', 'Katalog işlerinde her hizmet ayrı aşama olsun', 'Çekim, kurgu gibi kalemler ayrı ayrı teslim edilip onaylanır; onaylanan aşamanın hakedişi hemen kayda geçer. Kapalıyken iş tek aşamadır.'],
+        'platform_auto_approve_days' => ['int', 'Teslim otomatik onay süresi', 'Ajans teslimi bu süre içinde onaylamaz veya revizyon istemezse aşama otomatik onaylanır. 0 ise kapalı.', 0, 60, 'gün'],
         'platform_max_revisions'     => ['int', 'Ücretsiz revizyon hakkı', 'Ajansa gösterilir; aşıldığında ek ücret uyarısı çıkar.', 0, 20, 'adet'],
         'platform_default_margin'    => ['int', 'Özel tekliflerde varsayılan marj', 'Freelancer ücreti önerisi bu marja göre hesaplanır.', 0, 90, '%'],
         'platform_freelancer_vat'    => ['int', 'Freelancer hakediş KDV oranı', 'Şahıs freelancer\'lar için genellikle 0.', 0, 30, '%'],
     ],
     'Termin ve acil işler' => [
-        'platform_block_same_day'        => ['bool', 'Aynı gün başlayan işler alınmasın', 'Başlangıç (çekim) tarihi bugün olan siparişler reddedilir.'],
-        'platform_min_lead_hours'        => ['int', 'En kısa sipariş süresi', 'Başlangıca bu süreden az kalan siparişler alınmaz. Hizmet bazında daha uzun süre katalogdan tanımlanabilir.', 0, 720, 'saat'],
-        'platform_warn_lead_hours'       => ['int', 'Acil iş eşiği', 'Başlangıca bu süreden az kalan siparişler acil sayılır; ajans uyarılır ve onay ister.', 0, 720, 'saat'],
-        'platform_rush_fee_percent'      => ['int', 'Acil iş farkı', 'Acil siparişlerin tutarına eklenir. 0 ise fark alınmaz.', 0, 200, '%'],
+        'platform_block_same_day'        => ['bool', 'Aynı gün başlayan işler alınmasın', 'Başlangıç (çekim) tarihi bugün olan işler reddedilir.'],
+        'platform_min_lead_hours'        => ['int', 'En kısa iş giriş süresi', 'Başlangıca bu süreden az kalan işler alınmaz. Hizmet bazında daha uzun süre katalogdan tanımlanabilir.', 0, 720, 'saat'],
+        'platform_warn_lead_hours'       => ['int', 'Acil iş eşiği', 'Başlangıca bu süreden az kalan işler acil sayılır; ajans uyarılır ve onay ister.', 0, 720, 'saat'],
+        'platform_rush_fee_percent'      => ['int', 'Acil iş farkı', 'Acil işlerin tutarına eklenir. 0 ise fark alınmaz.', 0, 200, '%'],
         'platform_rush_freelancer_share' => ['int', 'Acil farkından freelancer payı', 'Acil iş farkının bu kadarı freelancer hakedişine prim olarak eklenir.', 0, 100, '%'],
     ],
     'Freelancer seviyeleri ve kapasite' => [
@@ -39,7 +41,7 @@ $sections = [
     ],
     'Görünürlük (pazarlama politikası)' => [
         'platform_pool_enabled'           => ['bool', 'Freelancer iş havuzu açık', 'Kapalıyken freelancer\'lar havuzu göremez; yalnızca doğrudan atadığınız işleri görür.'],
-        'platform_default_priority_tier'  => ['tier', 'Yeni siparişlerde öncelikli seviye', 'Seçilirse yeni işler önce bu seviye ve üstüne açılır.'],
+        'platform_default_priority_tier'  => ['tier', 'Yeni işlerde öncelikli seviye', 'Seçilirse yeni işler önce bu seviye ve üstüne açılır.'],
         'platform_default_priority_hours' => ['int', 'Öncelikli erişim süresi', 'Süre dolunca iş diğer uygun seviyelere de açılır.', 0, 720, 'saat'],
         'platform_show_agency_name'       => ['bool', 'Freelancer ajans adını görsün', 'Kapalıyken freelancer işin hangi ajansa ait olduğunu bilmez.'],
     ],
@@ -65,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-    // Acil eşiği en kısa sipariş süresinden kısa olamaz
+    // Acil eşiği en kısa iş giriş süresinden kısa olamaz
     if ((int)$vals['platform_warn_lead_hours'] < (int)$vals['platform_min_lead_hours']) {
         $vals['platform_warn_lead_hours'] = $vals['platform_min_lead_hours'];
     }

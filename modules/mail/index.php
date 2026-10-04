@@ -82,7 +82,7 @@ require_once __DIR__ . '/../../includes/header.php';
 <section class="card" style="margin-top:24px">
     <div class="card-head"><p class="card-title">Otomatik gönderilen e-postalar</p></div>
     <div class="card-pad small text-ink-2 stack-sm">
-        <p><strong>Ajans:</strong> sipariş yayına alındı, ekip atandı, üretime başlandı, teslim edildi, fiyat teklifi hazır, iş tamamlandı, ekipten mesaj, hesap onayı.</p>
+        <p><strong>Ajans:</strong> iş yayına alındı, ekip atandı, üretime başlandı, teslim edildi, fiyat teklifi hazır, iş tamamlandı, ekipten mesaj, hesap onayı.</p>
         <p><strong>Freelancer:</strong> iş atandı, teklif kabul edilmedi (gerekçesiyle), kalite kontrol sonucu, revizyon talebi, hakediş ve ödeme, seviye değişikliği, size özel iş, ekipten mesaj, hesap onayı.</p>
         <p><strong>Müşteri:</strong> yeni kurgu versiyonu onayınıza sunuldu, teslim dosyası paylaşıldı, fatura düzenlendi, yeni fiyat teklifi.</p>
         <p><strong>Personel:</strong> görev ve kurgu ataması, müşteri revizyon talebi, tamamlanan görev; ekip gelen kutusu tanımlıysa tüm platform bildirimlerinin kopyası.</p>

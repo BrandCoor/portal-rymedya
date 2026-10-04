@@ -1,7 +1,7 @@
 <?php
 /**
  * ====================================================================
- * RY MEDYA PLATFORM - SİPARİŞ DÜZENLEME (AJANS)
+ * RY MEDYA PLATFORM - İŞ DÜZENLEME (AJANS)
  * ====================================================================
  * Ekip ataması yapılana kadar (full):
  *   başlık, brief, teslimatlar, referanslar, ek notlar, tarihler,
@@ -24,13 +24,13 @@ $job_id  = (int)($_GET['id'] ?? 0);
 $job     = get_job($job_id);
 
 if (!$job || (int)$job['agency_contact_id'] !== $cid) {
-    set_flash('error', 'Sipariş bulunamadı.');
+    set_flash('error', 'İş bulunamadı.');
     redirect(BASE_URL . '/platform/jobs.php');
 }
 $scope    = agency_edit_scope($job);
 $job_url  = BASE_URL . "/platform/job.php?id={$job_id}";
 if ($scope === 'locked') {
-    set_flash('error', 'Teslim edilmiş, tamamlanmış veya iptal edilmiş siparişler düzenlenemez.');
+    set_flash('error', 'Teslim edilmiş, tamamlanmış veya iptal edilmiş işler düzenlenemez.');
     redirect($job_url);
 }
 
@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $city        = $is_remote ? null : trim($_POST['location_city'] ?? '');
         $detail      = trim($_POST['location_detail'] ?? '');
 
-        if ($title === '') $errors[] = 'Sipariş başlığı zorunlu.';
+        if ($title === '') $errors[] = 'İş başlığı zorunlu.';
         if (mb_strlen($description) < 20) $errors[] = 'Brief en az birkaç cümle olmalı.';
         if (!$deadline) $errors[] = 'Teslim tarihi zorunlu.';
         if ($start_date && $deadline && $deadline < $start_date) $errors[] = 'Teslim tarihi başlangıçtan önce olamaz.';
@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 if (abs($price['agency_price'] - (float)$job['agency_price']) > 0.009) {
-                    $changes[] = ['Sipariş tutarı', format_money((float)$job['agency_price'], $job['currency']), format_money($price['agency_price'], $job['currency'])];
+                    $changes[] = ['İş tutarı', format_money((float)$job['agency_price'], $job['currency']), format_money($price['agency_price'], $job['currency'])];
                 }
                 $set += ['agency_price' => $price['agency_price'], 'freelancer_fee' => $price['freelancer_fee'], 'rush_fee' => $price['rush_fee']];
             }
@@ -188,6 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare("UPDATE platform_jobs SET {$cols} WHERE id = ?")->execute([...array_values($set), $job_id]);
             if ($scope === 'full' && $is_catalog && isset($items) && $items !== null) {
                 save_job_items($job_id, $items);
+            }
+            if (job_milestones($job_id)) {
+                milestones_sync($job_id);
             }
             foreach ($changes as [$label, $old, $new]) {
                 log_job_change($job_id, 'agency', $uid, $label, $old, $new);
@@ -228,7 +231,7 @@ foreach ($services as $s) {
     $svc_js[(int)$s['id']] = ['name' => $s['name'], 'unit' => $s['unit'], 'price' => (float)$s['agency_price'], 'lead' => (int)$s['min_lead_hours']];
     $grouped[$s['category']][] = $s;
 }
-// Katalogdan kaldırılmış ama siparişte duran kalemler de düzenlenebilsin
+// Katalogdan kaldırılmış ama işte duran kalemler de düzenlenebilsin
 foreach ($cur_items as $it) {
     if ($it['service_id'] && $services && !isset($svc_js[(int)$it['service_id']])) {
         $svc_js[(int)$it['service_id']] = ['name' => $it['name'], 'unit' => $it['unit'], 'price' => (float)$it['agency_unit_price'], 'lead' => (int)($it['min_lead_hours'] ?? 0)];
@@ -252,19 +255,19 @@ $order_cfg = [
     'wasRush' => (int)$job['is_rush'] === 1,
 ];
 
-platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
+platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
 ?>
 <div x-data="orderForm(<?= e(json_encode($order_cfg, JSON_UNESCAPED_UNICODE)) ?>)" x-init="init()">
     <div class="page-head">
         <div>
             <div class="crumb">
-                <a href="<?= BASE_URL ?>/platform/jobs.php">Siparişler</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i>
+                <a href="<?= BASE_URL ?>/platform/jobs.php">İşler</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i>
                 <a href="<?= $job_url ?>" class="code-tag"><?= e($job['job_code']) ?></a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Düzenle</span>
             </div>
-            <h1 class="h1">Siparişi düzenle</h1>
+            <h1 class="h1">İşi düzenle</h1>
             <p class="sub"><?= $scope === 'full'
                 ? 'Ekip ataması yapılana kadar tüm detayları değiştirebilirsiniz. Kalem değişikliklerinde güncel katalog fiyatları uygulanır.'
-                : 'Sipariş üretimde. Referans ve not ekleyebilir, teslim tarihini ileri alabilirsiniz. Diğer değişiklikler için ekiple yazışın.' ?></p>
+                : 'İş üretimde. Referans ve not ekleyebilir, teslim tarihini ileri alabilirsiniz. Diğer değişiklikler için ekiple yazışın.' ?></p>
         </div>
         <?= ui_badge($scope === 'full' ? 'Tam düzenleme' : 'Sınırlı düzenleme', $scope === 'full' ? 'success' : 'warning', true) ?>
     </div>
@@ -273,10 +276,10 @@ platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
         <div class="alert alert-danger" style="margin-bottom:20px"><i data-lucide="alert-circle"></i><div><?php foreach ($errors as $er): ?><div><?= e($er) ?></div><?php endforeach; ?></div></div>
     <?php endif; ?>
     <?php if ($job['status'] === 'quote_sent'): ?>
-        <div class="alert alert-warning" style="margin-bottom:20px"><i data-lucide="info"></i><div>Bu sipariş için fiyat teklifi gönderildi. Brief, tarih veya lokasyon değişikliği teklifin yeniden hazırlanmasını gerektirir.</div></div>
+        <div class="alert alert-warning" style="margin-bottom:20px"><i data-lucide="info"></i><div>Bu iş için fiyat teklifi gönderildi. Brief, tarih veya lokasyon değişikliği teklifin yeniden hazırlanmasını gerektirir.</div></div>
     <?php endif; ?>
     <?php if ($scope === 'full' && $job['status'] === 'open'): ?>
-        <div class="alert alert-info" style="margin-bottom:20px"><i data-lucide="info"></i><div>Sipariş ekip ataması aşamasında. Kaydettiğiniz değişiklikler işi değerlendiren ekip üyelerine yansır.</div></div>
+        <div class="alert alert-info" style="margin-bottom:20px"><i data-lucide="info"></i><div>İş ekip ataması aşamasında. Kaydettiğiniz değişiklikler işi değerlendiren ekip üyelerine yansır.</div></div>
     <?php endif; ?>
 
     <form method="POST" action="" class="grid grid-cols-1 lg:grid-cols-3 gap-6" @submit="if (lead.level === 'block') { $event.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); }">
@@ -286,7 +289,7 @@ platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
         <?php if ($scope === 'full'): ?>
             <?php if ($services): ?>
             <section class="card">
-                <div class="card-head"><div><p class="card-title">Hizmetler</p><p class="card-sub">Miktarı sıfırlanan kalem siparişten çıkarılır.</p></div></div>
+                <div class="card-head"><div><p class="card-title">Hizmetler</p><p class="card-sub">Miktarı sıfırlanan kalem işten çıkarılır.</p></div></div>
                 <div class="divide">
                     <?php foreach ($grouped as $cat => $list): ?>
                     <div style="padding:16px 20px">
@@ -328,7 +331,7 @@ platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
             </section>
             <?php elseif ($cur_items): ?>
             <section class="card">
-                <div class="card-head"><div><p class="card-title">Hizmetler</p><p class="card-sub">Bu siparişin kalemleri ekibimiz tarafından fiyatlandırıldı. Kapsam değişikliği için ekiple yazışın.</p></div></div>
+                <div class="card-head"><div><p class="card-title">Hizmetler</p><p class="card-sub">Bu işin kalemleri ekibimiz tarafından fiyatlandırıldı. Kapsam değişikliği için ekiple yazışın.</p></div></div>
                 <?php platform_items_table($cur_items, 'agency', $job); ?>
             </section>
             <?php endif; ?>
@@ -337,7 +340,7 @@ platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
                 <div class="card-head"><p class="card-title">İş detayları</p></div>
                 <div class="card-pad stack">
                     <div class="field">
-                        <label class="label">Sipariş başlığı <span class="req">*</span></label>
+                        <label class="label">İş başlığı <span class="req">*</span></label>
                         <input class="input" type="text" name="title" required value="<?= $val('title') ?>">
                     </div>
                     <div class="field">
@@ -427,7 +430,7 @@ platform_header('Siparişi düzenle · ' . $job['job_code'], 'jobs');
                         </dl>
                     <?php endif; ?>
                     <div class="hairline" style="margin:14px 0"></div>
-                    <p class="xsmall text-muted">Kaydettiğiniz her değişiklik sipariş geçmişine eklenir ve ekibe bildirilir.</p>
+                    <p class="xsmall text-muted">Kaydettiğiniz her değişiklik iş geçmişine eklenir ve ekibe bildirilir.</p>
                     <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !wasRush && !rushAck)<?= $scope === 'full' && $services ? ' || !lines().length' : '' ?>">Değişiklikleri kaydet</button>
                     <a href="<?= $job_url ?>" class="btn btn-ghost btn-block">Vazgeç</a>
                 </div>
