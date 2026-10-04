@@ -86,6 +86,12 @@ const PLATFORM_DEFAULTS = [
     'platform_auto_publish'          => '1',  // Katalogdan girilen işler yönetici onayı beklemeden havuza düşsün
     'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
     'platform_default_margin'        => '25',
+    // Yeni işlerin varsayılan görünürlük / dağıtım kuralları (iş sayfasından tek tek değiştirilebilir)
+    'platform_default_visibility'    => 'pool',
+    'platform_default_dispatch'      => 'first_come',
+    'platform_default_min_tier'      => 'standard',
+    'platform_default_skill_match'   => '1',
+    'platform_default_city_match'    => '1',  // Yalnızca yerinde (çekim) işlerde uygulanır
     'platform_default_priority_tier' => '',   // Yeni işlerde öncelikli seviye (boş = yok)
     'platform_default_priority_hours'=> '0',
     'platform_max_revisions'         => '2',
@@ -1107,21 +1113,24 @@ function freelancer_capacity(array $profile): array {
  * Yeni iş için varsayılan dağıtım politikası
  */
 function default_job_policy(array $items, string $category, bool $is_remote): array {
-    $min = 'standard';
+    // Ayarlardaki en düşük seviye; hizmet daha yüksek seviye istiyorsa o geçerli
+    $min = array_key_exists(platform_setting('platform_default_min_tier'), FREELANCER_TIERS) ? platform_setting('platform_default_min_tier') : 'standard';
     foreach ($items as $it) {
         if (tier_rank($it['min_tier'] ?? 'standard') > tier_rank($min)) {
             $min = $it['min_tier'];
         }
     }
     $ptier = platform_setting('platform_default_priority_tier');
+    $vis = platform_setting('platform_default_visibility');
+    $dis = platform_setting('platform_default_dispatch');
     return [
-        'visibility'       => 'pool',
-        'dispatch_mode'    => 'first_come',
+        'visibility'       => in_array($vis, ['pool', 'internal'], true) ? $vis : 'pool',
+        'dispatch_mode'    => array_key_exists($dis, JOB_DISPATCH) ? $dis : 'first_come',
         'min_tier'         => $min,
         'priority_tier'    => array_key_exists($ptier, FREELANCER_TIERS) ? $ptier : null,
         'priority_hours'   => array_key_exists($ptier, FREELANCER_TIERS) ? (int)platform_setting('platform_default_priority_hours') : 0,
-        'skill_match_only' => 1,
-        'city_match_only'  => (!$is_remote && (JOB_CATEGORIES[$category]['onsite'] ?? false)) ? 1 : 0,
+        'skill_match_only' => platform_setting('platform_default_skill_match') === '1' ? 1 : 0,
+        'city_match_only'  => (platform_setting('platform_default_city_match') === '1' && !$is_remote && (JOB_CATEGORIES[$category]['onsite'] ?? false)) ? 1 : 0,
     ];
 }
 

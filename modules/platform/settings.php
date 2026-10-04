@@ -41,9 +41,16 @@ $sections = [
     ],
     'Görünürlük (pazarlama politikası)' => [
         'platform_pool_enabled'           => ['bool', 'Freelancer iş havuzu açık', 'Kapalıyken freelancer\'lar havuzu göremez; yalnızca doğrudan atadığınız işleri görür.'],
-        'platform_default_priority_tier'  => ['tier', 'Yeni işlerde öncelikli seviye', 'Seçilirse yeni işler önce bu seviye ve üstüne açılır.'],
-        'platform_default_priority_hours' => ['int', 'Öncelikli erişim süresi', 'Süre dolunca iş diğer uygun seviyelere de açılır.', 0, 720, 'saat'],
         'platform_show_agency_name'       => ['bool', 'Freelancer ajans adını görsün', 'Kapalıyken freelancer işin hangi ajansa ait olduğunu bilmez.'],
+    ],
+    'Yeni işlerde varsayılan görünürlük ve dağıtım' => [
+        'platform_default_visibility'     => ['choice', 'Kim görsün', 'Havuz: kurallara uyan onaylı freelancer\'lar görür. Ekibe özel: freelancer\'lar görmez, işi ekip yapar.', ['pool' => 'Havuz (kurallara uyanlar)', 'internal' => 'Ekibe özel']],
+        'platform_default_dispatch'       => ['choice', 'Dağıtım', '"İlk alan alır": uygun ilk freelancer işi üstlenir. "Teklif topla": teklifleri siz değerlendirip seçersiniz.', JOB_DISPATCH],
+        'platform_default_min_tier'       => ['choice', 'En düşük seviye', 'Bu seviyenin altındaki freelancer\'lar yeni işleri görmez. Hizmet kataloğunda daha yüksek seviye isteyen hizmetlerde o seviye geçerlidir.', array_map(fn($t) => $t['label'], FREELANCER_TIERS)],
+        'platform_default_priority_tier'  => ['tier', 'Öncelikli seviye', 'Seçilirse yeni işler önce bu seviye ve üstüne açılır.'],
+        'platform_default_priority_hours' => ['int', 'Öncelik süresi', 'Bu süre boyunca yalnızca öncelikli seviye ve üstü görür; süre dolunca diğer uygun seviyelere açılır.', 0, 720, 'saat'],
+        'platform_default_skill_match'    => ['bool', 'Yalnızca bu alanda uzman olanlar', 'Freelancer\'ın profilindeki uzmanlıklar işin türüyle eşleşmeli.'],
+        'platform_default_city_match'     => ['bool', 'Yalnızca aynı şehirdekiler (yerinde işler)', 'Çekim gibi yerinde yapılan işlerde yalnızca işin şehrindeki freelancer\'lar görür. Uzaktan işlere uygulanmaz.'],
     ],
     'Kayıt' => [
         'platform_agency_signup'     => ['bool', 'Ajans kaydı açık', 'Giriş sayfasında "Ajans kaydı" bağlantısı görünür.'],
@@ -60,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $type = $def[0];
             if ($type === 'bool') {
                 $vals[$key] = isset($_POST[$key]) ? '1' : '0';
+            } elseif ($type === 'choice') {
+                $vals[$key] = array_key_exists($_POST[$key] ?? '', $def[3]) ? $_POST[$key] : array_key_first($def[3]);
             } elseif ($type === 'tier') {
                 $vals[$key] = array_key_exists($_POST[$key] ?? '', FREELANCER_TIERS) ? $_POST[$key] : '';
             } else {
@@ -94,7 +103,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <div>
         <div class="crumb"><a href="<?= BASE_URL ?>/modules/platform/index.php">İş merkezi</a><i data-lucide="chevron-right" style="width:13px;height:13px"></i><span>Kurallar</span></div>
         <h1 class="h1">Platform kuralları</h1>
-        <p class="sub">Genel kurallar. İş bazında görünürlük (seviye, öncelik, seçili kişiler) her işin kendi sayfasından ayrıca ayarlanır.</p>
+        <p class="sub">Genel kurallar ve yeni işlerin varsayılanları. Her işin görünürlüğü sonradan kendi sayfasından ayrıca değiştirilebilir.</p>
     </div>
     <?php if (can_access_module('platform.pricing')): ?><a href="<?= BASE_URL ?>/modules/platform/catalog.php" class="btn btn-secondary"><i data-lucide="tag"></i>Hizmet kataloğu</a><?php endif; ?>
 </div>
@@ -106,13 +115,17 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="card-head"><p class="card-title"><?= e($title) ?></p></div>
         <div class="divide">
             <?php foreach ($fields as $key => $def): [$type, $label, $help] = $def; ?>
-            <div class="card-pad-sm" style="display:flex;justify-content:space-between;align-items:center;gap:20px">
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;align-items:center;gap:12px 20px;flex-wrap:wrap">
                 <div style="min-width:0">
                     <p class="small" style="font-weight:500"><?= e($label) ?></p>
                     <?php if ($help !== ''): ?><p class="xsmall text-muted" style="margin-top:2px;max-width:560px"><?= e($help) ?></p><?php endif; ?>
                 </div>
                 <?php if ($type === 'bool'): ?>
                     <label class="switch"><input type="checkbox" name="<?= $key ?>" value="1" <?= platform_setting($key) === '1' ? 'checked' : '' ?>><span></span></label>
+                <?php elseif ($type === 'choice'): ?>
+                    <select class="select" name="<?= $key ?>" style="width:260px;flex-shrink:0">
+                        <?php foreach ($def[3] as $ok => $ov): ?><option value="<?= e($ok) ?>" <?= platform_setting($key) === (string)$ok ? 'selected' : '' ?>><?= e($ov) ?></option><?php endforeach; ?>
+                    </select>
                 <?php elseif ($type === 'tier'): ?>
                     <select class="select" name="<?= $key ?>" style="width:150px;flex-shrink:0">
                         <option value="">Yok</option>

@@ -194,6 +194,10 @@ Her işin sayfasındaki **Görünürlük ve dağıtım** bölümü:
 - "Kimler görüyor?" önizlemesi her freelancer için görüp görmediğini ve nedenini gösterir.
 - Freelancer'ın havuzunda, yalnızca seviye yüzünden göremediği işlerin **sayısı** gösterilir. Bu, seviye atlamak için motivasyon sağlar.
 
+### Varsayılan kurallar
+
+Yeni girilen her işin görünürlük ve dağıtım kuralları (kim görsün, dağıtım, en düşük seviye, öncelikli seviye ve süresi, uzmanlık ve şehir eşleşmesi) Kurallar → "Yeni işlerde varsayılan görünürlük ve dağıtım" bölümünden belirlenir. Her işin kuralları sonradan iş sayfasındaki "Görünürlük ve dağıtım" kartından değiştirilebilir; "Varsayılanlara dön" ile ayarlardaki değerlere geri alınır. Hizmet kataloğunda daha yüksek seviye isteyen hizmetlerde o seviye geçerlidir.
+
 ## 8. Silme yetkisi ve roller
 
 - `platform.delete` izni kalıcı silmeyi açar. Bu izin Roller sayfasından herhangi bir role verilebilir. Hazır **Platform Yöneticisi** rolünde platform.manage, platform.pricing ve platform.delete birlikte bulunur.

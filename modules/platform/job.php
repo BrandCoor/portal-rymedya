@@ -136,6 +136,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ---------- Görünürlük / dağıtım politikası ----------
+    if ($action === 'save_policy' && $policy_editable && !empty($_POST['reset_defaults'])) {
+        $policy = default_job_policy(job_items($job_id), $job['category'], (int)$job['is_remote'] === 1);
+        $db->prepare("UPDATE platform_jobs SET " . implode(', ', array_map(fn($c) => "`{$c}` = ?", array_keys($policy))) . " WHERE id = ?")->execute([...array_values($policy), $job_id]);
+        $db->prepare("DELETE FROM platform_job_visible_to WHERE job_id = ?")->execute([$job_id]);
+        job_event($job_id, 'policy', 'Görünürlük politikası varsayılanlara döndü', ['new' => JOB_VISIBILITY[$policy['visibility']] . ' · ' . JOB_DISPATCH[$policy['dispatch_mode']] . ' · ' . tier_label($policy['min_tier']) . '+', 'visibility' => 'staff']);
+        $done('Kurallar varsayılanlara döndürüldü.', 'success', '#politika');
+    }
     if ($action === 'save_policy' && $policy_editable) {
         $visibility = array_key_exists($_POST['visibility'] ?? '', JOB_VISIBILITY) ? $_POST['visibility'] : 'pool';
         $policy = [
@@ -1140,7 +1147,11 @@ require_once __DIR__ . '/../../includes/header.php';
                     <label class="check small"><input type="checkbox" name="city_match_only" value="1" <?= (int)$job['city_match_only'] === 1 ? 'checked' : '' ?>>Yalnızca aynı şehirdekiler (yerinde işler)</label>
                 </div>
             </div>
-            <div><button class="btn btn-primary btn-sm">Kuralları kaydet</button></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <button class="btn btn-primary btn-sm">Kuralları kaydet</button>
+                <button class="btn btn-ghost btn-sm" name="reset_defaults" value="1" formnovalidate onclick="return confirm('Bu işin kuralları Ayarlar\'daki varsayılanlara döndürülsün mü?');">Varsayılanlara dön</button>
+            </div>
+            <p class="xsmall text-muted">Yeni işlerin varsayılanları <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Kurallar</a> ekranından belirlenir.</p>
         </form>
         <?php else: ?>
             <div class="card-pad"><p class="small text-muted"><?= e(JOB_VISIBILITY[$job['visibility']] ?? $job['visibility']) ?> · <?= e(JOB_DISPATCH[$job['dispatch_mode']] ?? '') ?> · <?= e(tier_label($job['min_tier'])) ?>+</p></div>
