@@ -235,6 +235,17 @@ Yeni girilen her işin görünürlük ve dağıtım kuralları (kim görsün, da
 - Freelancer talebi: hesap seçip "öde" → talepteki her hakediş faturası ödenir, ilgili işlerin iş kaydına ödeme satırı düşer. Ya da gerekçeyle reddedin.
 - Her sonuç ilgili ajans/freelancer'a bildirim (ve e-posta) olarak gider. Dekontlar doğrudan erişime kapalı klasörde tutulur; yalnızca bildiren ajans ve ekip görür.
 
+### Kredi kartıyla ödeme (iyzico)
+
+1. iyzico üye işyeri panelinden API anahtarı ve güvenlik anahtarını alın (önce test/sandbox anahtarlarıyla deneyin).
+2. Ayarlar → Banka ve ödeme: "iyzico ile kartla ödeme"yi açın, ortamı (Test / Canlı), API anahtarını, güvenlik anahtarını (şifreli saklanır) ve izin verilen taksitleri girin.
+3. Platform kuralları → Ödemeler: "Kartla (iyzico) tahsilatların işleneceği hesap" olarak kasa/banka hesabını seçin.
+4. Ajans Ödemeler ekranında her açık faturada "Kartla öde" ve birden fazla faturada "Tümünü kartla öde" görünür. Ödeme iyzico'nun güvenli ödeme sayfasında yapılır (kart bilgisi portala hiç gelmez).
+5. iyzico işlem sonunda `https://ALANADINIZ/platform/iyzico_callback.php` adresine döner; sonuç iyzico'dan sunucu tarafında sorgulanır, başarılıysa tahsilat faturaya ve seçilen hesaba işlenir, ajansa ve ekibe bildirim gider. Aynı ödeme iki kez işlenmez. Başarısız ödemelerde neden ajansa gösterilir.
+6. Kartla ödemeler İş merkezi → Ödemeler → "Kartla ödemeler (iyzico)" sekmesinde iyzico işlem numarası ve taksitle listelenir. iyzico komisyonu kayda otomatik yazılmaz; hesap ekstresine göre gider olarak girilir.
+
+Ajans Ödemeler ekranındaki banka bilgileri Ayarlar → Banka ve ödeme'deki banka adı, alıcı adı, IBAN'lar ve ödeme notundan gelir (boşsa Finans'taki IBAN'lı banka hesapları gösterilir).
+
 ## 8. Silme yetkisi ve roller
 
 - `platform.delete` izni kalıcı silmeyi açar. Bu izin Roller sayfasından herhangi bir role verilebilir. Hazır **Platform Yöneticisi** rolünde platform.manage, platform.pricing ve platform.delete birlikte bulunur.

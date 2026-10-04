@@ -475,7 +475,12 @@ function mail_secret_key(): string {
 }
 
 function smtp_password(): string {
-    $v = get_setting('smtp_pass', '');
+    return secret_setting('smtp_pass');
+}
+
+/** Şifreli saklanan ayarı (password tipli alanlar) çözer */
+function secret_setting(string $key): string {
+    $v = get_setting($key, '');
     if ($v === '' || !str_starts_with($v, 'enc:')) return $v;
     $raw = base64_decode(substr($v, 4));
     $iv = substr($raw, 0, 16);

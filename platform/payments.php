@@ -23,6 +23,21 @@ foreach ($open as $inv) $open_by_id[(int)$inv['id']] = $inv;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
+    if (($_POST['action'] ?? '') === 'card') {
+        $pick = array_map('intval', (array)($_POST['invoices'] ?? []));
+        $chosen = array_values(array_filter($open, fn($i) => in_array((int)$i['id'], $pick, true)));
+        $ct = $db->prepare("SELECT * FROM contacts WHERE id = ?");
+        $ct->execute([$cid]);
+        $u = $db->prepare("SELECT full_name, email FROM users WHERE id = ?");
+        $u->execute([$uid]);
+        $r = iyzico_start($ct->fetch(), $uid, $u->fetch() ?: [], $chosen);
+        if (isset($r['url'])) {
+            header('Location: ' . $r['url']);
+            exit;
+        }
+        set_flash('error', $r['error']);
+        redirect($self);
+    }
     if (($_POST['action'] ?? '') === 'notice') {
         $amount = parse_money($_POST['amount'] ?? '');
         $date = valid_date($_POST['paid_on'] ?? '');
@@ -56,14 +71,43 @@ $notices = $notices->fetchAll();
 $total_due = array_sum(array_map(fn($i) => (float)$i['remaining'], $open));
 $overdue = array_sum(array_map(fn($i) => $i['due_date'] && $i['due_date'] < date('Y-m-d') ? (float)$i['remaining'] : 0, $open));
 $pending_sum = array_sum(array_map(fn($n) => $n['status'] === 'pending' ? (float)$n['amount'] : 0, $notices));
-$banks = platform_setting('platform_show_bank_accounts') === '1'
-    ? $db->query("SELECT account_name, bank_name, iban, currency FROM accounts WHERE status = 'active' AND account_type = 'bank' AND iban IS NOT NULL AND iban != ''")->fetchAll()
-    : [];
-$company = site_setting('company_name');
+// Ödeme bilgileri: Ayarlar → Banka ve ödeme (boşsa IBAN'lı banka hesapları)
+$company = trim((string)site_setting('bank_primary_receiver')) ?: site_setting('company_name');
+$banks = [];
+if (platform_setting('platform_show_bank_accounts') === '1') {
+    foreach ([['bank_primary_name', 'bank_primary_iban'], ['bank_secondary_name', 'bank_secondary_iban']] as [$bn, $bi]) {
+        if (trim((string)site_setting($bi)) !== '') {
+            $banks[] = ['bank_name' => site_setting($bn), 'account_name' => '', 'iban' => site_setting($bi), 'currency' => 'TRY'];
+        }
+    }
+    if (!$banks) {
+        $banks = $db->query("SELECT account_name, bank_name, iban, currency FROM accounts WHERE status = 'active' AND account_type = 'bank' AND iban IS NOT NULL AND iban != ''")->fetchAll();
+    }
+}
+$pay_note = trim((string)site_setting('bank_payment_note'));
+$card_ok = iyzico_enabled();
+$cards = $db->prepare("SELECT * FROM platform_card_payments WHERE contact_id = ? AND status != 'initiated' ORDER BY id DESC LIMIT 20");
+$cards->execute([$cid]);
+$cards = $cards->fetchAll();
 $pre = (int)($_GET['invoice'] ?? 0);
+
+// iyzico dönüşü sonucu (yalnızca bu ajansın ödemesi gösterilir)
+$card_result = null;
+if (isset($_GET['card'])) {
+    $cr = $db->prepare("SELECT * FROM platform_card_payments WHERE id = ? AND contact_id = ?");
+    $cr->execute([(int)$_GET['card'], $cid]);
+    $card_result = $cr->fetch() ?: ['status' => 'failed', 'error' => 'Ödeme kaydı bulunamadı.', 'amount' => 0];
+}
 
 platform_header('Ödemeler', 'finance');
 ?>
+<?php if ($card_result): ?>
+    <?php if ($card_result['status'] === 'success'): ?>
+        <div class="alert alert-success" style="margin-bottom:16px"><i data-lucide="circle-check"></i><div><strong>Ödemeniz alındı.</strong> <?= format_money((float)$card_result['amount']) ?> kartınızdan tahsil edildi ve faturanıza işlendi. Teşekkürler.</div></div>
+    <?php else: ?>
+        <div class="alert alert-danger" style="margin-bottom:16px"><i data-lucide="circle-x"></i><div><strong>Ödeme tamamlanamadı.</strong> <?= e($card_result['error'] ?? 'İşlem iptal edildi veya onaylanmadı.') ?> Kartınızdan çekim yapılmadı; tekrar deneyebilirsiniz.</div></div>
+    <?php endif; ?>
+<?php endif; ?>
 <div class="page-head">
     <div>
         <h1 class="h1">Ödemeler</h1>
@@ -100,7 +144,10 @@ platform_header('Ödemeler', 'finance');
                         <td class="small"><?= $inv['due_date'] ? format_date($inv['due_date']) : '—' ?><?php if ($late): ?> <?= ui_badge('Gecikti', 'danger') ?><?php endif; ?></td>
                         <td class="r num"><?= format_money((float)$inv['grand_total']) ?></td>
                         <td class="r money"><?= format_money((float)$inv['remaining']) ?></td>
-                        <td class="r"><a class="btn btn-ghost btn-sm" href="?invoice=<?= (int)$inv['id'] ?>#bildir">Ödedim</a></td>
+                        <td class="r" style="white-space:nowrap">
+                            <?php if ($card_ok): ?><form method="POST" action="" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="card"><input type="hidden" name="invoices[]" value="<?= (int)$inv['id'] ?>"><button class="btn btn-primary btn-sm"><i data-lucide="credit-card"></i>Kartla öde</button></form><?php endif; ?>
+                            <a class="btn btn-ghost btn-sm" href="?invoice=<?= (int)$inv['id'] ?>#bildir"><?= $card_ok ? 'Havale bildir' : 'Ödedim' ?></a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -108,6 +155,29 @@ platform_header('Ödemeler', 'finance');
         </div>
         <?php endif; ?>
     </section>
+
+    <?php if ($card_ok && count($open) > 1): ?>
+    <form method="POST" action="" class="card card-pad-sm" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="card">
+        <?php foreach ($open as $inv): ?><input type="hidden" name="invoices[]" value="<?= (int)$inv['id'] ?>"><?php endforeach; ?>
+        <p class="small"><i data-lucide="shield-check" style="width:15px;height:15px;vertical-align:-3px"></i> Tüm açık faturaları tek seferde kartla ödeyin: <strong><?= format_money($total_due) ?></strong></p>
+        <button class="btn btn-primary btn-sm"><i data-lucide="credit-card"></i>Tümünü kartla öde</button>
+    </form>
+    <?php endif; ?>
+    <?php if ($cards): ?>
+    <section class="card">
+        <div class="card-head"><p class="card-title">Kartla ödemelerim</p><span class="xsmall text-muted">iyzico</span></div>
+        <div class="divide">
+            <?php foreach ($cards as $c): [$cl, $ctone] = CARD_PAYMENT_STATUSES[$c['status']] ?? [$c['status'], 'neutral']; ?>
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+                <div><p class="small" style="font-weight:500"><?= format_money((float)$c['amount']) ?><?= (int)$c['installment'] > 1 ? ' · ' . (int)$c['installment'] . ' taksit' : '' ?></p>
+                    <p class="xsmall text-muted"><?= format_date($c['completed_at'] ?: $c['created_at'], true) ?><?= $c['error'] ? ' · ' . e($c['error']) : '' ?></p></div>
+                <?= ui_badge($cl, $ctone, true) ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </section>
+    <?php endif; ?>
 
     <section class="card">
         <div class="card-head"><p class="card-title">Ödeme bildirimlerim</p></div>
@@ -143,6 +213,7 @@ platform_header('Ödemeler', 'finance');
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if ($pay_note !== ''): ?><div class="card-pad-sm xsmall text-muted" style="border-top:1px solid var(--line-2)"><?= nl2br(e($pay_note)) ?></div><?php endif; ?>
     </section>
     <?php endif; ?>
 

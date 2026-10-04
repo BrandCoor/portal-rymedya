@@ -16,7 +16,7 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_staff_login();
 require_module_permission('platform.manage');
 $staff_id = (int)current_user()['id'];
-$tab = ($_GET['tab'] ?? '') === 'payouts' ? 'payouts' : 'notices';
+$tab = in_array($_GET['tab'] ?? '', ['payouts', 'cards'], true) ? $_GET['tab'] : 'notices';
 $self = BASE_URL . '/modules/platform/payments.php?tab=' . $tab;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $accounts = $db->query("SELECT id, account_name, balance, currency FROM accounts WHERE status = 'active' ORDER BY account_type = 'bank' DESC, account_name")->fetchAll();
 $counts = $db->query("SELECT (SELECT COUNT(*) FROM platform_payment_notices WHERE status = 'pending') AS n, (SELECT COUNT(*) FROM platform_payout_requests WHERE status = 'pending') AS r")->fetch();
 $notices = $db->query("SELECT n.*, c.company_title, u.full_name, i.invoice_number FROM platform_payment_notices n JOIN contacts c ON c.id = n.contact_id LEFT JOIN users u ON u.id = n.user_id LEFT JOIN invoices i ON i.id = n.invoice_id ORDER BY n.status = 'pending' DESC, n.id DESC LIMIT 100")->fetchAll();
+$cards = $db->query("SELECT p.*, c.company_title FROM platform_card_payments p JOIN contacts c ON c.id = p.contact_id ORDER BY p.id DESC LIMIT 200")->fetchAll();
 $payouts = $db->query("SELECT r.*, u.full_name, u.email FROM platform_payout_requests r JOIN users u ON u.id = r.user_id ORDER BY r.status = 'pending' DESC, r.id DESC LIMIT 100")->fetchAll();
 $acc_select = function () use ($accounts): string {
     return '<select class="select" name="account_id" required style="width:auto"><option value="">Hesap seçin</option>'
@@ -90,6 +91,7 @@ require_once __DIR__ . '/../../includes/header.php';
 <nav class="tabs" style="margin-bottom:16px">
     <a href="?tab=notices" class="tab <?= $tab === 'notices' ? 'is-active' : '' ?>">Ajans ödeme bildirimleri<span class="count"><?= (int)$counts['n'] ?></span></a>
     <a href="?tab=payouts" class="tab <?= $tab === 'payouts' ? 'is-active' : '' ?>">Freelancer ödeme talepleri<span class="count"><?= (int)$counts['r'] ?></span></a>
+    <a href="?tab=cards" class="tab <?= $tab === 'cards' ? 'is-active' : '' ?>">Kartla ödemeler (iyzico)</a>
 </nav>
 
 <?php if (!$accounts): ?><div class="alert alert-warning" style="margin-bottom:16px"><i data-lucide="landmark"></i><div>Ödeme kaydı için önce <a class="link" href="<?= BASE_URL ?>/modules/finance/accounts.php">kasa / banka hesabı</a> tanımlayın.</div></div><?php endif; ?>
@@ -146,6 +148,26 @@ require_once __DIR__ . '/../../includes/header.php';
     </section>
     <?php endforeach; ?>
 </div>
+
+<?php elseif ($tab === 'cards'): ?>
+<?php if (!iyzico_enabled()): ?>
+    <div class="alert alert-info" style="margin-bottom:16px"><i data-lucide="credit-card"></i><div>Kartla ödeme kapalı. Açmak için <a class="link" href="<?= BASE_URL ?>/modules/settings/index.php?tab=bank">Ayarlar → Banka ve ödeme</a> bölümünden iyzico anahtarlarını girip açın ve <a class="link" href="<?= BASE_URL ?>/modules/platform/settings.php">Platform kuralları → Ödemeler</a> bölümünden tahsilat hesabını seçin.</div></div>
+<?php endif; ?>
+<section class="card">
+    <?php if (!$cards): ?>
+        <?= ui_empty('Kartla ödeme yok', 'Ajanslar Ödemeler ekranından kartla ödediğinde burada listelenir; tahsilat faturaya otomatik işlenir.', 'credit-card') ?>
+    <?php else: ?>
+    <div class="table-wrap"><table class="table">
+        <thead><tr><th>Ajans</th><th>Tarih</th><th class="r">Tutar</th><th>Taksit</th><th>iyzico işlem no</th><th>Durum</th></tr></thead>
+        <tbody><?php foreach ($cards as $c): [$cl, $ct] = CARD_PAYMENT_STATUSES[$c['status']] ?? [$c['status'], 'neutral']; ?>
+            <tr><td class="small"><?= e($c['company_title']) ?></td><td class="small"><?= format_date($c['completed_at'] ?: $c['created_at'], true) ?></td>
+                <td class="r money"><?= format_money((float)$c['amount']) ?><?= $c['paid_price'] !== null && abs((float)$c['paid_price'] - (float)$c['amount']) > 0.009 ? '<div class="xsmall text-muted">kart: ' . format_money((float)$c['paid_price']) . '</div>' : '' ?></td>
+                <td class="small"><?= $c['installment'] ? (int)$c['installment'] : '—' ?></td><td class="xsmall num"><?= e($c['payment_id'] ?? '—') ?></td>
+                <td><?= ui_badge($cl, $ct, true) ?><?= $c['error'] ? '<div class="xsmall text-muted">' . e($c['error']) . '</div>' : '' ?></td></tr>
+        <?php endforeach; ?></tbody>
+    </table></div>
+    <?php endif; ?>
+</section>
 
 <?php else: ?>
 <div class="stack">
