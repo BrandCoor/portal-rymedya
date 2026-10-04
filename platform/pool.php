@@ -97,7 +97,7 @@ platform_header('İş havuzu', 'pool');
             <?php if ($locked['tier']): ?><strong><?= $locked['tier'] ?> iş</strong> daha yüksek seviye gerektiriyor<?php endif; ?>
             <?php if ($locked['tier'] && $locked['priority']): ?>, <?php endif; ?>
             <?php if ($locked['priority']): ?><strong><?= $locked['priority'] ?> iş</strong> şu an üst seviyelere öncelikli<?php endif; ?>.
-            <?php if ($next): ?><span class="text-muted"><?= e(tier_label($next['tier'])) ?> için puan <?= $next['need_score'] ?>+ ve <?= $next['need_jobs'] ?> tamamlanmış iş gerekir.</span><?php endif; ?>
+            <?php if ($next): ?><span class="text-muted"><?= e(tier_label($next['tier'])) ?> için: <?= e(tier_rule_summary($next['tier'])) ?>.</span><?php endif; ?>
         </p>
         <a href="<?= BASE_URL ?>/platform/performance.php" class="btn btn-secondary btn-sm">Performansım</a>
     </div>

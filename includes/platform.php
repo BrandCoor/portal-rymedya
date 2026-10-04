@@ -47,11 +47,6 @@ const FREELANCER_TIERS = [
 ];
 
 // Otomatik seviye için asgari performans puanı ve tamamlanan iş sayısı
-const FREELANCER_TIER_RULES = [
-    'silver' => ['score' => 65, 'jobs' => 3],
-    'gold'   => ['score' => 78, 'jobs' => 8],
-    'elite'  => ['score' => 90, 'jobs' => 15],
-];
 
 // Her durum: yönetici / ajans / freelancer gözünden etiket ve renk tonu
 const JOB_STATUSES = [
@@ -106,6 +101,7 @@ const PLATFORM_DEFAULTS = [
     'platform_limit_silver'          => '2',
     'platform_limit_gold'            => '3',
     'platform_limit_elite'           => '5',
+    'platform_tier_downgrade'        => '1',  // Kurallar sağlanmazsa seviye düşebilir
     'platform_catalog_reviewed'      => '0',
 ];
 
@@ -482,6 +478,11 @@ function notify_contact_users(?int $contact_id, string $message, string $link, ?
 
 function notify_staff(string $message, int $job_id): void {
     log_activity('platform', $message, 'job', $job_id, "/modules/platform/job.php?id={$job_id}");
+    try {
+        mail_notify_staff_inbox($message, "/modules/platform/job.php?id={$job_id}");
+    } catch (Throwable $e) {
+        error_log('Ekip e-postası: ' . $e->getMessage());
+    }
 }
 
 function portal_notifications(int $user_id, int $limit = 8): array {
@@ -897,9 +898,14 @@ function recompute_freelancer_metrics(int $user_id): array {
            $agency_r ? round(array_sum($agency_r) / count($agency_r), 2) : null, $user_id
        ]);
 
-    // Otomatik seviye
-    if (platform_setting('platform_auto_tier') === '1' && (int)$p['tier_locked'] !== 1 && $score !== null) {
-        $suggested = suggested_tier($score, $completed);
+    // Otomatik seviye (yöneticinin tanımladığı kurallara göre)
+    if (platform_setting('platform_auto_tier') === '1' && (int)$p['tier_locked'] !== 1 && $completed > 0) {
+        $st->execute([$user_id]);
+        $fresh = $st->fetch();
+        $suggested = suggested_tier($fresh);
+        if (tier_rank($suggested) < tier_rank($p['tier']) && platform_setting('platform_tier_downgrade') !== '1') {
+            $suggested = $p['tier'];
+        }
         if ($suggested !== $p['tier']) {
             $db->prepare("UPDATE freelancer_profiles SET tier = ? WHERE user_id = ?")->execute([$suggested, $user_id]);
             $up = tier_rank($suggested) > tier_rank($p['tier']);
@@ -911,13 +917,88 @@ function recompute_freelancer_metrics(int $user_id): array {
     return $st->fetch() ?: [];
 }
 
-function suggested_tier(?float $score, int $completed): string {
-    if ($score === null) {
-        return 'standard';
+/**
+ * ====================================================================
+ * SEVİYE KURALLARI (YÖNETİCİ TANIMLI OTOMASYON)
+ * ====================================================================
+ * Her seviye için koşullar; boş bırakılan koşul aranmaz, dolu olanların
+ * tamamı sağlanmalıdır. En yüksek şartı sağlanan seviye önerilir.
+ * Kurallar system_settings.platform_tier_rules (JSON) içinde saklanır.
+ */
+const TIER_CONDITIONS = [
+    'min_jobs'          => ['Tamamlanan iş', 'en az', 'iş', 0, 1000, 1],
+    'min_rating'        => ['Ortalama yıldız (ekip + müşteri)', 'en az', '★', 1, 5, 0.1],
+    'min_agency_rating' => ['Müşteri (ajans) yıldızı', 'en az', '★', 1, 5, 0.1],
+    'min_score'         => ['Performans puanı', 'en az', 'puan', 0, 100, 1],
+    'min_on_time'       => ['Zamanında teslim oranı', 'en az', '%', 0, 100, 1],
+    'min_qa'            => ['Kalite kontrolden ilk seferde geçme', 'en az', '%', 0, 100, 1],
+    'max_incidents'     => ['Bırakılan / geri alınan iş', 'en fazla', 'iş', 0, 100, 1],
+    'max_late'          => ['Geciken teslim', 'en fazla', 'iş', 0, 100, 1],
+    'min_days'          => ['Platformdaki süre', 'en az', 'gün', 0, 3650, 1],
+];
+
+function tier_rules_default(): array {
+    return [
+        'silver' => ['enabled' => 1, 'min_jobs' => 3, 'min_score' => 65],
+        'gold'   => ['enabled' => 1, 'min_jobs' => 8, 'min_score' => 78],
+        'elite'  => ['enabled' => 1, 'min_jobs' => 15, 'min_score' => 90],
+    ];
+}
+
+function tier_rules(): array {
+    $raw = get_setting('platform_tier_rules', '');
+    $rules = $raw !== '' ? json_decode($raw, true) : null;
+    return is_array($rules) ? $rules + tier_rules_default() : tier_rules_default();
+}
+
+/**
+ * Freelancer'ın bir koşuldaki güncel değeri (veri yoksa null)
+ */
+function tier_metric(array $p, string $cond): ?float {
+    switch ($cond) {
+        case 'min_jobs':          return (float)($p['completed_jobs'] ?? 0);
+        case 'min_rating':
+            $r = array_values(array_filter([$p['rating_avg'] ?? null, $p['agency_rating_avg'] ?? null], fn($x) => $x !== null));
+            return $r ? array_sum(array_map('floatval', $r)) / count($r) : null;
+        case 'min_agency_rating': return isset($p['agency_rating_avg']) && $p['agency_rating_avg'] !== null ? (float)$p['agency_rating_avg'] : null;
+        case 'min_score':         return isset($p['score']) && $p['score'] !== null ? (float)$p['score'] : null;
+        case 'min_on_time':       return isset($p['on_time_rate']) && $p['on_time_rate'] !== null ? (float)$p['on_time_rate'] : null;
+        case 'min_qa':            return isset($p['qa_pass_rate']) && $p['qa_pass_rate'] !== null ? (float)$p['qa_pass_rate'] : null;
+        case 'max_incidents':     return (float)((int)($p['releases_count'] ?? 0) + (int)($p['removed_count'] ?? 0));
+        case 'max_late':          return (float)($p['late_count'] ?? 0);
+        case 'min_days':          return !empty($p['created_at']) ? floor((time() - strtotime($p['created_at'])) / 86400) : 0.0;
     }
+    return null;
+}
+
+/**
+ * Bir seviyenin koşullarını değerlendirir
+ * Dönüş: ['ok' => bool, 'checks' => [[key, label, current, need, pass, op, unit], ...]]
+ */
+function tier_check(array $profile, string $tier, ?array $rules = null): array {
+    $rules = $rules ?? tier_rules();
+    $rule = $rules[$tier] ?? [];
+    $checks = [];
+    $ok = !empty($rule['enabled']);
+    foreach (TIER_CONDITIONS as $key => [$label, $op_label, $unit]) {
+        if (!isset($rule[$key]) || $rule[$key] === '' || $rule[$key] === null) continue;
+        $need = (float)$rule[$key];
+        $cur = tier_metric($profile, $key);
+        $pass = $cur !== null && (str_starts_with($key, 'max_') ? $cur <= $need : $cur >= $need);
+        $ok = $ok && $pass;
+        $checks[] = ['key' => $key, 'label' => $label, 'current' => $cur, 'need' => $need, 'pass' => $pass, 'op' => $op_label, 'unit' => $unit];
+    }
+    return ['ok' => $ok && (bool)$checks, 'checks' => $checks];
+}
+
+/**
+ * Kurallara göre önerilen seviye ($profile: freelancer_profiles satırı)
+ */
+function suggested_tier(array $profile, ?array $rules = null): string {
     $result = 'standard';
-    foreach (FREELANCER_TIER_RULES as $tier => $rule) {
-        if ($score >= $rule['score'] && $completed >= $rule['jobs']) {
+    foreach (array_keys(FREELANCER_TIERS) as $tier) {
+        if ($tier === 'standard') continue;
+        if (tier_check($profile, $tier, $rules)['ok']) {
             $result = $tier;
         }
     }
@@ -925,22 +1006,54 @@ function suggested_tier(?float $score, int $completed): string {
 }
 
 /**
- * Bir sonraki seviye için gereken puan ve iş sayısı (freelancer'a gösterilir)
+ * Koşulu okunur metne çevirir (ör. "en az 4★ ortalama yıldız")
+ */
+function tier_condition_text(string $key, $need): string {
+    [$label, $op, $unit] = TIER_CONDITIONS[$key];
+    $n = rtrim(rtrim(number_format((float)$need, 1, ',', ''), '0'), ',');
+    return "{$label}: {$op} {$n}" . ($unit === '%' ? '%' : ($unit === '★' ? '★' : " {$unit}"));
+}
+
+function tier_rule_summary(string $tier): string {
+    $rule = tier_rules()[$tier] ?? null;
+    if (!$rule || empty($rule['enabled'])) return $tier === 'standard' ? 'başlangıç seviyesi' : 'otomatik verilmiyor';
+    $parts = [];
+    foreach (TIER_CONDITIONS as $key => $_) {
+        if (isset($rule[$key]) && $rule[$key] !== '' && $rule[$key] !== null) {
+            $parts[] = tier_condition_text($key, $rule[$key]);
+        }
+    }
+    return $parts ? implode(' · ', $parts) : 'koşul tanımlı değil';
+}
+
+/**
+ * Bir sonraki (otomatik verilen) seviye ve koşulların durumu
  */
 function next_tier_progress(array $profile): ?array {
     $rank = tier_rank($profile['tier']);
-    foreach (FREELANCER_TIER_RULES as $tier => $rule) {
-        if (tier_rank($tier) === $rank + 1) {
-            return [
-                'tier' => $tier,
-                'need_score' => $rule['score'],
-                'need_jobs' => $rule['jobs'],
-                'score' => $profile['score'] !== null ? (float)$profile['score'] : 0,
-                'jobs' => (int)$profile['completed_jobs'],
-            ];
-        }
+    foreach (array_keys(FREELANCER_TIERS) as $tier) {
+        if (tier_rank($tier) <= $rank) continue;
+        $rule = tier_rules()[$tier] ?? [];
+        if (empty($rule['enabled'])) continue;
+        $res = tier_check($profile, $tier);
+        return ['tier' => $tier, 'checks' => $res['checks'], 'ok' => $res['ok']];
     }
     return null;
+}
+
+/**
+ * Kontrol satırının ilerleme yüzdesi (gösterim için)
+ */
+function tier_check_progress(array $c): float {
+    if ($c['current'] === null) return 0;
+    if (str_starts_with($c['key'], 'max_')) return $c['pass'] ? 100 : max(0, 100 - ($c['current'] - $c['need']) * 25);
+    return $c['need'] > 0 ? min(100, $c['current'] / $c['need'] * 100) : 100;
+}
+
+function tier_value_text(array $c): string {
+    if ($c['current'] === null) return 'veri yok';
+    $v = in_array($c['unit'], ['★'], true) ? number_format($c['current'], 1, ',', '') : number_format($c['current'], 0, ',', '.');
+    return $v . ($c['unit'] === '%' ? '%' : ($c['unit'] === '★' ? '★' : ''));
 }
 
 /**

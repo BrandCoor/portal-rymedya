@@ -7,7 +7,7 @@
  * buradadır. Kodda site_setting('anahtar') ile okunur (boşsa varsayılan).
  *
  * Alan: [tip, etiket, varsayılan, açıklama, ek]
- *   tip: text | textarea | email | url | color | number | select | bool | image | points
+ *   tip: text | textarea | email | url | color | number | select | bool | image | points | password
  *   ek : number için [min, max, birim], select için seçenekler,
  *        image için 'logo' | 'favicon' | 'photo', points için satır sayısı
  */
@@ -138,6 +138,7 @@ const SETTINGS_SCHEMA = [
             ], '', 3],
             'register_note'               => ['text', 'Başlık altı not', 'Başvurunuz ekibimiz tarafından incelendikten sonra hesabınız aktifleşir.', ''],
             'register_consent_text'       => ['textarea', 'Onay kutusu metni', 'Kullanım koşullarını ve KVKK aydınlatma metnini okudum; bilgilerimin iş eşleştirme amacıyla işlenmesini kabul ediyorum.', ''],
+            'register_newsletter_text'    => ['text', 'Bülten onay kutusu metni', 'Duyuru, kampanya ve yeni iş fırsatlarıyla ilgili e-posta almak istiyorum.', 'İşaretleyen kişi toplu e-posta listesine "ticari ileti izni var" olarak eklenir.'],
             'register_terms_url'          => ['url', 'Kullanım koşulları / KVKK bağlantısı', '', 'Girilirse onay kutusunun yanında "metni oku" bağlantısı çıkar.'],
             'register_closed_text'        => ['text', 'Kayıt kapalıyken gösterilen metin', 'Bu kayıt türü şu an yeni başvurulara kapalı.', ''],
         ],
@@ -150,6 +151,31 @@ const SETTINGS_SCHEMA = [
             'portal_support_phone' => ['text', 'Destek telefonu', '', ''],
             'client_portal_label'  => ['text', 'Müşteri portalı etiketi', 'Müşteri Portalı', 'Müşteri portalının üst barında marka adının altında görünür.'],
             'platform_team_name'   => ['text', 'Ekip adı', 'RY Medya Ekibi', 'Ajans ve freelancer\'lara gönderilen mesajlarda ve iş sayfalarında görünür.'],
+        ],
+    ],
+    'mail' => [
+        'title' => 'E-posta', 'icon' => 'mail',
+        'desc'  => 'Gönderim sunucusu, gönderen bilgileri ve hangi bildirimlerin e-postayla gideceği.',
+        'fields' => [
+            'mail_enabled'          => ['bool', 'E-posta gönderimi açık', '0', 'Kapalıyken hiçbir e-posta gönderilmez; bildirimler yalnızca portal içinde görünür.'],
+            'mail_transport'        => ['select', 'Gönderim yöntemi', 'mail', 'Hosting firmanız SMTP bilgisi veriyorsa SMTP önerilir (spam klasörüne düşme riski azalır).', ['mail' => 'Sunucunun mail() işlevi', 'smtp' => 'SMTP sunucusu']],
+            'smtp_host'             => ['text', 'SMTP sunucusu', '', 'Ör. mail.rymedya.com.tr, smtp.gmail.com, smtp.yandex.com.tr'],
+            'smtp_port'             => ['number', 'SMTP portu', '587', 'TLS için genellikle 587, SSL için 465.', [1, 65535, 'port']],
+            'smtp_secure'           => ['select', 'Şifreleme', 'tls', '', ['tls' => 'STARTTLS (587)', 'ssl' => 'SSL (465)', 'none' => 'Yok']],
+            'smtp_user'             => ['text', 'SMTP kullanıcı adı', '', 'Genellikle e-posta adresinin tamamı.'],
+            'smtp_pass'             => ['password', 'SMTP şifresi', '', 'Şifreli saklanır. Boş bırakırsanız kayıtlı şifre korunur.'],
+            'smtp_verify_ssl'       => ['bool', 'SSL sertifikasını doğrula', '1', 'Sunucu kendinden imzalı sertifika kullanıyorsa kapatın.'],
+            'mail_from_email'       => ['email', 'Gönderen adresi', '', 'Boşsa şirket e-postası kullanılır. SMTP kullanıcısıyla aynı alan adında olmalıdır.'],
+            'mail_from_name'        => ['text', 'Gönderen adı', '', 'Boşsa marka adı kullanılır.'],
+            'mail_reply_to'         => ['email', 'Yanıt adresi', '', 'Alıcı "yanıtla" dediğinde bu adrese yazar.'],
+            'mail_subject_prefix'   => ['text', 'Bildirim konu öneki', '', 'Ör. [RY Medya]. Bildirim e-postalarının konusunun başına eklenir.'],
+            'mail_button_text'      => ['text', 'Bildirim butonu metni', 'Görüntüle', ''],
+            'mail_footer_text'      => ['textarea', 'E-posta alt bilgisi', 'Bu e-posta, hesabınızla ilgili bir gelişme olduğu için gönderilmiştir.', 'Tüm e-postaların altında görünür.'],
+            'mail_notify_portal'    => ['bool', 'Ajans, freelancer ve müşterilere iş bildirimleri', '1', 'Sipariş onayı, atama, teslim, revizyon, teklif sonucu, seviye değişikliği, ödeme, yeni kurgu versiyonu, fatura gibi bildirimler.'],
+            'mail_notify_staff'     => ['bool', 'Personele kendisine atanan işler', '1', 'Görev ataması, kurgu ataması, müşteri revizyon talebi gibi kişiye özel bildirimler.'],
+            'mail_staff_inbox'      => ['email', 'Ekip gelen kutusu', '', 'Doluysa platformdaki tüm ekip bildirimlerinin (yeni sipariş, teklif, teslim) kopyası bu adrese gider.'],
+            'mail_register_confirm' => ['bool', 'Kayıt olana "başvurunuz alındı" e-postası', '1', ''],
+            'mail_batch_size'       => ['number', 'Toplu gönderimde parti büyüklüğü', '20', 'Her adımda gönderilecek e-posta sayısı. Hosting saatlik limitine göre ayarlayın.', [1, 200, 'e-posta']],
         ],
     ],
     'documents' => [

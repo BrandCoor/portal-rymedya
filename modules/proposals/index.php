@@ -58,6 +58,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (array_key_exists($new_status, PROPOSAL_STATUSES)) {
             $db->prepare("UPDATE proposals SET status = ? WHERE id = ?")->execute([$new_status, $prop_id]);
             log_activity('proposal_status', 'Teklif aşaması: ' . PROPOSAL_STATUSES[$new_status]['label'] . " (#{$prop_id})", 'proposal', $prop_id, '/modules/proposals/index.php');
+            if ($new_status === 'sent') {
+                $pp = $db->prepare("SELECT client_id, title, grand_total, currency FROM proposals WHERE id = ?");
+                $pp->execute([$prop_id]);
+                if ($prow = $pp->fetch()) {
+                    mail_notify_contact((int)$prow['client_id'], "Yeni fiyat teklifimiz portalınızda: {$prow['title']} · " . format_money((float)$prow['grand_total'], $prow['currency']), "/client/index.php");
+                }
+            }
             set_flash('success', 'Teklif aşaması güncellendi.' . ($new_status === 'sent' ? ' Müşteri teklifi portalından görüntüleyip onaylayabilir.' : ''));
         }
         redirect(BASE_URL . '/modules/proposals/index.php');

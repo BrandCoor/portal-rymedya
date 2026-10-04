@@ -182,8 +182,9 @@ else:
             <div class="card card-pad">
                 <p class="eyebrow">Sonraki seviye: <?= e(tier_label($next['tier'])) ?></p>
                 <div class="stack-sm" style="margin-top:12px">
-                    <?= ui_meter('Puan (' . $next['need_score'] . ' gerekli)', $next['need_score'] ? min(100, $next['score'] / $next['need_score'] * 100) : 0) ?>
-                    <?= ui_meter('Tamamlanan iş (' . $next['need_jobs'] . ' gerekli)', min(100, $next['jobs'] / max(1, $next['need_jobs']) * 100)) ?>
+                    <?php foreach ($next['checks'] as $c): ?>
+                        <?= ui_meter($c['label'] . ' (' . $c['op'] . ' ' . rtrim(rtrim(number_format($c['need'], 1, ',', ''), '0'), ',') . ($c['unit'] === '%' ? '%' : ($c['unit'] === '★' ? '★' : '')) . ')', tier_check_progress($c)) ?>
+                    <?php endforeach; ?>
                 </div>
                 <p class="xsmall text-muted" style="margin-top:12px">Seviye yükseldikçe daha değerli işleri görür ve aynı anda daha fazla iş alabilirsiniz.</p>
             </div>

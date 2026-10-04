@@ -110,14 +110,30 @@ Ajans düzenlemesinde tarih değişirse aynı kurallar yeniden uygulanır. Yöne
 | Revizyon yükü | %10 |
 | Güvenilirlik (bırakılan / geri alınan işler) | %10 |
 
-**Seviyeler ve varsayılan eşzamanlı iş limitleri:**
+**Seviye kuralları (İş merkezi → Freelancer'lar → Seviye kuralları):**
 
-| Seviye | Şart | Aynı anda aktif iş |
-|--------|------|--------------------|
-| Standart | — | 1 |
-| Silver | puan 65+ ve 3+ iş | 2 |
-| Gold | puan 78+ ve 8+ iş | 3 |
-| Elite | puan 90+ ve 15+ iş | 5 |
+Silver, Gold ve Elite için koşulları yönetici belirler. Boş bırakılan koşul aranmaz; doldurulan koşulların **tamamı** sağlanmalıdır. Birden fazla seviyenin şartını sağlayan, en yüksek seviyeye geçer.
+
+| Koşul | Örnek |
+|-------|-------|
+| Tamamlanan iş (en az) | 10 |
+| Ortalama yıldız, ekip + müşteri (en az) | 4★ |
+| Müşteri (ajans) yıldızı (en az) | 4.5★ |
+| Performans puanı (en az) | 80 |
+| Zamanında teslim oranı (en az) | %90 |
+| Kalite kontrolden ilk seferde geçme (en az) | %80 |
+| Bırakılan / geri alınan iş (en fazla) | 1 |
+| Geciken teslim (en fazla) | 2 |
+| Platformdaki süre (en az) | 90 gün |
+
+Örnek: Gold için "tamamlanan iş en az 10" ve "ortalama yıldız en az 4" yazılırsa, 10 işi bitirmiş ve ortalaması 4★ olan herkes Gold olur.
+
+- Her seviye ayrı ayrı açılıp kapatılabilir. Kapalı seviye otomatik verilmez, yalnızca elle verilir.
+- Her seviyenin **eşzamanlı aktif iş limiti** aynı ekrandan ayarlanır. Varsayılanlar: Standart 1, Silver 2, Gold 3, Elite 5.
+- **Otomatik uygula:** kurallar her tamamlanan iş ve değerlendirmeden sonra kontrol edilir.
+- **Seviye düşürme:** kapalıysa seviye yalnızca yükselir.
+- **Kaydet ve herkese uygula:** kurallar anında tüm onaylı freelancer'lara uygulanır. Ekrandaki tablo, uygulamadan önce kimin seviyesinin değişeceğini gösterir.
+- Freelancer kendi Performans sayfasında bir sonraki seviyenin koşullarını ve her koşuldaki durumunu görür.
 
 - **Aktif iş:** atanmış, üretimde, kalite kontrolde, revizyonda veya ajans onayında olan iştir.
 - Limit doluysa freelancer iş alamaz ve teklif veremez. Yönetici "limiti aş" ile istisna yapabilir.
@@ -175,5 +191,5 @@ Toplu yüzde güncelleme yapılabilir; sonuçlar 50 TL'ye yuvarlanır. Fiyat de�
 ## 11. Bilinen sınırlar
 
 - Teslimatlar bağlantı olarak paylaşılır; dosya yükleme yoktur.
-- E-posta/SMS bildirimi yoktur; bildirimler platform içindedir.
+- SMS bildirimi yoktur. E-posta bildirimleri için bkz. KULLANIM_KILAVUZU → E-posta.
 - Teslimden X gün sonra otomatik onay için zamanlanmış görev (cron) gerekir.

@@ -133,16 +133,19 @@ require_once __DIR__ . '/../../includes/header.php';
         <h1 class="h1">Freelancer'lar</h1>
         <p class="sub">Seviye; işleri kimin göreceğini ve aynı anda kaç iş alınabileceğini belirler. <?= $auto_tier ? 'Seviyeler performans puanına göre otomatik güncellenir.' : 'Otomatik seviye kapalı.' ?></p>
     </div>
-    <form method="POST" action=""><?= csrf_field() ?><input type="hidden" name="action" value="recompute_all"><button class="btn btn-secondary"><i data-lucide="refresh-cw"></i>Puanları yeniden hesapla</button></form>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="<?= BASE_URL ?>/modules/platform/tiers.php" class="btn btn-secondary"><i data-lucide="workflow"></i>Seviye kuralları</a>
+        <form method="POST" action=""><?= csrf_field() ?><input type="hidden" name="action" value="recompute_all"><button class="btn btn-secondary"><i data-lucide="refresh-cw"></i>Puanları yeniden hesapla</button></form>
+    </div>
 </div>
 
 <div class="card" style="margin-bottom:20px">
     <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-        <?php foreach (FREELANCER_TIERS as $tk => $tv): $rule = FREELANCER_TIER_RULES[$tk] ?? null; ?>
+        <?php foreach (FREELANCER_TIERS as $tk => $tv): ?>
             <a href="<?= $qs(['tier' => $tier === $tk ? '' : $tk]) ?>" class="kpi" style="<?= $tier === $tk ? 'background:var(--surface-2)' : '' ?>">
                 <div class="kpi-label"><?= tier_badge($tk) ?><span class="num"><?= tier_job_limit($tk) ?> iş</span></div>
                 <div class="kpi-value"><?= (int)($tier_counts[$tk] ?? 0) ?></div>
-                <div class="kpi-meta"><?= $rule ? "puan {$rule['score']}+ · {$rule['jobs']}+ iş" : 'başlangıç seviyesi' ?></div>
+                <div class="kpi-meta truncate-2" title="<?= e(tier_rule_summary($tk)) ?>"><?= e(tier_rule_summary($tk)) ?></div>
             </a>
         <?php endforeach; ?>
     </div>
@@ -176,7 +179,7 @@ require_once __DIR__ . '/../../includes/header.php';
     [$sl, $stn] = $status_badge[$f['status']] ?? [$f['status'], 'neutral'];
     $fskills = array_filter(explode(',', (string)$f['skills']));
     $incidents = (int)$f['releases_count'] + (int)$f['removed_count'];
-    $suggested = $f['score'] !== null ? suggested_tier((float)$f['score'], (int)$f['completed_jobs']) : null;
+    $suggested = (int)$f['completed_jobs'] > 0 ? suggested_tier($f) : null;
 ?>
     <div class="card" x-data="{ open: <?= $focus === (int)$f['user_id'] ? 'true' : 'false' ?>, del: false }">
         <div class="card-pad-sm" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">

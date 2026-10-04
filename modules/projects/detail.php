@@ -327,6 +327,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($editor_id && $editor_id !== (int)$user['id']) {
                 log_activity('revision_assigned', "Kurgu ataması: {$title} ({$project['project_name']})", 'revision', $new_rev_id, "/modules/projects/detail.php?id={$project_id}&tab=revisions", $editor_id);
             }
+            // Müşteri onayına sunulan versiyon için müşteriye e-posta
+            if (($_POST['status'] ?? '') === 'sent_to_client' && trim($_POST['preview_url'] ?? '') !== '') {
+                mail_notify_contact($client_contact_id ?: null, "{$project['project_name']} için yeni kurgu versiyonu onayınıza sunuldu: {$title}", "/client/project_detail.php?id={$project_id}");
+            }
             set_flash('success', 'Kurgu versiyonu eklendi.');
         }
         redirect($detail_url);
@@ -335,6 +339,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'edit_revision') {
         $title = trim($_POST['version_title'] ?? '');
         if ($title !== '') {
+            $prev = $db->prepare("SELECT status FROM project_revisions WHERE id = ? AND project_id = ?");
+            $prev->execute([(int)$_POST['revision_id'], $project_id]);
+            $prev_status = $prev->fetchColumn();
+            if (($_POST['status'] ?? '') === 'sent_to_client' && $prev_status !== 'sent_to_client' && trim($_POST['preview_url'] ?? '') !== '') {
+                mail_notify_contact($client_contact_id ?: null, "{$project['project_name']} için kurgu versiyonu onayınıza sunuldu: {$title}", "/client/project_detail.php?id={$project_id}");
+            }
             $db->prepare("UPDATE project_revisions SET version_title = ?, preview_url = ?, assigned_editor_id = ?, feedback_notes = ?, status = ? WHERE id = ? AND project_id = ?")
                ->execute([
                    $title, trim($_POST['preview_url'] ?? ''), !empty($_POST['assigned_editor_id']) ? (int)$_POST['assigned_editor_id'] : null,
@@ -439,6 +449,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare("UPDATE projects SET status = 'invoiced' WHERE id = ?")->execute([$project_id]);
             recalculate_contact_balance($client_contact_id);
             log_activity('invoice_created', "{$project['project_name']} faturalandırıldı: {$invoice_number} (" . format_money($tax['grand_total']) . ")", 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=finance");
+            mail_notify_contact($client_contact_id ?: null, "{$project['project_name']} için faturanız düzenlendi: {$invoice_number} · " . format_money($tax['grand_total']) . ($due_date ? ' · Son ödeme ' . format_date($due_date) : ''), "/client/index.php");
             set_flash('success', "Proje faturalandırıldı ({$invoice_number}).");
         }
         redirect($detail_url);
@@ -526,6 +537,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->prepare("INSERT INTO project_deliverables (project_id, title, url, notes, visible_to_client, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())")
            ->execute([$project_id, $title, $url, trim($_POST['notes'] ?? ''), $visible, $user['id']]);
         log_activity('deliverable_added', "Teslim dosyası eklendi: {$title} ({$project['project_name']})" . ($visible ? ' · Müşteriye açık' : ''), 'project', $project_id, "/modules/projects/detail.php?id={$project_id}&tab=deliverables");
+        if ($visible) {
+            mail_notify_contact($client_contact_id ?: null, "{$project['project_name']} için yeni teslim dosyası paylaşıldı: {$title}", "/client/project_detail.php?id={$project_id}");
+        }
         set_flash('success', 'Teslim dosyası eklendi' . ($visible ? ' ve müşteri portalında yayınlandı.' : '.'));
         redirect($detail_url);
     }

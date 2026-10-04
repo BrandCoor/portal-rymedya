@@ -88,14 +88,13 @@ platform_header('Performans', 'performance');
         <div class="card-head"><p class="card-title">Seviyeler</p><?php if ($next): ?><span class="xsmall text-muted">Sıradaki: <?= e(tier_label($next['tier'])) ?></span><?php endif; ?></div>
         <div class="table-wrap">
             <table class="table">
-                <thead><tr><th>Seviye</th><th class="r">Puan</th><th class="r">Tamamlanan iş</th><th class="r">Eşzamanlı iş</th><th></th></tr></thead>
+                <thead><tr><th>Seviye</th><th>Koşullar</th><th class="r">Eşzamanlı iş</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach (FREELANCER_TIERS as $tk => $tv):
-                    $rule = FREELANCER_TIER_RULES[$tk] ?? null; $is_cur = $profile['tier'] === $tk; ?>
+                    $is_cur = $profile['tier'] === $tk; ?>
                     <tr style="<?= $is_cur ? 'background:var(--surface-2)' : '' ?>">
                         <td><?= tier_badge($tk) ?></td>
-                        <td class="r num"><?= $rule ? $rule['score'] . '+' : '—' ?></td>
-                        <td class="r num"><?= $rule ? $rule['jobs'] . '+' : '—' ?></td>
+                        <td class="xsmall text-ink-2" style="max-width:360px"><?= e(tier_rule_summary($tk)) ?></td>
                         <td class="r num" style="font-weight:600"><?= tier_job_limit($tk) ?></td>
                         <td class="r"><?= $is_cur ? '<span class="xsmall" style="font-weight:500">Siz buradasınız</span>' : '' ?></td>
                     </tr>
@@ -113,14 +112,15 @@ platform_header('Performans', 'performance');
                 <p class="small text-ink-2">En üst seviyedesiniz. Puanınızı koruyarak önceliklerinizi sürdürün.</p>
             <?php else: ?>
                 <p class="small text-ink-2"><strong><?= e(tier_label($next['tier'])) ?></strong> seviyesinde aynı anda <?= tier_job_limit($next['tier']) ?> iş alabilirsiniz.</p>
+                <?php foreach ($next['checks'] as $c): ?>
                 <div>
-                    <div class="meter-row small" style="display:flex;justify-content:space-between"><span class="text-muted">Puan</span><span class="num"><?= number_format($next['score'], 0) ?> / <?= $next['need_score'] ?></span></div>
-                    <div class="progress" style="margin-top:6px"><span style="width:<?= min(100, $next['score'] / $next['need_score'] * 100) ?>%"></span></div>
+                    <div class="meter-row small" style="display:flex;justify-content:space-between;gap:8px">
+                        <span class="text-muted" style="display:inline-flex;gap:6px;align-items:center"><i data-lucide="<?= $c['pass'] ? 'circle-check' : 'circle' ?>" style="width:14px;height:14px;color:<?= $c['pass'] ? 'var(--success)' : 'var(--faint)' ?>"></i><?= e($c['label']) ?></span>
+                        <span class="num"><?= e(tier_value_text($c)) ?> <span class="text-faint">/ <?= e($c['op']) ?> <?= rtrim(rtrim(number_format($c['need'], 1, ',', ''), '0'), ',') ?><?= $c['unit'] === '%' ? '%' : ($c['unit'] === '★' ? '★' : '') ?></span></span>
+                    </div>
+                    <div class="progress <?= $c['pass'] ? 'tone-success' : '' ?>" style="margin-top:6px"><span style="width:<?= tier_check_progress($c) ?>%"></span></div>
                 </div>
-                <div>
-                    <div class="meter-row small" style="display:flex;justify-content:space-between"><span class="text-muted">Tamamlanan iş</span><span class="num"><?= $next['jobs'] ?> / <?= $next['need_jobs'] ?></span></div>
-                    <div class="progress" style="margin-top:6px"><span style="width:<?= min(100, $next['jobs'] / max(1, $next['need_jobs']) * 100) ?>%"></span></div>
-                </div>
+                <?php endforeach; ?>
                 <?php if (platform_setting('platform_auto_tier') !== '1' || (int)$profile['tier_locked'] === 1): ?>
                     <p class="xsmall text-muted">Seviye geçişleri ekip tarafından yapılır.</p>
                 <?php else: ?>

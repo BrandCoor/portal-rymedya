@@ -114,6 +114,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
 
         log_activity('platform_signup', ($type === 'agency' ? 'Yeni ajans kaydı: ' . $company : 'Yeni freelancer başvurusu: ' . $full_name . ' (' . implode(', ', array_map('job_category_label', $skills)) . ')') . ' — onay bekliyor', $type, $user_id, '/modules/platform/' . ($type === 'agency' ? 'agencies.php' : 'freelancers.php') . '?status=pending');
 
+        // Toplu e-posta listesi (onay verdiyse ticari ileti izni ile)
+        $db->prepare("INSERT INTO mail_subscribers (email, name, company, kind, user_id, contact_id, consent, status, token, source, created_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'subscribed', ?, 'register', NOW())
+                      ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), contact_id = VALUES(contact_id), kind = VALUES(kind), consent = GREATEST(consent, VALUES(consent))")
+           ->execute([mb_strtolower($email), $full_name, $type === 'agency' ? $company : null, $type, $user_id, $contact_id, !empty($_POST['newsletter']) ? 1 : 0, mail_subscriber_token()]);
+
+        if (site_setting('mail_register_confirm') === '1') {
+            mail_send_notice($email, $full_name, ($type === 'agency' ? 'Ajans hesabınız oluşturuldu.' : 'Freelancer başvurunuz alındı.') . ' Ekibimiz bilgilerinizi inceledikten sonra hesabınız aktifleşecek ve size e-posta ile haber vereceğiz.', '/platform/index.php', $user_id, 'system');
+        }
+
         set_flash('success', 'Kaydınız alındı! Hesabınız platform ekibimiz tarafından incelendikten sonra aktifleşecek.');
         redirect(BASE_URL . '/platform/index.php');
     }
@@ -193,6 +203,7 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
                 <div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= $val('iban') ?>" placeholder="TR.."><span class="hint">Hakediş ödemeleri için.</span></div>
                 <?php endif; ?>
 
+                <label class="check"><input type="checkbox" name="newsletter" value="1"><span class="small"><?= e(site_setting('register_newsletter_text')) ?></span></label>
                 <label class="check"><input type="checkbox" name="kvkk" value="1" required><span class="small"><?= e(site_setting('register_consent_text')) ?><?php if (site_setting('register_terms_url') !== '' && is_safe_url(site_setting('register_terms_url'))): ?> <a class="link" href="<?= e(site_setting('register_terms_url')) ?>" target="_blank" rel="noopener">Metni oku</a><?php endif; ?></span></label>
 
                 <button type="submit" class="btn btn-primary btn-lg btn-block"><?= $is_agency ? 'Hesabı oluştur' : 'Başvuruyu gönder' ?></button>

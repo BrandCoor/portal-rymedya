@@ -776,6 +776,7 @@ const MODULE_PERMISSIONS = [
     'platform.manage'  => ['description' => 'İş Platformu Yönetimi (Ajans işleri, freelancer atama)', 'module' => 'platform', 'grant_if' => 'projects.edit'],
     'platform.delete'  => ['description' => 'Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog)', 'module' => 'platform', 'grant_if' => 'settings.manage'],
     'platform.pricing' => ['description' => 'Hizmet kataloğu ve fiyatları yönetme', 'module' => 'platform', 'grant_if' => 'settings.manage'],
+    'mail.manage'      => ['description' => 'E-posta merkezi: aboneler, toplu gönderim, gönderim kayıtları', 'module' => 'mail', 'grant_if' => 'settings.manage'],
 ];
 
 /**
@@ -992,7 +993,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1104,6 +1105,7 @@ function run_migrations(): void {
         ensure_contact_change_logs_table();
         run_platform_migrations();
         run_platform_migrations_v4();
+        run_mail_migrations();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1143,6 +1145,14 @@ function log_activity(string $action, string $message, ?string $entity_type = nu
         ")->execute([$actor_type, $actor_id, $actor_name, $action, $entity_type, $entity_id, mb_substr($message, 0, 500), $link, $target_user_id]);
     } catch (Throwable $e) {
         error_log('Aktivite günlüğü yazılamadı: ' . $e->getMessage());
+    }
+    // Kişiye özel bildirimler e-postayla da gönderilir (ayarlara bağlı)
+    if ($target_user_id && function_exists('mail_on_activity')) {
+        try {
+            mail_on_activity($target_user_id, $message, $link);
+        } catch (Throwable $e) {
+            error_log('Bildirim e-postası kuyruğa alınamadı: ' . $e->getMessage());
+        }
     }
 }
 
@@ -1221,6 +1231,7 @@ const TASK_PRIORITIES = [
 
 // Arayüz bileşenleri ve iş platformu (ajans / freelancer pazaryeri)
 require_once __DIR__ . '/settings_schema.php';
+require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/platform.php';
 

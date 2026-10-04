@@ -29,6 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    if ($action === 'email_prefs') {
+        mail_save_user_prefs($client_id, isset($_POST['notify_email']), isset($_POST['newsletter']));
+        set_flash('success', 'E-posta tercihleriniz kaydedildi.');
+        redirect(BASE_URL . '/client/profile.php');
+    }
+
     if ($action === 'update_profile') {
         $new_authorized_person = trim($_POST['authorized_person'] ?? '');
         $new_phone             = trim($_POST['phone'] ?? '');
@@ -290,6 +296,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span>Bilgilerimi Güncelle & Kaydet</span>
                 </button>
             </div>
+        </form>
+        <?php $prefs = mail_user_prefs($client_id); ?>
+        <form method="POST" action="" class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-4" style="margin-top:24px">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="email_prefs">
+            <h2 class="text-sm font-bold text-slate-900">E-posta tercihleri</h2>
+            <label class="flex items-center justify-between gap-4 text-sm"><span>Proje bildirimleri <span class="block text-xs text-slate-500">Yeni kurgu versiyonu, teslim dosyası, teklif ve fatura.</span></span><span class="switch"><input type="checkbox" name="notify_email" value="1" <?= $prefs['notify'] ? 'checked' : '' ?>><span></span></span></label>
+            <label class="flex items-center justify-between gap-4 text-sm"><span>Duyuru ve kampanyalar</span><span class="switch"><input type="checkbox" name="newsletter" value="1" <?= $prefs['newsletter'] ? 'checked' : '' ?>><span></span></span></label>
+            <div class="flex justify-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
         </form>
 
     </main>

@@ -30,7 +30,8 @@ $sections = [
         'platform_rush_freelancer_share' => ['int', 'Acil farkından freelancer payı', 'Acil iş farkının bu kadarı freelancer hakedişine prim olarak eklenir.', 0, 100, '%'],
     ],
     'Freelancer seviyeleri ve kapasite' => [
-        'platform_auto_tier'      => ['bool', 'Seviyeler performansa göre otomatik güncellensin', 'Her tamamlanan iş ve değerlendirme sonrası puan hesaplanır; seviye kurallarına göre yükselir veya düşer. Elle sabitlenen seviyeler etkilenmez.'],
+        'platform_auto_tier'      => ['bool', 'Seviyeler kurallara göre otomatik güncellensin', 'Her tamamlanan iş ve değerlendirme sonrası "Seviye kuralları" ekranındaki koşullar kontrol edilir. Elle sabitlenen seviyeler etkilenmez.'],
+        'platform_tier_downgrade' => ['bool', 'Kuralları artık sağlamayanların seviyesi düşsün', 'Kapalıyken seviye yalnızca yükselir.'],
         'platform_limit_standard' => ['int', 'Standart · eşzamanlı aktif iş', 'Atanmış, üretimde, kalite kontrolde, revizyonda veya ajans onayında olan işler sayılır.', 1, 50, 'iş'],
         'platform_limit_silver'   => ['int', 'Silver · eşzamanlı aktif iş', '', 1, 50, 'iş'],
         'platform_limit_gold'     => ['int', 'Gold · eşzamanlı aktif iş', '', 1, 50, 'iş'],
@@ -126,10 +127,10 @@ require_once __DIR__ . '/../../includes/header.php';
         </div>
         <?php if ($title === 'Freelancer seviyeleri ve kapasite'): ?>
         <div class="card-foot">
-            <p class="xsmall text-muted" style="margin-bottom:8px">Otomatik seviye kuralları (puan 0–100: %35 değerlendirme, %25 zamanında teslim, %20 kalite kontrol, %10 revizyon, %10 güvenilirlik):</p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <?php foreach (FREELANCER_TIER_RULES as $tk => $rule): ?>
-                    <span class="panel xsmall" style="padding:6px 10px;display:inline-flex;gap:8px;align-items:center"><?= tier_badge($tk) ?> puan <?= $rule['score'] ?>+ · <?= $rule['jobs'] ?>+ tamamlanan iş</span>
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px"><p class="xsmall text-muted">Otomatik seviye kuralları:</p><a class="btn btn-secondary btn-sm" href="<?= BASE_URL ?>/modules/platform/tiers.php"><i data-lucide="workflow"></i>Seviye kurallarını düzenle</a></div>
+            <div class="stack-sm">
+                <?php foreach (['silver', 'gold', 'elite'] as $tk): ?>
+                    <div class="xsmall" style="display:flex;gap:8px;align-items:center"><?= tier_badge($tk) ?><span class="text-muted"><?= e(tier_rule_summary($tk)) ?></span></div>
                 <?php endforeach; ?>
             </div>
         </div>

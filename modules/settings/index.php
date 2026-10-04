@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/functions.php';
 
 require_staff_login();
 require_permission('settings.manage');
+$user = current_user();
 
 $tab = array_key_exists($_GET['tab'] ?? '', SETTINGS_SCHEMA) ? $_GET['tab'] : 'brand';
 $self = BASE_URL . '/modules/settings/index.php?tab=';
@@ -76,6 +77,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fields = SETTINGS_SCHEMA[$section]['fields'];
     $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), setting_group = VALUES(setting_group)");
     $current = get_settings(true);
+
+    // Test e-postası
+    if (($_POST['action'] ?? '') === 'test_mail') {
+        $to = trim($_POST['test_to'] ?? '');
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            set_flash('error', 'Geçerli bir alıcı adresi girin.');
+            redirect($self . 'mail');
+        }
+        $html = mail_render(mail_notice_html($user['full_name'] ?? '', 'Bu bir test e-postasıdır. Bu mesajı görüyorsanız e-posta ayarlarınız doğru çalışıyor.'), ['button' => ['Portala git', BASE_URL . '/modules/dashboard/index.php'], 'title' => 'Test e-postası']);
+        $err = mail_send_direct($to, (site_setting('mail_subject_prefix') !== '' ? site_setting('mail_subject_prefix') . ' ' : '') . 'Test e-postası', $html);
+        set_flash($err ? 'error' : 'success', $err ? 'Test e-postası gönderilemedi: ' . $err : "Test e-postası {$to} adresine gönderildi.");
+        redirect($self . 'mail');
+    }
 
     // Varsayılana döndür
     if (($_POST['action'] ?? '') === 'reset') {
@@ -147,6 +161,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $values[$key] = $path;
                 }
                 break;
+            case 'password':
+                if (!empty($_POST[$key . '__clear'])) {
+                    $values[$key] = '';
+                } elseif ((string)$raw !== '') {
+                    $values[$key] = smtp_password_encrypt((string)$raw);
+                }
+                break;
             case 'textarea':
                 $values[$key] = mb_substr(str_replace("\r\n", "\n", trim((string)$raw)), 0, 4000);
                 break;
@@ -178,8 +199,8 @@ $val = function (string $key, array $f) {
         $rows = site_points($key);
         return array_pad($rows, (int)($f[4] ?? 3), ['', '', '']);
     }
-    if ($f[0] === 'image') {
-        return get_setting($key, '');
+    if ($f[0] === 'image' || $f[0] === 'password') {
+        return $f[0] === 'image' ? get_setting($key, '') : '';
     }
     $all = get_settings();
     return array_key_exists($key, $all) ? (string)$all[$key] : (string)$f[2];
@@ -268,7 +289,10 @@ $extra_links = [
 
                     <?php else: ?>
                         <label class="label" for="f_<?= $key ?>"><?= e($label) ?></label>
-                        <?php if ($type === 'textarea'): ?>
+                        <?php if ($type === 'password'): $has = get_setting($key, '') !== ''; ?>
+                            <input class="input" id="f_<?= $key ?>" type="password" name="<?= $key ?>" value="" autocomplete="new-password" placeholder="<?= $has ? '•••••••• (kayıtlı)' : '' ?>" style="max-width:320px">
+                            <?php if ($has): ?><label class="check xsmall"><input type="checkbox" name="<?= $key ?>__clear" value="1">Kayıtlı şifreyi sil</label><?php endif; ?>
+                        <?php elseif ($type === 'textarea'): ?>
                             <textarea class="textarea" id="f_<?= $key ?>" name="<?= $key ?>" rows="3"><?= e($v) ?></textarea>
                         <?php elseif ($type === 'color'): ?>
                             <div style="display:flex;gap:8px;align-items:center" x-data="{ c: '<?= e($v) ?>' }">
@@ -295,6 +319,14 @@ $extra_links = [
                 <button type="submit" name="action" value="save" class="btn btn-primary">Kaydet</button>
             </div>
         </form>
+        <?php if ($tab === 'mail'): ?>
+        <form method="POST" action="?tab=mail" class="card card-pad" style="margin-top:16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap"><?= csrf_field() ?>
+            <input type="hidden" name="section" value="mail"><input type="hidden" name="action" value="test_mail">
+            <div class="field" style="flex:1;min-width:240px"><label class="label">Test e-postası gönder</label><input class="input" type="email" name="test_to" value="<?= e($user['email'] ?? '') ?>" required><span class="hint">Önce ayarları kaydedin. Gönderim sonucu ve varsa hata mesajı burada gösterilir.</span></div>
+            <button class="btn btn-secondary"><i data-lucide="send"></i>Test gönder</button>
+            <?php if (can_access_module('mail.manage')): ?><a href="<?= BASE_URL ?>/modules/mail/log.php" class="btn btn-ghost">Gönderim kayıtları</a><?php endif; ?>
+        </form>
+        <?php endif; ?>
         <form id="reset-form" method="POST" action="?tab=<?= $tab ?>"><?= csrf_field() ?><input type="hidden" name="section" value="<?= $tab ?>"><input type="hidden" name="action" value="reset"></form>
     </div>
 </div>

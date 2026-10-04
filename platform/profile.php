@@ -25,6 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
+    if ($action === 'email_prefs') {
+        mail_save_user_prefs($uid, isset($_POST['notify_email']), isset($_POST['newsletter']));
+        set_flash('success', 'E-posta tercihleriniz kaydedildi.');
+        redirect(BASE_URL . '/platform/profile.php');
+    }
+
     if ($action === 'save_profile') {
         $name  = trim($_POST['full_name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
@@ -163,6 +169,24 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <?php endif; ?>
 
         <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary">Değişiklikleri kaydet</button></div>
+    </form>
+
+    <?php $prefs = mail_user_prefs($uid); ?>
+    <form method="POST" action="" class="card" style="margin-top:24px">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="email_prefs">
+        <div class="card-head"><div><p class="card-title">E-posta tercihleri</p><p class="card-sub"><?= e($contact['email'] ?? '') ?></p></div></div>
+        <div class="divide">
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">
+                <div><p class="small" style="font-weight:500">İş bildirimleri</p><p class="xsmall text-muted"><?= $role === 'agency' ? 'Sipariş onayı, teslimat, revizyon ve fatura gibi gelişmeler.' : 'Atama, teklif sonucu, kalite kontrol, ödeme ve seviye değişiklikleri.' ?></p></div>
+                <label class="switch"><input type="checkbox" name="notify_email" value="1" <?= $prefs['notify'] ? 'checked' : '' ?>><span></span></label>
+            </div>
+            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">
+                <div><p class="small" style="font-weight:500">Duyuru ve kampanyalar</p><p class="xsmall text-muted">Yeni hizmetler, fırsatlar ve platform duyuruları.</p></div>
+                <label class="switch"><input type="checkbox" name="newsletter" value="1" <?= $prefs['newsletter'] ? 'checked' : '' ?>><span></span></label>
+            </div>
+        </div>
+        <div class="card-foot" style="display:flex;justify-content:flex-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
     </form>
 
     <form method="POST" action="" class="card" style="margin-top:24px">

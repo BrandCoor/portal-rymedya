@@ -37,7 +37,7 @@ if (can_access_module('platform.manage')) {
         <?php if (can_access_module('platform.manage')): ?>
             <div class="nav-section">İş platformu</div>
             <?= nav_link('/modules/platform/index.php', 'inbox', 'İş merkezi', ['/modules/platform/index', '/modules/platform/job', '/modules/platform/settings'], $platform_pending ?: null) ?>
-            <?= nav_link('/modules/platform/freelancers.php', 'users-round', 'Freelancer\'lar', '/modules/platform/freelancers') ?>
+            <?= nav_link('/modules/platform/freelancers.php', 'users-round', 'Freelancer\'lar', ['/modules/platform/freelancers', '/modules/platform/tiers']) ?>
             <?= nav_link('/modules/platform/agencies.php', 'building-2', 'Ajanslar', '/modules/platform/agencies') ?>
             <?php if (can_access_module('platform.pricing')): ?>
                 <?= nav_link('/modules/platform/catalog.php', 'tags', 'Hizmet kataloğu', '/modules/platform/catalog') ?>
@@ -70,8 +70,10 @@ if (can_access_module('platform.manage')) {
             <?php if (has_permission('finance.taxes')): ?><?= nav_link('/modules/taxes/index.php', 'percent', 'Vergi', '/modules/taxes') ?><?php endif; ?>
         <?php endif; ?>
 
-        <?php if (has_permission('personnel.manage') || has_permission('settings.manage')): ?>
+        <?php $can_mail = can_access_module('mail.manage'); ?>
+        <?php if (has_permission('personnel.manage') || has_permission('settings.manage') || $can_mail): ?>
             <div class="nav-section">Yönetim</div>
+            <?php if ($can_mail): ?><?= nav_link('/modules/mail/index.php', 'mail', 'E-posta', '/modules/mail') ?><?php endif; ?>
             <?php if (has_permission('personnel.manage')): ?><?= nav_link('/modules/personnel/index.php', 'id-card', 'Personel', '/modules/personnel') ?><?php endif; ?>
             <?php if (has_permission('settings.manage')): ?>
                 <?= nav_link('/modules/settings/roles.php', 'shield-check', 'Roller ve kullanıcılar', '/modules/settings/roles') ?>

@@ -84,7 +84,35 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 - Görseller PNG, JPG, WEBP veya SVG olabilir; favicon ICO da olabilir. En fazla 2 MB. Dosyalar `assets/uploads/branding/` klasörüne kaydedilir; bu klasörün sunucuda yazılabilir olması gerekir. Betik içeren SVG'ler reddedilir.
 - Platform kuralları, hizmet kataloğu ve roller sayfalarına ayarların sol menüsünden de ulaşılır.
 
-## 7. Yetkiler
+## 7. E-posta (Yönetim → E-posta)
+
+**Kurulum (Ayarlar → E-posta):**
+1. Gönderim yöntemini seçin. Hosting firmanızın verdiği SMTP bilgileri önerilir (sunucu, port 587/465, kullanıcı, şifre); alternatif olarak sunucunun `mail()` işlevi kullanılabilir.
+2. Gönderen adresini girin, "E-posta gönderimi açık" anahtarını açıp kaydedin.
+3. **Test gönder** ile kendinize deneme e-postası atın. Hata varsa mesajı ekranda görünür.
+4. Toplu gönderimler ve tekrar denemeler için zamanlanmış görev (cron) tanımlayın: cPanel → Cron Jobs → her 5 dakikada `php /home/KULLANICI/public_html/cron/mail-queue.php`
+
+**İşe bağlı e-postalar (otomatik):**
+- **Ajans:** sipariş yayında, ekip atandı, üretime başlandı, teslim edildi, fiyat teklifi, tamamlandı, ekipten mesaj, hesap onayı
+- **Freelancer:** atama, teklif sonucu (ret gerekçesiyle), kalite kontrol, revizyon, hakediş/ödeme, seviye değişikliği, size özel iş, ekipten mesaj
+- **Müşteri:** onaya sunulan kurgu versiyonu, paylaşılan teslim dosyası, fatura, yeni teklif
+- **Personel:** görev/kurgu ataması, müşteri revizyonu
+- **Ekip gelen kutusu:** doldurulursa tüm platform bildirimlerinin kopyası bu adrese gider.
+- Kayıt olana "başvurunuz alındı" e-postası gönderilir.
+- Her kişi profilinden iş bildirimlerini ve duyuru e-postalarını ayrı ayrı kapatabilir.
+
+**Toplu e-posta:**
+- **Aboneler:** müşteri, ajans, freelancer, tedarikçi ve personel e-postaları cari kartlardan ve hesaplardan otomatik eşitlenir. Manuel ekleme, CSV içe/dışa aktarma ve etiketleme yapılabilir.
+- **Yeni toplu e-posta:**
+  - Konu ve içerik yazılır (başlık, liste, bağlantı, buton, görsel). `{ad}`, `{firma}` gibi etiketler alıcıya göre doldurulur.
+  - Hedef kitle seçilir: tür, freelancer seviyesi, etiket, yalnızca ticari izni olanlar. Alıcı sayısı anında görünür.
+  - Önizleme ve test gönderiminden sonra **Gönderimi başlat** denir.
+- Gönderim parti parti ilerler. Sayfa açıkken devam eder; cron tanımlıysa arka planda sürer. Hatalılar yeniden denenebilir, gönderim durdurulabilir.
+- Her toplu e-postada "Bu listeden çık" bağlantısı bulunur; çıkan kişiye bir daha toplu e-posta gitmez. İş bildirimleri bundan etkilenmez.
+- Kampanya ve tanıtım içerikli e-postalar için alıcı onayı gerekir; İYS yükümlülüğünü kontrol edin. Kayıt formundaki bülten kutusunu işaretleyenler "ticari izin var" olarak işaretlenir.
+- **Gönderim kayıtları:** her e-postanın durumu, hata mesajı ve içeriği görüntülenebilir.
+
+## 8. Yetkiler
 
 | İzin | Ne açar? |
 |------|----------|
@@ -97,6 +125,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 | `platform.manage` | İş merkezi: siparişler, atama, teklifler, kalite kontrol, freelancer/ajans yönetimi |
 | `platform.pricing` | Hizmet kataloğu ve fiyatlar |
 | `platform.delete` | Platform kayıtlarını kalıcı silme (iş, ajans, freelancer, katalog kalemi) |
+| `mail.manage` | E-posta merkezi: aboneler, toplu gönderim, gönderim kayıtları |
 
 Hazır **Platform Yöneticisi** rolü üç platform iznini birlikte içerir; Roller sayfasından kişiye atanır. Ayrıntılar: [PLATFORM.md](PLATFORM.md).
 

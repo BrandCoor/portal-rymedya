@@ -57,3 +57,11 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 - [İş Platformu](docs/PLATFORM.md): hiyerarşi, iş akışı ve pazarlama politikası
 - [Kullanım Kılavuzu](docs/KULLANIM_KILAVUZU.md): ekip ve müşteri için adım adım kullanım
 - [İnceleme Raporu ve Düzeltmeler](docs/IYILESTIRMELER.md): güvenlik ve finans düzeltmelerinin listesi
+
+## Zamanlanmış görev (önerilir)
+
+Toplu e-postalar ve gönderilemeyen bildirimlerin yeniden denenmesi için cPanel → Cron Jobs'a her 5 dakikada bir şunu ekleyin:
+
+```
+php /home/KULLANICI/public_html/cron/mail-queue.php
+```
