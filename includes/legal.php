@@ -42,6 +42,7 @@ function legal_required_slugs(string $role): array {
 
 function run_legal_migrations(): void {
     global $db;
+    run_cookie_consent_migrations();
     $db->exec("CREATE TABLE IF NOT EXISTS legal_documents (
         slug VARCHAR(40) NOT NULL PRIMARY KEY,
         title VARCHAR(190) NOT NULL,
@@ -167,6 +168,7 @@ function legal_footer_links(string $class = ''): string {
     foreach (LEGAL_DOCS as $slug => $m) {
         if ($m['footer']) $out[] = '<a href="' . e(legal_url($slug)) . '">' . e($m['short']) . '</a>';
     }
+    $out[] = '<a href="#cerez-tercihleri" onclick="if(window.openCookiePrefs){openCookiePrefs();return false}">Çerez tercihleri</a>';
     return '<nav class="legal-links ' . e($class) . '">' . implode('', $out) . '</nav>';
 }
 
@@ -232,16 +234,63 @@ function legal_portal_guard(int $user_id, string $role): void {
     }
 }
 
-/** Sayfanın altında küçük çerez bilgilendirmesi (yalnızca zorunlu çerez; kapatılınca tarayıcıda hatırlanır) */
+/** Çerez onayı metin sürümü: kategoriler değişirse artırın, herkese yeniden sorulur */
+const COOKIE_CONSENT_VERSION = 1;
+
+/**
+ * Çerez onay penceresi (KVKK Çerez Uygulamaları Rehberi'ne uygun):
+ * "Tümünü kabul et" ve "Yalnızca zorunlu" eşit ağırlıkta sunulur, zorunlu olmayan
+ * kategoriler varsayılan kapalıdır, tercih istenildiği an footer'daki
+ * "Çerez tercihleri" bağlantısıyla değiştirilebilir. Seçim tarayıcıda saklanır
+ * ve ajax/consent.php ile kayıt altına alınır (delil).
+ * Sayfada bir kez basılır.
+ */
 function legal_cookie_notice(): string {
+    static $done = false;
+    if ($done) return '';
+    $done = true;
     $url = e(legal_url('cerez'));
+    $cfg = json_encode(['v' => COOKIE_CONSENT_VERSION, 'url' => BASE_URL . '/ajax/consent.php', 'secure' => str_starts_with(BASE_URL, 'https')], JSON_UNESCAPED_SLASHES);
+    $js = BASE_URL . '/assets/js/cookie-consent.js?v=' . UI_ASSET_VERSION;
     return <<<HTML
-<div id="cookie-note" class="cookie-note" hidden>
-  <span>Bu platform yalnızca oturum ve güvenlik için gerekli <strong>zorunlu çerezleri</strong> kullanır. <a href="{$url}" target="_blank" rel="noopener">Çerez Politikası</a></span>
-  <button type="button" class="btn btn-secondary btn-sm" onclick="try{localStorage.setItem('cookie_note_ok','1')}catch(e){};document.getElementById('cookie-note').hidden=true">Anladım</button>
+<div id="cc" class="cc" role="dialog" aria-modal="false" aria-labelledby="cc-title" hidden>
+  <div class="cc-card">
+    <p class="cc-title" id="cc-title">Çerez tercihleriniz</p>
+    <p class="cc-text">Platformun çalışması için gerekli <strong>zorunlu çerezleri</strong> kullanıyoruz (oturum ve güvenlik). Analitik ve pazarlama çerezleri yalnızca izin verirseniz kullanılır; şu an bu türde çerez kullanmıyoruz. Ayrıntılar: <a href="{$url}" target="_blank" rel="noopener">Çerez Politikası</a></p>
+    <div class="cc-prefs" id="cc-prefs" hidden>
+      <label class="cc-row"><span><strong>Zorunlu çerezler</strong><small>Giriş, oturum, güvenlik (CSRF) ve bu tercihin saklanması. Kapatılamaz.</small></span><input type="checkbox" checked disabled></label>
+      <label class="cc-row"><span><strong>Analitik çerezler</strong><small>Platformun nasıl kullanıldığını anonim olarak ölçmek için.</small></span><input type="checkbox" id="cc-analytics"></label>
+      <label class="cc-row"><span><strong>Pazarlama çerezleri</strong><small>İlgi alanınıza göre içerik ve reklam göstermek için.</small></span><input type="checkbox" id="cc-marketing"></label>
+    </div>
+    <div class="cc-actions">
+      <button type="button" class="btn btn-secondary btn-sm" data-cc="necessary">Yalnızca zorunlu</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-cc="prefs" id="cc-prefs-btn">Tercihleri yönet</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-cc="save" id="cc-save" hidden>Seçimimi kaydet</button>
+      <button type="button" class="btn btn-primary btn-sm" data-cc="all">Tümünü kabul et</button>
+    </div>
+  </div>
 </div>
-<script>try{if(!localStorage.getItem('cookie_note_ok'))document.getElementById('cookie-note').hidden=false}catch(e){document.getElementById('cookie-note').hidden=false}</script>
+<script>window.CC_CFG = {$cfg};</script>
+<script src="{$js}"></script>
 HTML;
+}
+
+/** Çerez onayı kaydı tablosu */
+function run_cookie_consent_migrations(): void {
+    global $db;
+    $db->exec("CREATE TABLE IF NOT EXISTS cookie_consents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        consent_id CHAR(32) NOT NULL,
+        version INT NOT NULL,
+        analytics TINYINT(1) NOT NULL DEFAULT 0,
+        marketing TINYINT(1) NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        ip VARCHAR(45) NULL,
+        user_agent VARCHAR(255) NULL,
+        page VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL,
+        INDEX idx_consent (consent_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 /**

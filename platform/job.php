@@ -152,6 +152,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             extra_add_from_catalog($job, $items, trim($_POST['note'] ?? ''));
             $back('success', 'Ek kalem işe eklendi ve tutar güncellendi. Ekip planlamayı yapıyor.', '#asamalar');
         }
+        if ($action === 'extra_edit') {
+            $m = get_milestone((int)($_POST['milestone_id'] ?? 0));
+            if (!$m || (int)$m['job_id'] !== $job_id || !agency_can_edit_extra($job, $m)) {
+                $back('error', 'Bu ek kalem artık değiştirilemez (teslim başladı veya ekip planladı). Değişiklik için ekiple yazışın.', '#asamalar');
+            }
+            $rows = [];
+            $mi = $db->prepare("SELECT id FROM platform_job_items WHERE milestone_id = ? AND status != 'cancelled'");
+            $mi->execute([$m['id']]);
+            foreach ($mi->fetchAll(PDO::FETCH_COLUMN) as $iid) {
+                $q = $_POST['qty'][$iid] ?? null;
+                $rows[(int)$iid] = ['qty' => $q === null ? null : (float)str_replace(',', '.', (string)$q), 'delete' => !empty($_POST['remove']) || !empty($_POST['del'][$iid])];
+            }
+            $n = job_items_apply($job, $rows, 'agency');
+            $back($n ? 'success' : 'info', $n ? (!empty($_POST['remove']) ? 'Ek kalem kaldırıldı; tutar güncellendi.' : 'Ek kalem güncellendi; tutar yeniden hesaplandı.') : 'Değişiklik yapılmadı.', '#asamalar');
+        }
         if (in_array($action, ['extra_approve', 'extra_reject'], true)) {
             $m = get_milestone((int)($_POST['milestone_id'] ?? 0));
             if ($m && (int)$m['job_id'] === $job_id && $m['status'] === 'proposed') {
@@ -409,7 +424,7 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
     </div>
     <div style="display:flex;align-items:flex-end;gap:16px">
         <?php if ($role === 'agency' && $scope !== 'locked'): ?>
-            <a href="<?= BASE_URL ?>/platform/job_edit.php?id=<?= $job_id ?>" class="btn btn-secondary"><i data-lucide="pencil"></i><?= $scope === 'full' ? 'Düzenle' : 'Not / tarih güncelle' ?></a>
+            <a href="<?= BASE_URL ?>/platform/job_edit.php?id=<?= $job_id ?>" class="btn btn-secondary"><i data-lucide="pencil"></i><?= $scope === 'full' ? 'Düzenle · kalemler' : 'Not / tarih güncelle' ?></a>
         <?php endif; ?>
         <?php if ($price !== null): ?>
         <div style="text-align:right">
@@ -788,6 +803,26 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
                             <button type="button" class="btn btn-ghost btn-sm" @click="no = !no">Reddet</button>
                             <form x-show="no" x-cloak method="POST" action="" style="display:flex;gap:6px;width:100%"><?= csrf_field() ?><input type="hidden" name="action" value="extra_reject"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>"><input class="input" name="note" placeholder="Nedeniniz (isteğe bağlı)"><button class="btn btn-secondary btn-sm">Gönder</button></form>
                         </div>
+                    <?php elseif ($role === 'agency' && agency_can_edit_extra($job, $m)):
+                        $mitems = $db->prepare("SELECT * FROM platform_job_items WHERE milestone_id = ? AND status != 'cancelled' ORDER BY id");
+                        $mitems->execute([$m['id']]); $mitems = $mitems->fetchAll(); ?>
+                        <details style="margin-top:8px"><summary class="xsmall link" style="cursor:pointer">Ek kalemi düzenle veya kaldır</summary>
+                            <form method="POST" action="" class="stack-sm" style="margin-top:8px"><?= csrf_field() ?>
+                                <input type="hidden" name="action" value="extra_edit"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>">
+                                <?php foreach ($mitems as $mit): ?>
+                                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                                    <span class="small" style="flex:1;min-width:140px"><?= e($mit['name']) ?> <span class="xsmall text-muted"><?= format_money((float)$mit['agency_unit_price']) ?> / <?= e($mit['unit']) ?></span></span>
+                                    <input class="input" type="number" min="0" step="0.5" name="qty[<?= (int)$mit['id'] ?>]" value="<?= e(rtrim(rtrim(number_format((float)$mit['quantity'], 2, '.', ''), '0'), '.')) ?>" style="width:90px">
+                                    <label class="check xsmall"><input type="checkbox" name="del[<?= (int)$mit['id'] ?>]" value="1">Sil</label>
+                                </div>
+                                <?php endforeach; ?>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                                    <button class="btn btn-secondary btn-sm">Güncelle</button>
+                                    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" name="remove" value="1" onclick="return confirm('Ek kalem işten kaldırılsın mı?');">Ek kalemi kaldır</button>
+                                </div>
+                                <p class="xsmall text-muted">Teslim başlayana kadar değiştirebilirsiniz. Tutar katalog fiyatıyla yeniden hesaplanır.</p>
+                            </form>
+                        </details>
                     <?php elseif ($role === 'freelancer' && $is_assignee && $m['status'] === 'pending_freelancer'): ?>
                         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap" x-data="{ no: false }">
                             <form method="POST" action=""><?= csrf_field() ?><input type="hidden" name="action" value="extra_accept"><input type="hidden" name="milestone_id" value="<?= (int)$m['id'] ?>"><button class="btn btn-primary btn-sm"><i data-lucide="check"></i>Kabul et · +<?= format_money((float)$m['fee']) ?></button></form>
@@ -966,4 +1001,6 @@ platform_header($job['job_code'] . ' · ' . $job['title'], $role === 'freelancer
     </section>
 </aside>
 </div>
-<?php platform_footer();
+<?php
+$GLOBALS['live_job'] = [$job_id, live_job_sig($job_id, $role, $uid, (int)($_SESSION['client_contact_id'] ?? 0))];
+platform_footer();

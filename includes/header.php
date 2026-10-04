@@ -47,28 +47,7 @@ $notif = get_notifications((int)$user['id'], 8);
                     <input type="search" name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Proje, cari, fatura, iş kodu ara">
                 </form>
 
-                <div class="relative" x-data="{ open: false }">
-                    <button @click="open = !open" class="icon-btn" aria-label="Bildirimler">
-                        <i data-lucide="bell"></i>
-                        <?php if ($notif['unread'] > 0): ?><span class="dot-count"><?= $notif['unread'] > 9 ? '9+' : $notif['unread'] ?></span><?php endif; ?>
-                    </button>
-                    <div x-show="open" @click.away="open = false" x-cloak class="menu" style="right:0;top:42px;width:340px;padding:0">
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line-2)">
-                            <span class="h3">Bildirimler</span>
-                            <a href="<?= BASE_URL ?>/modules/notifications/index.php" class="small link">Tümü</a>
-                        </div>
-                        <div style="max-height:360px;overflow-y:auto" class="divide">
-                            <?php if (empty($notif['items'])): ?>
-                                <p class="small text-muted" style="padding:28px 14px;text-align:center">Yeni bildirim yok.</p>
-                            <?php else: foreach ($notif['items'] as $n): ?>
-                                <a href="<?= BASE_URL . e($n['link'] ?: '/modules/notifications/index.php') ?>" style="display:block;padding:11px 14px;<?= $n['is_unread'] ? 'background:#FBF8F4' : '' ?>">
-                                    <p class="small text-ink" style="line-height:1.45"><?= e($n['message']) ?></p>
-                                    <p class="xsmall text-muted" style="margin-top:3px"><?= e($n['actor_name'] ?? '') ?> · <?= time_ago($n['created_at']) ?></p>
-                                </a>
-                            <?php endforeach; endif; ?>
-                        </div>
-                    </div>
-                </div>
+                <?= live_bell($notif, BASE_URL . '/modules/notifications/index.php', '/modules/notifications/index.php', true) ?>
 
                 <div class="relative" x-data="{ open: false }">
                     <button @click="open = !open" style="display:flex;align-items:center;gap:9px;padding:4px 6px 4px 4px;border-radius:9px" class="hover:bg-slate-100">

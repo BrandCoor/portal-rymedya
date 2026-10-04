@@ -118,6 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = $lead['message'];
             }
             $rush = $lead['level'] === 'warn';
+            if ($deadline) {
+                [, $perr] = production_check($start_date, $deadline, $items_for_rules, (int)$job['raw_delivery'] === 1 && !$is_remote, $is_catalog ? 'catalog' : 'custom');
+                if ($perr) $errors[] = $perr;
+            }
             if ($rush && (int)$job['is_rush'] !== 1 && empty($_POST['rush_ack'])) {
                 $errors[] = 'Yeni tarih acil iş kapsamına giriyor. Devam etmek için acil iş koşullarını onaylayın.';
             }
@@ -232,13 +236,13 @@ $val = fn($k) => e(is_array($src[$k] ?? null) ? '' : ($src[$k] ?? ''));
 $svc_js = [];
 $grouped = [];
 foreach ($services as $s) {
-    $svc_js[(int)$s['id']] = ['name' => $s['name'], 'unit' => $s['unit'], 'price' => (float)$s['agency_price'], 'lead' => (int)$s['min_lead_hours']];
+    $svc_js[(int)$s['id']] = ['name' => $s['name'], 'unit' => $s['unit'], 'price' => (float)$s['agency_price'], 'lead' => (int)$s['min_lead_hours'], 'pd' => (float)$s['production_days'], 'pu' => (float)$s['production_days_per_unit']];
     $grouped[$s['category']][] = $s;
 }
 // Katalogdan kaldırılmış ama işte duran kalemler de düzenlenebilsin
 foreach ($cur_items as $it) {
     if ($it['service_id'] && $services && !isset($svc_js[(int)$it['service_id']])) {
-        $svc_js[(int)$it['service_id']] = ['name' => $it['name'], 'unit' => $it['unit'], 'price' => (float)$it['agency_unit_price'], 'lead' => (int)($it['min_lead_hours'] ?? 0)];
+        $svc_js[(int)$it['service_id']] = ['name' => $it['name'], 'unit' => $it['unit'], 'price' => (float)$it['agency_unit_price'], 'lead' => (int)($it['min_lead_hours'] ?? 0), 'pd' => 0, 'pu' => 0];
     }
 }
 $qty_form = $cur_qty;
@@ -257,6 +261,7 @@ $order_cfg = [
     'rushAck' => !empty($_POST['rush_ack']),
     'keepDates' => ['start' => $job['start_date'] ?? '', 'deadline' => $job['deadline'] ?? ''],
     'wasRush' => (int)$job['is_rush'] === 1,
+    'prod' => $scope === 'full' && $services ? production_js_rules() : null, 'mode' => $is_catalog ? 'catalog' : 'custom', 'raw' => (int)$job['raw_delivery'] === 1,
 ];
 
 platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
@@ -286,14 +291,32 @@ platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
         <div class="alert alert-info" style="margin-bottom:20px"><i data-lucide="info"></i><div>İş ekip ataması aşamasında. Kaydettiğiniz değişiklikler işi değerlendiren ekip üyelerine yansır.</div></div>
     <?php endif; ?>
 
-    <form method="POST" action="" class="grid grid-cols-1 lg:grid-cols-3 gap-6" @submit="if (lead.level === 'block') { $event.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); }">
+    <form method="POST" action="" class="grid grid-cols-1 lg:grid-cols-3 gap-6" @submit="if (lead.level === 'block' || prodErr) { $event.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); }">
         <?= csrf_field() ?>
         <div class="lg:col-span-2 stack-lg" style="min-width:0">
 
         <?php if ($scope === 'full'): ?>
             <?php if ($services): ?>
             <section class="card">
-                <div class="card-head"><div><p class="card-title">Hizmetler</p><p class="card-sub">Miktarı sıfırlanan kalem işten çıkarılır.</p></div></div>
+                <div class="card-head"><div><p class="card-title">İşteki kalemler</p><p class="card-sub">Miktarı değiştirin veya kalemi silin. Yeni hizmeti aşağıdaki listeden ekleyin.</p></div></div>
+                <div class="divide">
+                    <p x-show="!lines().length" class="small text-muted" style="padding:16px 20px">İşte kalem kalmadı. Aşağıdan en az bir hizmet ekleyin.</p>
+                    <template x-for="l in lines()" :key="l.id">
+                        <div style="display:flex;gap:12px;align-items:center;padding:12px 20px;flex-wrap:wrap">
+                            <div style="flex:1;min-width:180px"><p style="font-weight:500" x-text="l.name"></p><p class="xsmall text-muted" x-text="money(svc[l.id].price) + ' / ' + l.unit"></p></div>
+                            <div class="stepper-input">
+                                <button type="button" @click="dec(l.id)" aria-label="Azalt">−</button>
+                                <input type="number" min="0" step="0.5" x-model.number="qty[l.id]" @input="recalc()">
+                                <button type="button" @click="inc(l.id)" aria-label="Artır">+</button>
+                            </div>
+                            <span class="num" style="width:110px;text-align:right" x-text="money(l.total)"></span>
+                            <button type="button" class="btn btn-ghost btn-sm" style="color:var(--danger)" @click="qty[l.id] = 0; recalc()">Sil</button>
+                        </div>
+                    </template>
+                </div>
+            </section>
+            <section class="card">
+                <div class="card-head"><div><p class="card-title">Hizmet ekle</p><p class="card-sub">Güncel katalog fiyatları uygulanır. Miktarı sıfırlanan kalem işten çıkarılır.</p></div></div>
                 <div class="divide">
                     <?php foreach ($grouped as $cat => $list): ?>
                     <div style="padding:16px 20px">
@@ -362,9 +385,13 @@ platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
                         </div>
                         <div class="field">
                             <label class="label">Teslim tarihi <span class="req">*</span></label>
-                            <input class="input" type="date" name="deadline" required x-model="deadline" @change="assess()">
+                            <input class="input" type="date" name="deadline" required x-model="deadline" @change="assess()" :min="minDeadline() || null">
+                            <span class="hint" x-show="prod" x-text="'En erken teslim: ' + fmtDate(minDeadline()) + (prodDays() > 0 ? ' · yapım süresi ' + prodDays() + (prod && prod.skip_weekends ? ' iş günü' : ' gün') : '')"></span>
                         </div>
                     </div>
+                    <template x-if="prodErr">
+                        <div class="alert alert-danger" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><span style="display:flex;gap:10px"><i data-lucide="hourglass"></i><span x-text="prodErr"></span></span><button type="button" class="btn btn-secondary btn-sm" @click="deadline = minDeadline(); assess()">En erken tarihi seç</button></div>
+                    </template>
                     <template x-if="lead.level === 'block'">
                         <div class="alert alert-danger"><i data-lucide="calendar-x"></i><span x-text="lead.message"></span></div>
                     </template>
@@ -375,7 +402,7 @@ platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
                         </div>
                     </template>
                     <div class="panel" style="padding:14px 16px">
-                        <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote"><span>Uzaktan yapılabilir</span></label>
+                        <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote" @change="assess()"><span>Uzaktan yapılabilir</span></label>
                         <div x-show="!remote" class="grid grid-cols-1 sm:grid-cols-3 gap-3" style="margin-top:12px">
                             <div class="field"><label class="label">Şehir <span class="req">*</span></label><?= city_select('location_city', is_string($src['location_city'] ?? null) ? $src['location_city'] : '') ?></div>
                             <div class="field sm:col-span-2"><label class="label">Lokasyon</label><input class="input" type="text" name="location_detail" value="<?= $val('location_detail') ?>"></div>
@@ -435,7 +462,7 @@ platform_header('İşi düzenle · ' . $job['job_code'], 'jobs');
                     <?php endif; ?>
                     <div class="hairline" style="margin:14px 0"></div>
                     <p class="xsmall text-muted">Kaydettiğiniz her değişiklik iş geçmişine eklenir ve ekibe bildirilir.</p>
-                    <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !wasRush && !rushAck)<?= $scope === 'full' && $services ? ' || !lines().length' : '' ?>">Değişiklikleri kaydet</button>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px" :disabled="lead.level === 'block' || !!prodErr || (lead.level === 'warn' && !wasRush && !rushAck)<?= $scope === 'full' && $services ? ' || !lines().length' : '' ?>">Değişiklikleri kaydet</button>
                     <a href="<?= $job_url ?>" class="btn btn-ghost btn-block">Vazgeç</a>
                 </div>
             </div>

@@ -93,6 +93,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $done('İş bilgileri güncellendi.');
     }
 
+    // ---------- Kalemler (ekip her durumda düzeltebilir) ----------
+    if ($action === 'items_save') {
+        $rows = [];
+        foreach ((array)($_POST['it'] ?? []) as $iid => $r) {
+            $rows[(int)$iid] = [
+                'qty' => (float)str_replace(',', '.', (string)($r['qty'] ?? 0)),
+                'agency_unit' => parse_money((string)($r['au'] ?? '0')),
+                'fl_unit' => parse_money((string)($r['fu'] ?? '0')),
+                'name' => (string)($r['name'] ?? ''),
+                'delete' => !empty($r['del']),
+            ];
+        }
+        $n = job_items_apply($job, $rows, 'staff');
+        $add = (int)($_POST['add_service'] ?? 0);
+        $added = $add > 0 && job_item_add_staff(get_job($job_id), $add, max(0.5, (float)str_replace(',', '.', (string)($_POST['add_qty'] ?? 1))));
+        if (!$n && !$added) {
+            $done('Değişiklik yapılmadı.', 'info', '#kalemler');
+        }
+        $done(($n ? "{$n} kalem güncellendi" : '') . ($n && $added ? '; ' : '') . ($added ? 'kalem eklendi' : '') . '. Tutarlar işe ve aşamalara yansıtıldı.', 'success', '#kalemler');
+    }
+
     // ---------- Fiyat ----------
     if ($action === 'save_pricing') {
         $price = parse_money($_POST['agency_price'] ?? '');
@@ -331,15 +352,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ---------- Aşamalar ----------
-    if ($action === 'milestones_save' && !in_array($job['status'], ['completed', 'cancelled'], true)) {
+    if ($action === 'milestones_save' && $job['status'] !== 'cancelled') {
         $ms = [];
         foreach (job_milestones($job_id) as $m) $ms[(int)$m['id']] = $m;
         $rows = (array)($_POST['ms'] ?? []);
         $changed = 0;
         foreach ($rows as $mid => $r) {
             $mid = (int)$mid;
-            if (!isset($ms[$mid]) || !in_array($ms[$mid]['status'], ['open', 'revision', 'in_review'], true)) continue;
+            if (!isset($ms[$mid]) || !in_array($ms[$mid]['status'], ['open', 'revision', 'in_review', 'approved', 'pending_freelancer'], true)) continue;
             $m = $ms[$mid];
+            // Hakedişi faturalanmış onaylı aşamanın ücreti değişmez (ad ve tarih düzeltilebilir)
+            if ($m['status'] === 'approved' && !empty($m['purchase_invoice_id'])) $r['fee'] = $m['fee'];
             if (!empty($r['delete']) && $m['status'] === 'open') {
                 $live = count(array_filter($ms, fn($x) => in_array($x['status'], MILESTONE_LIVE, true)));
                 if ($live <= 1) continue;
@@ -816,7 +839,7 @@ require_once __DIR__ . '/../../includes/header.php';
     </section>
 
     <!-- ===================== AŞAMALAR ===================== -->
-    <?php if ($milestones): $ms_edit = !in_array($job['status'], ['completed', 'cancelled'], true); ?>
+    <?php if ($milestones): $ms_edit = $job['status'] !== 'cancelled'; ?>
     <section class="card" id="asamalar" x-data="{ edit: false, extra: false, mode: 'agency' }">
         <div class="card-head">
             <div><p class="card-title">Aşamalar ve ek kalemler</p><p class="card-sub"><?= $ms_totals['approved'] ?> / <?= $ms_totals['count'] ?> onaylandı · freelancer toplamı <?= format_money($ms_totals['fee']) ?><?= $ms_totals['fee_approved'] > 0 ? ' · onaylanan ' . format_money($ms_totals['fee_approved']) : '' ?></p></div>
@@ -863,8 +886,8 @@ require_once __DIR__ . '/../../includes/header.php';
         <?php if ($ms_edit): ?>
         <form x-show="edit" x-cloak method="POST" action="" class="card-pad stack"><?= csrf_field() ?>
             <input type="hidden" name="action" value="milestones_save">
-            <p class="xsmall text-muted">Açık aşamaların adı, ücreti ve hedef tarihi düzenlenebilir; freelancer ücreti aşama toplamına eşitlenir. Onaylanan aşamalar sabittir. Değişiklikler iş kaydına yazılır ve atanan freelancer'a bildirilir.</p>
-            <?php foreach ($milestones as $m): if (!in_array($m['status'], ['open', 'revision', 'in_review'], true)) continue; ?>
+            <p class="xsmall text-muted">Aşamaların adı, ücreti ve hedef tarihi düzenlenebilir (onaylanmış ve tamamlanmış işlerde de, hata düzeltmek için); freelancer ücreti aşama toplamına eşitlenir. Hakedişi faturalanmış aşamanın ücreti değişmez. Değişiklikler iş kaydına yazılır ve atanan freelancer'a bildirilir.</p>
+            <?php foreach ($milestones as $m): if (!in_array($m['status'], ['open', 'revision', 'in_review', 'approved', 'pending_freelancer'], true)) continue; ?>
                 <div class="grid grid-cols-1 sm:grid-cols-12 gap-2" style="align-items:center">
                     <div class="sm:col-span-6" style="display:flex;flex-direction:column;gap:4px">
                         <input class="input" name="ms[<?= (int)$m['id'] ?>][title]" value="<?= e($m['title']) ?>">
@@ -964,29 +987,47 @@ require_once __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
 
     <!-- ===================== KALEMLER ===================== -->
-    <?php if ($items): ?>
-    <section class="card">
-        <div class="card-head"><p class="card-title">İş kalemleri</p></div>
-        <div class="table-wrap">
-            <table class="table">
-                <thead><tr><th>Hizmet</th><th class="r">Miktar</th><th class="r">Ajans birim</th><th class="r">Freelancer birim</th><th class="r">Ajans tutar</th></tr></thead>
-                <tbody>
-                <?php foreach ($items as $it): ?>
-                    <tr>
-                        <td><?= e($it['name']) ?><?php if (!empty($it['min_tier']) && $it['min_tier'] !== 'standard'): ?> <?= tier_badge($it['min_tier']) ?><?php endif; ?></td>
-                        <td class="r num"><?= qty_label((float)$it['quantity']) ?> <?= e($it['unit']) ?></td>
-                        <td class="r num"><?= format_money((float)$it['agency_unit_price']) ?></td>
-                        <td class="r num text-muted"><?= format_money((float)$it['freelancer_unit_fee']) ?></td>
-                        <td class="r money"><?= format_money((float)$it['agency_unit_price'] * (float)$it['quantity']) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if ((float)$job['rush_fee'] > 0): ?><tr><td colspan="4" class="text-muted">Acil iş farkı</td><td class="r money"><?= format_money((float)$job['rush_fee']) ?></td></tr><?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-        <?php if ($job['pricing_source'] === 'catalog' && !in_array($job['status'], ['completed', 'cancelled'], true)): ?>
+    <?php $live_items = array_values(array_filter($items, fn($i) => ($i['status'] ?? 'active') !== 'cancelled')); ?>
+    <section class="card" id="kalemler">
+        <div class="card-head"><div><p class="card-title">İş kalemleri</p><p class="card-sub">Miktar, birim fiyat ve adı her aşamada düzeltebilirsiniz; fark işe ve ilgili aşamaya yansır, ajans ve freelancer bilgilendirilir.</p></div></div>
+        <?php if ($job['sales_invoice_id'] || $job['purchase_invoice_id'] || array_filter($milestones ?? [], fn($m) => !empty($m['purchase_invoice_id']))): ?>
+            <div class="alert alert-warning" style="margin:12px 16px 0"><i data-lucide="receipt"></i><div class="small">Bu iş için fatura / hakediş kaydı oluşmuş. Kalem düzeltmesi kesilmiş faturaları değiştirmez; gerekiyorsa faturayı Finans ekranından ayrıca düzeltin.</div></div>
+        <?php endif; ?>
+        <form method="POST" action=""><?= csrf_field() ?>
+            <input type="hidden" name="action" value="items_save">
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Hizmet</th><th class="r">Miktar</th><th class="r">Ajans birim</th><th class="r">Freelancer birim</th><th class="r">Ajans tutar</th><th class="r">Sil</th></tr></thead>
+                    <tbody>
+                    <?php if (!$live_items): ?><tr><td colspan="6" class="small text-muted">Kalem yok.</td></tr><?php endif; ?>
+                    <?php foreach ($live_items as $it): $iid = (int)$it['id']; ?>
+                        <tr>
+                            <td style="min-width:200px"><input class="input" name="it[<?= $iid ?>][name]" value="<?= e($it['name']) ?>" style="min-width:180px"><span class="xsmall text-muted"><?= (int)$it['is_extra'] === 1 ? 'Ek kalem' : 'Ana kalem' ?><?= ($it['status'] ?? '') === 'proposed' ? ' · ajans onayında' : '' ?></span></td>
+                            <td class="r"><div class="input-group" style="width:130px;margin-left:auto"><input class="input num" type="number" min="0" step="0.5" name="it[<?= $iid ?>][qty]" value="<?= e(rtrim(rtrim(number_format((float)$it['quantity'], 2, '.', ''), '0'), '.')) ?>"><span class="addon"><?= e($it['unit']) ?></span></div></td>
+                            <td class="r"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][au]" value="<?= e(number_format((float)$it['agency_unit_price'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
+                            <td class="r"><input class="input num" type="number" min="0" step="0.01" name="it[<?= $iid ?>][fu]" value="<?= e(number_format((float)$it['freelancer_unit_fee'], 2, '.', '')) ?>" style="width:120px;margin-left:auto"></td>
+                            <td class="r money"><?= format_money((float)$it['agency_unit_price'] * (float)$it['quantity']) ?></td>
+                            <td class="r"><input type="checkbox" name="it[<?= $iid ?>][del]" value="1" aria-label="Kalemi sil"></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if ((float)$job['rush_fee'] > 0): ?><tr><td colspan="4" class="text-muted">Acil iş farkı</td><td class="r money"><?= format_money((float)$job['rush_fee']) ?></td><td></td></tr><?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-foot" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;justify-content:space-between">
+                <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                    <div class="field"><label class="label">Katalogdan kalem ekle</label>
+                        <select class="select" name="add_service" style="max-width:320px"><option value="">—</option>
+                            <?php foreach (catalog_services() as $sv): ?><option value="<?= (int)$sv['id'] ?>"><?= e($sv['name']) ?> · <?= format_money((float)$sv['agency_price']) ?> / <?= e($sv['unit']) ?></option><?php endforeach; ?>
+                        </select></div>
+                    <div class="field"><label class="label">Miktar</label><input class="input" type="number" min="0.5" step="0.5" name="add_qty" value="1" style="width:90px"></div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="return confirm('Kalem değişiklikleri kaydedilsin mi? Tutarlar yeniden hesaplanır ve taraflara bildirilir.');">Kalemleri kaydet</button>
+            </div>
+            <p class="xsmall text-muted" style="padding:0 16px 14px">İş başlamadıysa eklenen kalem ana kalem olur; başladıysa ek kalem olarak eklenir (atanmış freelancer kabul eder).</p>
+        </form>
         <details class="card-foot">
-            <summary class="small" style="cursor:pointer">Fiyatı elle düzelt</summary>
+            <summary class="small" style="cursor:pointer">İş toplamını elle düzelt</summary>
             <form method="POST" action="" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end"><?= csrf_field() ?>
                 <input type="hidden" name="action" value="save_pricing">
                 <div class="field"><label class="label">Ajans fiyatı</label><input class="input" type="number" step="0.01" name="agency_price" value="<?= e((string)$job['agency_price']) ?>" style="width:150px"></div>
@@ -994,9 +1035,7 @@ require_once __DIR__ . '/../../includes/header.php';
                 <button class="btn btn-secondary">Kaydet</button>
             </form>
         </details>
-        <?php endif; ?>
     </section>
-    <?php endif; ?>
 
     <!-- ===================== REVİZYON KOŞULLARI ===================== -->
     <?php if (!in_array($job['status'], ['completed', 'cancelled'], true)): ?>
@@ -1247,4 +1286,5 @@ require_once __DIR__ . '/../../includes/header.php';
     </section>
 </aside>
 </div>
+<?php $GLOBALS['live_job'] = [$job_id, live_job_sig($job_id, 'staff', (int)$_SESSION['user_id'])]; ?>
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>

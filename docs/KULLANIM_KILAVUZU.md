@@ -118,11 +118,19 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 2. Atama: freelancer işi alır, teklif verir (ücret + teslim süresi) veya siz doğrudan atarsınız. Atanan kişi işi kabul eder ya da cezasız reddeder.
 3. Aşamalar kartında işin parçalarını görürsünüz. "Düzenle" ile ad, ücret, hedef tarih değiştirilir; "Ek kalem / prim" ile ajansa ek iş önerilir, ajansa yansımayan iç iş ya da prim eklenir.
 4. Çekim gibi yerinde işler teslim bağlantısı istemez: freelancer çekim gününden itibaren "Yapıldı" der; onay şekli Kurallar ekranından seçilir (otomatik / ekip / ajans). Ajans ham görüntü istediyse işe ücretli "Ham görüntü teslimi" aşaması eklenir ve bağlantıyla teslim edilir. Ücretsiz revizyon hakkı dolunca ajans ücretli revizyon ister (ücret Kurallar ekranından, işe özel değer iş sayfasındaki Revizyon koşullarından).
-5. Kurgu, ses gibi dijital işlerin teslimi kalite kontrolde size düşer: "Onayla, ajansa ilet" veya "Düzeltme iste". Ajans aşamayı onaylayınca hakediş kaydı oluşur; gerekirse "Aşamayı ajans adına onayla" ya da "İşi ajans adına tamamla".
+5. Kurgu, ses gibi dijital işlerin teslimi doğrudan ajansın onayına düşer (siz de iş sayfasından görür, gerekirse müdahale edersiniz). İsterseniz Kurallar → "Freelancer teslimleri önce kalite kontrolden geçsin" ile teslimler önce size düşer: "Onayla, ajansa ilet" veya "Düzeltme iste". Ajans aşamayı onaylayınca hakediş kaydı oluşur; gerekirse "Aşamayı ajans adına onayla" ya da "İşi ajans adına tamamla".
+   - **Yapım süresi:** her hizmetin katalogda yapım süresi vardır (taban gün + ek birim başına gün). Ajans iş girerken teslim tarihi, başlangıçtan bu süre kadar sonrasından önce seçilemez; form en erken tarihi gösterir. Genel kurallar (en az gün, kalemler toplansın / en uzunu, teslim payı, ham görüntü süresi, özel talep süresi, hafta sonu sayılmasın) Kurallar → "Yapım süresi" bölümündedir.
+   - **Düzenleme:** ajans iş kabul edilene kadar kalemleri değiştirir/siler/ekler (İşi düzenle); sonradan kendi eklediği ek kalemleri teslim başlayana kadar değiştirir veya kaldırır. Ekip, iş sayfasındaki **İş kalemleri** kartından her durumda (teslim ve tamamlandıktan sonra da) miktar, birim fiyat ve adı düzeltir, kalem siler veya katalogdan ekler; aşamaların ad/ücret/tarihi de düzeltilebilir. Fark işe ve aşamaya yansır, taraflara bildirilir. Kesilmiş faturalar otomatik değişmez.
 6. Ödemeler: ajansların ödeme bildirimlerini ve freelancer ödeme taleplerini İş merkezi → Ödemeler ekranından onaylayın (tahsilat/ödeme faturaya ve kasaya işlenir). Tek tek ödeme için iş sayfasındaki Hakediş ödemeleri kartı da kullanılabilir.
 7. Sorun bildirimleri iş merkezinde kırmızı uyarı olarak görünür; iş sayfasındaki "Sorun bildirimleri" kartından çözüm notuyla kapatın.
 8. İş kaydı her işlemi kalem kalem tutar; CSV ile dışa aktarılabilir.
 9. Kurallar ekranından aşama bölme ve otomatik onay süresini ayarlayın. Hatırlatma ve otomatik onay için cron: `php /home/KULLANICI/public_html/cron/platform.php` (saatte bir).
+
+## 8.1 Bildirimler
+
+- Zil menüsü açıldığında bildirimler okundu sayılır. Yeni bildirimler sayfa yenilemeden (yaklaşık 12 saniyede bir) düşer; köşede kısa bildirim çıkar ve sekme başlığında sayı görünür.
+- Açık bir iş sayfasında yeni bir gelişme olursa sayfa kendini tazeler; kullanıcı o sırada form dolduruyorsa tazelemez, üstte "Sayfayı yenile" uyarısı çıkar.
+- Ajans ve freelancer profil sayfaları ayrıntılıdır (firma, yetkili, muhasebe, fatura / kişisel, uzmanlık, portfolyo, çalışma koşulları, acil durum, ödeme ve vergi); IBAN ve T.C. kimlik numarası doğrulanır. Doldurulan bilgiler İş merkezi → Ajanslar / Freelancer'lar ekranında görünür.
 
 ## 9. Güvenlik (yalnızca süper yönetici)
 
@@ -143,6 +151,7 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 - **Kartla ödeme:** ajans, ön bilgilendirme formu + mesafeli hizmet sözleşmesi + iptal/iade koşullarını onaylamadan kartla ödeyemez; onay faturayla birlikte kaydedilir.
 - **Onay kayıtları:** kim, hangi metni, hangi sürümü, ne zaman, hangi IP ve tarayıcıyla onayladı veya geri aldı; onaylanan metnin SHA-256 özetiyle. CSV olarak indirilebilir (uyuşmazlıkta delil).
 - Kullanıcılar profil sayfasında onayladıkları metinleri görür, açık rızayı verir veya geri alır; bülten tercihi değiştiğinde ileti izni kaydı da tutulur.
+- **Çerez onayı:** ilk ziyarette çerez penceresi açılır ("Tümünü kabul et" / "Yalnızca zorunlu" / "Tercihleri yönet"); seçim 180 gün hatırlanır ve tarih, IP ve tarayıcıyla kaydedilir. Sayfaların altındaki "Çerez tercihleri" bağlantısıyla değiştirilebilir.
 - Metinler genel bir şablondur; yayına almadan önce bir avukata kontrol ettirmeniz önerilir.
 
 ## 10. Yetkiler

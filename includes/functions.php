@@ -996,7 +996,7 @@ function clear_login_failures(string $email): void {
  * oluşturulur. Uygulanan sürüm system_settings.schema_version'da tutulur,
  * böylece her istekte yalnızca tek bir ayar okunur.
  */
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 function column_exists(string $table, string $column): bool {
     global $db;
@@ -1117,6 +1117,8 @@ function run_migrations(): void {
         run_iyzico_migrations();
         run_security_migrations();
         run_legal_migrations();
+        run_profile_migrations();
+        run_flow_v14_migrations();
 
         $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('schema_version', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
            ->execute([(string)SCHEMA_VERSION]);
@@ -1203,12 +1205,17 @@ function get_notifications(int $user_id, int $limit = 8): array {
     }
 }
 
-function mark_notifications_read(int $user_id): void {
+/**
+ * Bildirimleri okundu sayar. $up_to verilirse o kayda kadar (zil menüsünde görülenler);
+ * okundu sınırı hiçbir zaman geriye gitmez.
+ */
+function mark_notifications_read(int $user_id, ?int $up_to = null): void {
     global $db;
     try {
         $max = (int)$db->query("SELECT COALESCE(MAX(id), 0) FROM activity_log")->fetchColumn();
-        $db->prepare("INSERT INTO user_notification_state (user_id, last_seen_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_seen_id = VALUES(last_seen_id)")
-           ->execute([$user_id, $max]);
+        $to = $up_to !== null ? min($up_to, $max) : $max;
+        $db->prepare("INSERT INTO user_notification_state (user_id, last_seen_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_seen_id = GREATEST(last_seen_id, VALUES(last_seen_id))")
+           ->execute([$user_id, $to]);
     } catch (Throwable $e) {
     }
 }
@@ -1250,10 +1257,14 @@ require_once __DIR__ . '/platform_flow.php';
 require_once __DIR__ . '/platform_routing.php';
 require_once __DIR__ . '/platform_payments.php';
 require_once __DIR__ . '/platform_fees.php';
+require_once __DIR__ . '/platform_production.php';
+require_once __DIR__ . '/platform_items.php';
 require_once __DIR__ . '/iyzico.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/legal.php';
+require_once __DIR__ . '/live.php';
+require_once __DIR__ . '/profiles.php';
 send_security_headers();
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur

@@ -15,7 +15,7 @@ require_module_permission('platform.manage');
 // [tip, etiket, açıklama, (int için) min, max, birim]
 $sections = [
     'İş akışı' => [
-        'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Teslimat önce size düşer; onayladığınızda ajansa iletilir.'],
+        'platform_qa_required'       => ['bool', 'Freelancer teslimleri önce kalite kontrolden geçsin', 'Kapalıyken (önerilen) freelancer teslim ettiği anda ajansın onayına düşer; siz de iş sayfasından görür, gerekirse müdahale edersiniz. Açıkken teslimat önce size düşer, onayladığınızda ajansa iletilir.'],
         'platform_auto_invoice'      => ['bool', 'İş tamamlanınca ajansa otomatik satış faturası kes', 'Freelancer hakediş kaydı her durumda oluşturulur.'],
         'platform_onsite_confirm'    => ['choice', 'Yerinde işler (çekim vb.) nasıl tamamlansın?', 'Çekim, drone, fotoğraf gibi sahada yapılan işler teslim bağlantısı istemez; freelancer "Yapıldı" der. Ajans ham görüntü teslimi istediyse bağlantıyla teslim edilir.', ['auto' => 'Freelancer bildirince onaylansın', 'staff' => 'Ekip onaylasın', 'agency' => 'Ajans onaylasın']],
         'platform_milestone_per_item' => ['bool', 'Katalog işlerinde her hizmet ayrı aşama olsun', 'Çekim, kurgu gibi kalemler ayrı ayrı teslim edilip onaylanır; onaylanan aşamanın hakedişi hemen kayda geçer. Kapalıyken iş tek aşamadır.'],
@@ -35,6 +35,14 @@ $sections = [
         'platform_warn_lead_hours'       => ['int', 'Acil iş eşiği', 'Başlangıca bu süreden az kalan işler acil sayılır; ajans uyarılır ve onay ister.', 0, 720, 'saat'],
         'platform_rush_fee_percent'      => ['int', 'Acil iş farkı', 'Acil işlerin tutarına eklenir. 0 ise fark alınmaz.', 0, 200, '%'],
         'platform_rush_freelancer_share' => ['int', 'Acil farkından freelancer payı', 'Acil iş farkının bu kadarı freelancer hakedişine prim olarak eklenir.', 0, 100, '%'],
+    ],
+    'Yapım süresi (en erken teslim tarihi)' => [
+        'platform_min_production_days'      => ['int', 'Başlangıç ile teslim arası en az', 'Hiçbir iş bu süreden kısa olamaz. 1 ise teslim tarihi başlangıç günüyle aynı olamaz.', 0, 60, 'gün'],
+        'platform_production_combine'       => ['choice', 'Birden fazla hizmet varsa', 'Her hizmetin yapım süresi Hizmet kataloğunda tanımlanır (taban süre + birim başına ek süre).', ['sum' => 'Süreler toplansın (art arda yapılır)', 'max' => 'En uzun süre geçerli (paralel yapılır)']],
+        'platform_production_buffer_days'   => ['int', 'Teslim payı', 'Hesaplanan yapım süresine eklenir (kontrol, aktarım, beklenmedik durumlar).', 0, 30, 'gün'],
+        'platform_raw_delivery_days'        => ['int', 'Ham görüntü teslimi için ek süre', 'Ajans ham görüntü isterse eklenir.', 0, 30, 'gün'],
+        'platform_custom_min_days'          => ['int', 'Özel taleplerde en az yapım süresi', 'Katalog dışı (fiyat teklifi istenen) işler için.', 0, 90, 'gün'],
+        'platform_production_skip_weekends' => ['bool', 'Hafta sonları sayılmasın', 'Açıksa yapım süresi iş günü olarak hesaplanır.'],
     ],
     'Freelancer seviyeleri ve kapasite' => [
         'platform_auto_tier'      => ['bool', 'Seviyeler kurallara göre otomatik güncellensin', 'Her tamamlanan iş ve değerlendirme sonrası "Seviye kuralları" ekranındaki koşullar kontrol edilir. Elle sabitlenen seviyeler etkilenmez.'],

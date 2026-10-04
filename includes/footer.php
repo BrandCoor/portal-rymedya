@@ -13,6 +13,8 @@
         </div>
     </div>
 </div>
+<?= live_script($GLOBALS['live_job'][0] ?? null, $GLOBALS['live_job'][1] ?? null) ?>
+<?= legal_cookie_notice() ?>
 <?php ui_icons_init(); ?>
 </body>
 </html>

@@ -211,6 +211,7 @@ require_once __DIR__ . '/../../includes/header.php';
         </div>
 
         <div x-show="open" x-cloak class="card-foot" style="background:var(--surface)">
+            <details style="margin-bottom:14px"><summary class="small" style="cursor:pointer;font-weight:500">Profil bilgileri (freelancer'ın doldurduğu)</summary><div style="margin-top:10px"><?= profile_view_html('freelancer', (int)$f['user_id']) ?></div></details>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" style="padding:6px 0">
                 <div class="stack">
                     <p class="eyebrow">Performans</p>

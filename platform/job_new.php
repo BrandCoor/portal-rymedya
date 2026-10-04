@@ -48,6 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($lead['level'] === 'block') {
         $errors[] = $lead['message'];
     }
+    // Yapım süresi: teslim tarihi işin hacmine göre en erken tarihten önce olamaz
+    if ($deadline) {
+        [, $perr] = production_check($start_date, $deadline, $items, $raw, $mode);
+        if ($perr) $errors[] = $perr;
+    }
     $rush = $lead['level'] === 'warn';
     if ($rush && empty($_POST['rush_ack'])) {
         $errors[] = 'Bu iş acil kapsamına giriyor. Devam etmek için acil iş koşullarını onaylayın.';
@@ -112,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // İstemci tarafı canlı hesaplama için veri
 $svc_js = [];
 foreach ($services as $s) {
-    $svc_js[(int)$s['id']] = ['name' => $s['name'], 'unit' => $s['unit'], 'price' => (float)$s['agency_price'], 'lead' => (int)$s['min_lead_hours']];
+    $svc_js[(int)$s['id']] = ['name' => $s['name'], 'unit' => $s['unit'], 'price' => (float)$s['agency_price'], 'lead' => (int)$s['min_lead_hours'], 'pd' => (float)$s['production_days'], 'pu' => (float)$s['production_days_per_unit']];
 }
 $rules = lead_time_rules();
 $qty_old = [];
@@ -133,6 +138,7 @@ $order_cfg = [
     'rules' => ['block' => (int)$rules['block_hours'], 'warn' => (int)$rules['warn_hours'], 'sameDay' => (bool)$rules['block_same_day'], 'rush' => (float)$rules['rush_percent']],
     'start' => $old['start_date'] ?? '', 'deadline' => $old['deadline'] ?? '',
     'remote' => !empty($old['is_remote']), 'rushAck' => !empty($old['rush_ack']),
+    'prod' => production_js_rules(), 'mode' => $mode, 'raw' => !empty($old['raw_delivery']),
 ];
 ?>
 <div x-data="orderForm(<?= e(json_encode($order_cfg, JSON_UNESCAPED_UNICODE)) ?>)" x-init="init()">
@@ -154,7 +160,7 @@ $order_cfg = [
         <div class="alert alert-danger" style="margin-bottom:20px"><i data-lucide="alert-circle"></i><div><?php foreach ($errors as $er): ?><div><?= e($er) ?></div><?php endforeach; ?></div></div>
     <?php endif; ?>
 
-    <form method="POST" action="" class="grid grid-cols-1 lg:grid-cols-3 gap-6" @submit="if (lead.level === 'block') { $event.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); }">
+    <form method="POST" action="" class="grid grid-cols-1 lg:grid-cols-3 gap-6" @submit="if (lead.level === 'block' || prodErr) { $event.preventDefault(); window.scrollTo({top: 0, behavior: 'smooth'}); }">
         <?= csrf_field() ?>
         <input type="hidden" name="mode" value="<?= $mode ?>">
 
@@ -238,10 +244,14 @@ $order_cfg = [
                         </div>
                         <div class="field">
                             <label class="label">Teslim tarihi <span class="req">*</span></label>
-                            <input class="input" type="date" name="deadline" required x-model="deadline" @change="assess()" min="<?= date('Y-m-d') ?>" value="<?= $val('deadline') ?>">
+                            <input class="input" type="date" name="deadline" required x-model="deadline" @change="assess()" :min="minDeadline()" min="<?= date('Y-m-d') ?>" value="<?= $val('deadline') ?>">
+                            <span class="hint" x-show="prodDays() > 0 || minDeadline()" x-text="'En erken teslim: ' + fmtDate(minDeadline()) + (prodDays() > 0 ? ' · yapım süresi ' + prodDays() + (prod.skip_weekends ? ' iş günü' : ' gün') : '')"></span>
                         </div>
                     </div>
 
+                    <template x-if="prodErr">
+                        <div class="alert alert-danger" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><span style="display:flex;gap:10px"><i data-lucide="hourglass"></i><span x-text="prodErr"></span></span><button type="button" class="btn btn-secondary btn-sm" @click="deadline = minDeadline(); assess()">En erken tarihi seç</button></div>
+                    </template>
                     <template x-if="lead.level === 'block'">
                         <div class="alert alert-danger"><i data-lucide="calendar-x"></i><span x-text="lead.message"></span></div>
                     </template>
@@ -253,12 +263,12 @@ $order_cfg = [
                     </template>
 
                     <div class="panel" style="padding:14px 16px">
-                        <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote" <?= !empty($old['is_remote']) ? 'checked' : '' ?>><span>Uzaktan yapılabilir <span class="text-muted">(kurgu, renk, animasyon gibi işler)</span></span></label>
+                        <label class="check"><input type="checkbox" name="is_remote" value="1" x-model="remote" @change="assess()" <?= !empty($old['is_remote']) ? 'checked' : '' ?>><span>Uzaktan yapılabilir <span class="text-muted">(kurgu, renk, animasyon gibi işler)</span></span></label>
                         <div x-show="!remote" class="grid grid-cols-1 sm:grid-cols-3 gap-3" style="margin-top:12px">
                             <div class="field"><label class="label">Şehir <span class="req">*</span></label><?= city_select('location_city', $old['location_city'] ?? '') ?></div>
                             <div class="field sm:col-span-2"><label class="label">Lokasyon</label><input class="input" type="text" name="location_detail" value="<?= $val('location_detail') ?>" placeholder="Stüdyo, mekan veya ilçe"></div>
                         </div>
-                        <label x-show="!remote" class="check small" style="margin-top:12px"><input type="checkbox" name="raw_delivery" value="1" <?= !empty($old['raw_delivery']) ? 'checked' : '' ?>><span>Ham görüntü / dosya teslimi istiyorum <span class="text-muted">· <?= e(raw_delivery_fee_label()) ?>. İşaretlemezseniz çekim gibi yerinde işler "yapıldı" bildirimiyle tamamlanır; kurgu, ses gibi işler her zaman bağlantıyla teslim edilir.</span></span></label>
+                        <label x-show="!remote" class="check small" style="margin-top:12px"><input type="checkbox" name="raw_delivery" value="1" x-model="raw" @change="assess()" <?= !empty($old['raw_delivery']) ? 'checked' : '' ?>><span>Ham görüntü / dosya teslimi istiyorum <span class="text-muted">· <?= e(raw_delivery_fee_label()) ?>. İşaretlemezseniz çekim gibi yerinde işler "yapıldı" bildirimiyle tamamlanır; kurgu, ses gibi işler her zaman bağlantıyla teslim edilir.</span></span></label>
                     </div>
 
                     <div class="field">
@@ -293,11 +303,12 @@ $order_cfg = [
 
                     <div class="hairline" style="margin:14px 0"></div>
                     <ul class="stack-sm xsmall text-muted" style="list-style:none;padding:0">
-                        <li style="display:flex;gap:8px"><i data-lucide="shield-check" style="width:14px;height:14px;flex-shrink:0"></i>Teslimat size ulaşmadan önce kalite kontrolden geçer.</li>
+                        <?php if (platform_setting('platform_qa_required') === '1'): ?><li style="display:flex;gap:8px"><i data-lucide="shield-check" style="width:14px;height:14px;flex-shrink:0"></i>Teslimat size ulaşmadan önce kalite kontrolden geçer.</li><?php endif; ?>
+                        <li style="display:flex;gap:8px" x-show="prodDays() > 0"><i data-lucide="hourglass" style="width:14px;height:14px;flex-shrink:0"></i><span x-text="'Tahmini yapım süresi ' + prodDays() + (prod.skip_weekends ? ' iş günü' : ' gün') + '; teslim tarihi buna göre seçilebilir.'"></span></li>
                         <li style="display:flex;gap:8px"><i data-lucide="repeat" style="width:14px;height:14px;flex-shrink:0"></i><?= (int)platform_setting('platform_max_revisions') ?> revizyon hakkı dahil<?= (float)platform_setting('platform_revision_fee') > 0 ? '; sonrası revizyon başına ' . format_money((float)platform_setting('platform_revision_fee')) . ' + KDV' : '' ?>.</li>
                         <li style="display:flex;gap:8px"><i data-lucide="calendar-clock" style="width:14px;height:14px;flex-shrink:0"></i>En az <?= $rules['block_hours'] ?> saat önceden iş girişi; <?= $rules['warn_hours'] ?> saatten kısa süreli işler acil sayılır.</li>
                     </ul>
-                    <button type="submit" class="btn btn-accent btn-lg btn-block" style="margin-top:16px" :disabled="lead.level === 'block' || (lead.level === 'warn' && !rushAck)<?= $mode === 'catalog' ? ' || !lines().length' : '' ?>">
+                    <button type="submit" class="btn btn-accent btn-lg btn-block" style="margin-top:16px" :disabled="lead.level === 'block' || !!prodErr || (lead.level === 'warn' && !rushAck)<?= $mode === 'catalog' ? ' || !lines().length' : '' ?>">
                         <?= $mode === 'catalog' ? 'İşi gönder' : 'Teklif iste' ?>
                     </button>
                     <p class="xsmall text-muted" style="margin-top:10px;text-align:center">Göndererek bu iş için <?= legal_link('ajans-sozlesmesi', 'Ajans Hizmet Sözleşmesi') ?> ve <?= legal_link('iptal-iade', 'iptal koşulları') ?>nın uygulanacağını kabul edersiniz.</p>

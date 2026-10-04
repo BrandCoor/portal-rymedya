@@ -536,11 +536,12 @@ Bu Çerez Politikası, {{unvan}} ("Şirket") tarafından işletilen {{site}} Pla
 
 ## 2. Kullandığımız çerezler
 
-Platform yalnızca **zorunlu** çerezleri ve yerel depolamayı kullanır. Reklam, profil oluşturma veya üçüncü taraf takip çerezi kullanılmaz.
+Platform şu an yalnızca **zorunlu** çerezleri ve yerel depolamayı kullanır. Reklam, profil oluşturma veya üçüncü taraf takip çerezi kullanılmaz. İleride analitik veya pazarlama çerezi kullanılırsa, yalnızca çerez penceresinden izin vermeniz halinde etkinleşir.
 
 - **Oturum çerezi (PHPSESSID):** Giriş yaptığınızı hatırlamak ve oturumunuzu güvenli şekilde sürdürmek için kullanılır. Tarayıcı kapatıldığında veya oturum kapatıldığında silinir. Yalnızca https üzerinden gönderilir ve JavaScript tarafından okunamaz.
 - **Güvenlik (CSRF) bilgisi:** Formların sizin tarafınızdan gönderildiğini doğrulamak için oturum içinde tutulur.
-- **Yerel depolama:** Arayüz tercihleriniz (ör. kenar çubuğu durumu, çerez bilgilendirmesinin kapatılması) yalnızca kendi tarayıcınızda saklanır.
+- **Çerez tercihi (cookie_consent):** Çerez penceresinde yaptığınız seçimi 180 gün hatırlar; böylece pencere her sayfada yeniden açılmaz.
+- **Yerel depolama:** Arayüz tercihleriniz (ör. kenar çubuğu durumu, çerez tercihiniz) yalnızca kendi tarayıcınızda saklanır.
 
 ## 3. Hukuki sebep
 
@@ -550,9 +551,11 @@ Zorunlu çerezler, hizmetin sunulması için gerekli olduğundan KVKK md. 5/2-(c
 
 Sayfaların görüntülenmesi için bazı yazı tipi, simge ve kütüphane dosyaları içerik dağıtım ağlarından (CDN) yüklenir. Bu sağlayıcılar teknik zorunluluk gereği IP adresinizi görebilir; Şirket bu sağlayıcılar aracılığıyla çerez yerleştirmez. Kartla ödeme sırasında iyzico ödeme sayfası kendi çerezlerini kullanabilir; bu çerezler iyzico'nun politikalarına tabidir.
 
-## 5. Çerezleri yönetme
+## 5. Onay ve tercihlerin yönetimi
 
-Tarayıcınızın ayarlarından çerezleri silebilir veya engelleyebilirsiniz. Zorunlu çerezleri engellerseniz Platform'a giriş yapamazsınız.
+Platform'u ilk ziyaretinizde çerez penceresi açılır. **"Tümünü kabul et"**, **"Yalnızca zorunlu"** veya **"Tercihleri yönet"** seçenekleriyle karar verebilirsiniz; zorunlu olmayan kategoriler (analitik, pazarlama) siz açmadıkça kapalıdır. Seçiminizi istediğiniz zaman sayfaların altındaki **"Çerez tercihleri"** bağlantısından değiştirebilir veya geri alabilirsiniz. Verdiğiniz tercih; tarih, sürüm, IP adresi ve tarayıcı bilgisiyle kayıt altına alınır.
+
+Ayrıca tarayıcınızın ayarlarından çerezleri silebilir veya engelleyebilirsiniz. Zorunlu çerezleri engellerseniz Platform'a giriş yapamazsınız.
 
 ## 6. İletişim
 

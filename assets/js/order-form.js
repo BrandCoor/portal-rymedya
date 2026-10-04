@@ -18,6 +18,10 @@ function orderForm(cfg) {
         keep: cfg.keepDates || null,
         wasRush: !!cfg.wasRush,
         lead: { level: 'ok', message: '' },
+        prod: cfg.prod || null,
+        mode: cfg.mode || 'catalog',
+        raw: !!cfg.raw,
+        prodErr: '',
         init() {
             for (const id in this.svc) { if (this.qty[id] === undefined) this.qty[id] = 0; }
             this.assess();
@@ -39,7 +43,44 @@ function orderForm(cfg) {
         total() { return this.subtotal() + this.rushFee(); },
         serviceLead() { let m = 0; for (const l of this.lines()) m = Math.max(m, this.svc[l.id].lead || 0); return m; },
         datesUnchanged() { return this.keep && this.keep.start === this.start && this.keep.deadline === this.deadline; },
+        /* ---- yapım süresi (sunucudaki production_required() ile aynı) ---- */
+        prodDays() {
+            if (!this.prod) return 0;
+            const p = this.prod, vals = [];
+            for (const l of this.lines()) {
+                const s = this.svc[l.id];
+                vals.push(Math.max(0, (s.pd || 0) + (s.pu || 0) * Math.max(0, l.qty - 1)));
+            }
+            let work = vals.length ? (p.combine === 'max' ? Math.max(...vals) : vals.reduce((a, b) => a + b, 0)) : 0;
+            if (this.mode === 'custom') work = Math.max(work, p.custom_days);
+            if (this.raw && !this.remote && p.raw_days > 0) work += p.raw_days;
+            if (work > 0 && p.buffer_days > 0) work += p.buffer_days;
+            return Math.max(p.min_days, Math.ceil(work - 1e-9));
+        },
+        addDays(from, n) {
+            const d = new Date(from + 'T12:00:00');
+            while (n > 0) {
+                d.setDate(d.getDate() + 1);
+                if (this.prod.skip_weekends && (d.getDay() === 0 || d.getDay() === 6)) continue;
+                n--;
+            }
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        },
+        minDeadline() {
+            if (!this.prod) return '';
+            return this.addDays(this.start || this.prod.earliest, this.prodDays());
+        },
+        fmtDate(v) { if (!v) return ''; const [y, m, d] = v.split('-'); return d + '.' + m + '.' + y; },
+        checkProd() {
+            this.prodErr = '';
+            if (!this.prod || !this.deadline || this.datesUnchanged()) return;
+            const min = this.minDeadline();
+            if (this.deadline < min) {
+                this.prodErr = 'Bu işin yapım süresi en az ' + this.prodDays() + (this.prod.skip_weekends ? ' iş günü' : ' gün') + (this.start ? ' (başlangıçtan sonra)' : '') + '. En erken teslim tarihi: ' + this.fmtDate(min) + '.';
+            }
+        },
         assess() {
+            this.checkProd();
             // Düzenlemede tarihler değişmediyse mevcut termin korunur
             if (this.datesUnchanged()) { this.lead = { level: 'kept', message: '' }; return; }
             const ref = this.start || this.deadline;

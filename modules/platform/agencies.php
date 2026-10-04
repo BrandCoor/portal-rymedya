@@ -116,6 +116,7 @@ require_once __DIR__ . '/../../includes/header.php';
             </div>
         </div>
         <div x-show="more" x-cloak class="card-foot stack">
+            <?= profile_view_html('agency', (int)$a['user_id']) ?>
             <p class="xsmall text-muted">Kayıt <?= format_date($a['user_created']) ?> · son giriş <?= $a['last_login'] ? time_ago($a['last_login']) : '—' ?> · son iş <?= $a['last_order'] ? format_date($a['last_order']) : '—' ?><?= $a['website'] ? ' · ' . e($a['website']) : '' ?></p>
             <form method="POST" action="" style="display:flex;gap:8px;align-items:flex-end"><?= csrf_field() ?>
                 <input type="hidden" name="action" value="notes"><input type="hidden" name="user_id" value="<?= (int)$a['user_id'] ?>">

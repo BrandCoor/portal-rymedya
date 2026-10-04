@@ -81,7 +81,13 @@ const PLATFORM_DEFAULTS = [
     'platform_freelancer_signup'     => '1',
     'platform_agency_signup'         => '1',
     'platform_show_agency_name'      => '0',
-    'platform_qa_required'           => '1',
+    'platform_qa_required'           => '0',  // Freelancer teslimi önce ekip kalite kontrolüne mi düşsün (0: doğrudan ajansa)
+    'platform_min_production_days'   => '1',  // Teslim, başlangıçtan en az bu kadar gün sonra
+    'platform_custom_min_days'       => '3',  // Özel taleplerde en az yapım süresi
+    'platform_production_buffer_days'=> '0',  // Yapım süresine eklenen teslim payı
+    'platform_raw_delivery_days'     => '1',  // Ham görüntü teslimi için ek gün
+    'platform_production_combine'    => 'sum',// Kalem süreleri: sum (art arda) | max (paralel)
+    'platform_production_skip_weekends' => '0',
     'platform_auto_invoice'          => '1',
     'platform_auto_publish'          => '1',  // Katalogdan girilen işler yönetici onayı beklemeden havuza düşsün
     'platform_auto_tier'             => '1',  // Seviye performansa göre otomatik güncellensin
@@ -580,7 +586,8 @@ function price_order(array $items, bool $rush): array {
 
 function save_job_items(int $job_id, array $items): void {
     global $db;
-    $db->prepare("DELETE FROM platform_job_items WHERE job_id = ?")->execute([$job_id]);
+    // Ek kalemler (sonradan eklenenler) korunur; yalnızca işin ana kalemleri yeniden yazılır
+    $db->prepare("DELETE FROM platform_job_items WHERE job_id = ? AND is_extra = 0")->execute([$job_id]);
     $ins = $db->prepare("INSERT INTO platform_job_items (job_id, service_id, name, unit, quantity, agency_unit_price, freelancer_unit_fee) VALUES (?, ?, ?, ?, ?, ?, ?)");
     foreach ($items as $it) {
         $ins->execute([$job_id, $it['service_id'] ?? null, $it['name'], $it['unit'], $it['quantity'], $it['agency_unit_price'], $it['freelancer_unit_fee']]);

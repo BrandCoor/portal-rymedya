@@ -36,35 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'save_profile') {
-        $name  = trim($_POST['full_name'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $city  = normalize_city($_POST['city'] ?? '');
-        if ($name === '' || $phone === '' || $city === '') {
-            set_flash('error', 'Ad soyad, telefon ve il zorunludur.');
-            redirect(BASE_URL . '/platform/profile.php');
-        }
-        if ($role === 'agency') {
-            $company = trim($_POST['company_title'] ?? '') ?: $contact['company_title'];
-            $db->prepare("UPDATE contacts SET company_title = ?, authorized_person = ?, phone = ?, city = ?, address = ?, tax_office = ?, tax_number = ? WHERE id = ?")
-               ->execute([$company, $name, $phone, $city, trim($_POST['address'] ?? ''), trim($_POST['tax_office'] ?? ''), trim($_POST['tax_number'] ?? ''), $cid]);
-            $db->prepare("UPDATE agency_profiles SET website = ? WHERE user_id = ?")->execute([trim($_POST['website'] ?? ''), $uid]);
-            $_SESSION['client_user']['company_name'] = $company;
+        $perrors = profile_save($role, $uid, $cid, $_POST);
+        if ($perrors) {
+            $_SESSION['profile_old'] = $_POST;
+            set_flash('error', implode(' ', $perrors));
         } else {
-            $skills = array_values(array_intersect(array_keys(JOB_CATEGORIES), (array)($_POST['skills'] ?? [])));
-            $portfolio = trim($_POST['portfolio_url'] ?? '');
-            if ($portfolio !== '' && !is_safe_url($portfolio)) {
-                set_flash('error', 'Portfolyo bağlantısı http(s):// ile başlamalıdır.');
-                redirect(BASE_URL . '/platform/profile.php');
-            }
-            $db->prepare("UPDATE contacts SET company_title = ?, authorized_person = ?, phone = ?, city = ?, iban = ? WHERE id = ?")
-               ->execute([$name, $name, $phone, $city, trim($_POST['iban'] ?? ''), $cid]);
-            $db->prepare("UPDATE freelancer_profiles SET title = ?, skills = ?, city = ?, bio = ?, portfolio_url = ?, day_rate = ?, equipment = ?, is_available = ? WHERE user_id = ?")
-               ->execute([trim($_POST['title'] ?? ''), implode(',', $skills), $city, trim($_POST['bio'] ?? ''), $portfolio ?: null, parse_money($_POST['day_rate'] ?? '') ?: null, trim($_POST['equipment'] ?? ''), isset($_POST['is_available']) ? 1 : 0, $uid]);
-            $_SESSION['client_user']['company_name'] = $name;
+            log_activity('profile', 'Profil güncellendi', $role, $uid, null, null);
+            set_flash('success', 'Profiliniz güncellendi.');
         }
-        $db->prepare("UPDATE users SET full_name = ?, phone = ? WHERE id = ?")->execute([$name, $phone, $uid]);
-        $_SESSION['client_user']['full_name'] = $name;
-        set_flash('success', 'Profiliniz güncellendi.');
         redirect(BASE_URL . '/platform/profile.php');
     }
 
@@ -87,6 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $skills = array_filter(explode(',', (string)($profile['skills'] ?? '')));
+$pvals = profile_values($role, $uid);
+if (!empty($_SESSION['profile_old'])) {   // hatalı gönderimde yazılanlar kaybolmasın
+    foreach ($_SESSION['profile_old'] as $k => $v) if (array_key_exists($k, $pvals)) $pvals[$k] = is_array($v) ? implode(',', $v) : $v;
+    unset($_SESSION['profile_old']);
+}
+[$pct, $missing] = profile_completion($role, $pvals);
 $status_badge = ['pending' => ['İnceleniyor', 'warning'], 'approved' => ['Onaylı hesap', 'success'], 'suspended' => ['Askıda', 'danger']][$profile['status']] ?? [$profile['status'], 'neutral'];
 $display_name = $role === 'agency' ? ($contact['company_title'] ?? '') : ($_SESSION['client_user']['full_name'] ?? '');
 
@@ -112,67 +97,19 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="save_profile">
 
-        <?php if ($role === 'freelancer'): ?>
-        <section class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;gap:16px">
-            <div>
-                <p style="font-weight:500">Yeni iş almaya müsaitim</p>
-                <p class="small text-muted">Kapalıyken işleri görebilir ama alamaz, teklif veremezsiniz.</p>
+        <?php if ($pct < 100): ?>
+        <div class="card card-pad" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px">
+                <p style="font-weight:500">Profiliniz %<?= $pct ?> tamamlandı</p>
+                <p class="xsmall text-muted" style="margin-top:2px">Eksik: <?= e(implode(', ', array_slice($missing, 0, 6))) ?><?= count($missing) > 6 ? '…' : '' ?>. <?= $role === 'freelancer' ? 'Eksiksiz profiller atamada öne çıkar.' : 'Eksiksiz bilgiler fatura ve iletişimi hızlandırır.' ?></p>
             </div>
-            <label class="switch"><input type="checkbox" name="is_available" value="1" <?= (int)$profile['is_available'] === 1 ? 'checked' : '' ?>><span></span></label>
-        </section>
+            <div class="pbar" style="width:180px"><span style="width:<?= $pct ?>%"></span></div>
+        </div>
         <?php endif; ?>
 
-        <section class="card">
-            <div class="card-head"><p class="card-title"><?= $role === 'agency' ? 'Firma bilgileri' : 'Kişisel bilgiler' ?></p></div>
-            <div class="card-pad grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <?php if ($role === 'agency'): ?>
-                <div class="field sm:col-span-2"><label class="label">Ajans / firma adı</label><input class="input" type="text" name="company_title" value="<?= e($contact['company_title']) ?>"></div>
-                <?php endif; ?>
-                <div class="field"><label class="label"><?= $role === 'agency' ? 'Yetkili kişi' : 'Ad soyad' ?> <span class="req">*</span></label><input class="input" type="text" name="full_name" required value="<?= e($_SESSION['client_user']['full_name'] ?? '') ?>"></div>
-                <div class="field"><label class="label">Telefon <span class="req">*</span></label><input class="input" type="text" name="phone" required value="<?= e($contact['phone'] ?? '') ?>"></div>
-                <div class="field"><label class="label">E-posta</label><input class="input" type="email" value="<?= e($contact['email'] ?? '') ?>" disabled><span class="hint">Değişiklik için platform ekibine yazın.</span></div>
-                <div class="field"><label class="label">İl <span class="req">*</span></label><?= city_select('city', $role === 'freelancer' ? ($profile['city'] ?? '') : ($contact['city'] ?? ''), ['required' => true]) ?><?php if ($role === 'freelancer'): ?><span class="hint">Yerinde çekim işleri şehrinize göre listelenir.</span><?php endif; ?></div>
-            </div>
-        </section>
+        <?= profile_form_html($role, $pvals) ?>
 
-        <?php if ($role === 'agency'): ?>
-        <section class="card">
-            <div class="card-head"><div><p class="card-title">Fatura bilgileri</p><p class="card-sub">Tamamlanan işlerin faturası bu bilgilerle kesilir.</p></div></div>
-            <div class="card-pad grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div class="field"><label class="label">Web sitesi</label><input class="input" type="text" name="website" value="<?= e($profile['website'] ?? '') ?>"></div>
-                <div class="field"><label class="label">Vergi dairesi</label><input class="input" type="text" name="tax_office" value="<?= e($contact['tax_office'] ?? '') ?>"></div>
-                <div class="field"><label class="label">Vergi no</label><input class="input" type="text" name="tax_number" value="<?= e($contact['tax_number'] ?? '') ?>"></div>
-                <div class="field sm:col-span-3"><label class="label">Fatura adresi</label><textarea class="textarea" name="address" rows="2"><?= e($contact['address'] ?? '') ?></textarea></div>
-            </div>
-        </section>
-        <?php else: ?>
-        <section class="card">
-            <div class="card-head"><div><p class="card-title">Uzmanlık</p><p class="card-sub">İş havuzunda yalnızca seçtiğiniz alanlardaki işleri görürsünüz.</p></div></div>
-            <div class="card-pad stack">
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <?php foreach (JOB_CATEGORIES as $ck => $cv): ?>
-                    <label class="option-card" style="align-items:center;padding:10px 12px">
-                        <input type="checkbox" name="skills[]" value="<?= $ck ?>" <?= in_array($ck, $skills, true) ? 'checked' : '' ?>>
-                        <i data-lucide="<?= $cv['icon'] ?>" style="width:15px;height:15px;color:var(--muted)"></i><span class="small"><?= e($cv['label']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="field"><label class="label">Unvan</label><input class="input" type="text" name="title" value="<?= e($profile['title'] ?? '') ?>" placeholder="Görüntü yönetmeni, kurgucu"></div>
-                    <div class="field"><label class="label">Günlük ücret beklentisi</label><div class="input-group"><input class="input" type="text" inputmode="decimal" name="day_rate" value="<?= e((string)($profile['day_rate'] ?? '')) ?>"><span class="addon">TL</span></div></div>
-                    <div class="field"><label class="label">Portfolyo / showreel</label><input class="input" type="url" name="portfolio_url" value="<?= e($profile['portfolio_url'] ?? '') ?>" placeholder="https://"></div>
-                    <div class="field"><label class="label">Ekipman</label><input class="input" type="text" name="equipment" value="<?= e($profile['equipment'] ?? '') ?>" placeholder="FX3, DJI RS3, Aputure 300d"></div>
-                    <div class="field sm:col-span-2"><label class="label">Hakkımda</label><textarea class="textarea" name="bio" rows="3"><?= e($profile['bio'] ?? '') ?></textarea></div>
-                </div>
-            </div>
-        </section>
-        <section class="card">
-            <div class="card-head"><div><p class="card-title">Ödeme</p><p class="card-sub">Hakedişler bu hesaba aktarılır.</p></div></div>
-            <div class="card-pad"><div class="field"><label class="label">IBAN</label><input class="input mono" type="text" name="iban" value="<?= e($contact['iban'] ?? '') ?>" placeholder="TR00 0000 0000 0000 0000 0000 00"></div></div>
-        </section>
-        <?php endif; ?>
-
-        <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary">Değişiklikleri kaydet</button></div>
+        <div class="sticky-save"><button class="btn btn-primary">Değişiklikleri kaydet</button></div>
     </form>
 
     <?php $prefs = mail_user_prefs($uid); ?>

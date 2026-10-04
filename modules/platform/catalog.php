@@ -48,11 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             max(0, min(720, (int)($_POST['min_lead_hours'] ?? 0))),
             isset($_POST['is_active']) ? 1 : 0,
             (int)($_POST['sort_order'] ?? 0),
+            max(0, min(365, round((float)str_replace(',', '.', (string)($_POST['production_days'] ?? 0)), 1))),
+            max(0, min(60, round((float)str_replace(',', '.', (string)($_POST['production_days_per_unit'] ?? 0)), 1))),
         ];
         if ($id) {
-            $db->prepare("UPDATE platform_services SET category = ?, name = ?, description = ?, unit = ?, agency_price = ?, freelancer_fee = ?, min_tier = ?, min_lead_hours = ?, is_active = ?, sort_order = ? WHERE id = ?")->execute([...$data, $id]);
+            $db->prepare("UPDATE platform_services SET category = ?, name = ?, description = ?, unit = ?, agency_price = ?, freelancer_fee = ?, min_tier = ?, min_lead_hours = ?, is_active = ?, sort_order = ?, production_days = ?, production_days_per_unit = ? WHERE id = ?")->execute([...$data, $id]);
         } else {
-            $db->prepare("INSERT INTO platform_services (category, name, description, unit, agency_price, freelancer_fee, min_tier, min_lead_hours, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute($data);
+            $db->prepare("INSERT INTO platform_services (category, name, description, unit, agency_price, freelancer_fee, min_tier, min_lead_hours, is_active, sort_order, production_days, production_days_per_unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute($data);
         }
         $mark_reviewed();
         log_activity('platform', "Hizmet kataloğu: {$name} " . ($id ? 'güncellendi' : 'eklendi'), null, null, '/modules/platform/catalog.php');
@@ -112,7 +114,7 @@ foreach ($services as $s) {
 }
 $base_lead = (int)platform_setting('platform_min_lead_hours');
 $reviewed = platform_setting('platform_catalog_reviewed') === '1';
-$blank = ['id' => 0, 'category' => 'shooting', 'name' => '', 'description' => '', 'unit' => 'gün', 'agency_price' => '', 'freelancer_fee' => '', 'min_tier' => 'standard', 'min_lead_hours' => 0, 'is_active' => 1, 'sort_order' => 0];
+$blank = ['id' => 0, 'category' => 'shooting', 'name' => '', 'description' => '', 'unit' => 'gün', 'agency_price' => '', 'freelancer_fee' => '', 'min_tier' => 'standard', 'min_lead_hours' => 0, 'is_active' => 1, 'sort_order' => 0, 'production_days' => 2, 'production_days_per_unit' => 0];
 
 $page_title = 'Hizmet kataloğu';
 require_once __DIR__ . '/../../includes/header.php';
@@ -145,7 +147,7 @@ require_once __DIR__ . '/../../includes/header.php';
         <div class="card-head"><p class="card-title" style="display:flex;gap:8px;align-items:center"><i data-lucide="<?= job_category_icon($cat) ?>" style="width:15px;height:15px"></i><?= e(job_category_label($cat)) ?></p><span class="xsmall text-muted"><?= count($list) ?> hizmet</span></div>
         <div class="table-wrap">
             <table class="table">
-                <thead><tr><th>Hizmet</th><th class="r">Ajans fiyatı</th><th class="r">Freelancer</th><th class="r">Marj</th><th>Seviye</th><th class="r">Min. süre</th><th class="r">Kullanım</th><th></th></tr></thead>
+                <thead><tr><th>Hizmet</th><th class="r">Ajans fiyatı</th><th class="r">Freelancer</th><th class="r">Marj</th><th>Seviye</th><th class="r">Min. süre</th><th class="r">Yapım</th><th class="r">Kullanım</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($list as $s):
                     $m = (float)$s['agency_price'] - (float)$s['freelancer_fee'];
@@ -161,6 +163,7 @@ require_once __DIR__ . '/../../includes/header.php';
                         <td class="r num" style="color:<?= $mp < 15 ? 'var(--warning)' : 'var(--success)' ?>">%<?= number_format($mp, 0) ?></td>
                         <td><?= tier_badge($s['min_tier']) ?></td>
                         <td class="r num"><?= (int)$s['min_lead_hours'] > $base_lead ? (int)$s['min_lead_hours'] . ' sa' : '<span class="text-faint">genel</span>' ?></td>
+                        <td class="r num" title="Yapım süresi: taban + ek birim başına"><?= rtrim(rtrim(number_format((float)$s['production_days'], 1, ',', ''), '0'), ',') ?> g<?= (float)$s['production_days_per_unit'] > 0 ? ' <span class="xsmall text-muted">+' . rtrim(rtrim(number_format((float)$s['production_days_per_unit'], 1, ',', ''), '0'), ',') . '</span>' : '' ?></td>
                         <td class="r xsmall text-muted"><?= $u ? (int)$u['jobs'] . ' iş' : '—' ?></td>
                         <td class="r" style="white-space:nowrap">
                             <button type="button" class="btn btn-ghost btn-sm" @click="edit(<?= e(json_encode($s)) ?>)">Düzenle</button>
@@ -205,6 +208,8 @@ require_once __DIR__ . '/../../includes/header.php';
                     <span class="hint" x-show="f.agency_price > 0" x-text="'Marj: ' + Math.round(((f.agency_price || 0) - (f.freelancer_fee || 0)) / f.agency_price * 100) + '%'"></span></div>
                 <div class="field"><label class="label">En düşük freelancer seviyesi</label><select class="select" name="min_tier" x-model="f.min_tier"><?php foreach (FREELANCER_TIERS as $tk => $tv): ?><option value="<?= $tk ?>"><?= e($tv['label']) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label class="label">En kısa iş giriş süresi</label><div class="input-group"><input class="input" type="number" min="0" max="720" name="min_lead_hours" x-model.number="f.min_lead_hours"><span class="addon">saat</span></div><span class="hint">Genel kural <?= $base_lead ?> saat; daha uzun süre gerekiyorsa girin.</span></div>
+                <div class="field"><label class="label">Yapım süresi</label><div class="input-group"><input class="input" type="number" min="0" max="365" step="0.5" name="production_days" x-model.number="f.production_days"><span class="addon">gün</span></div><span class="hint">1 birim için. Yerinde işlerde (çekim) 0 = aynı gün biter.</span></div>
+                <div class="field"><label class="label">Ek birim başına</label><div class="input-group"><input class="input" type="number" min="0" max="60" step="0.5" name="production_days_per_unit" x-model.number="f.production_days_per_unit"><span class="addon">gün</span></div><span class="hint" x-text="'Örn. 3 ' + (f.unit || 'birim') + ' = ' + (Math.ceil(((+f.production_days || 0) + (+f.production_days_per_unit || 0) * 2) * 10) / 10) + ' gün'"></span></div>
                 <div class="field"><label class="label">Sıra</label><input class="input" type="number" name="sort_order" x-model.number="f.sort_order"></div>
                 <label class="check" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="is_active" value="1" :checked="f.is_active == 1">Katalogda görünsün</label>
             </div>
