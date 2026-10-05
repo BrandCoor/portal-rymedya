@@ -34,7 +34,7 @@ const LEGAL_DEFAULT_DATE = '2026-10-05';
 /** Hesap türüne göre onaylanması zorunlu metinler */
 function legal_required_slugs(string $role): array {
     return match ($role) {
-        'agency'     => ['kullanim-kosullari', 'ajans-sozlesmesi', 'kvkk'],
+        'agency'     => ['kullanim-kosullari', 'ajans-sozlesmesi', 'iptal-iade', 'kvkk'],
         'freelancer' => ['kullanim-kosullari', 'freelancer-sozlesmesi', 'kvkk'],
         default      => ['kullanim-kosullari', 'kvkk'],
     };
@@ -170,6 +170,13 @@ function legal_url(string $slug): string {
     return BASE_URL . '/legal/index.php?d=' . rawurlencode($slug);
 }
 
+/** Başlığa uygun belirtme eki: Sözleşmesi'ni, Koşulları'nı, Metni'ni */
+function legal_acc(string $title): string {
+    preg_match_all('/[aeıioöuüAEIİOÖUÜ]/u', $title, $m);
+    $v = mb_strtolower((string)end($m[0]));
+    return match ($v) { 'a', 'ı' => "'nı", 'o', 'u' => "'nu", 'ö', 'ü' => "'nü", default => "'ni" };
+}
+
 /** Yeni sekmede açılan metin bağlantısı */
 function legal_link(string $slug, ?string $label = null): string {
     $d = legal_doc($slug);
@@ -230,22 +237,49 @@ function legal_pending(int $user_id, string $role): array {
     return array_values(array_filter($slugs, fn($s) => ($have[$s] ?? 0) < legal_doc($s)['version']));
 }
 
+/** Kullanıcının sözleşmeleri görüp onayladığı yer (Hesap / Profil sayfası) */
+function legal_settings_url(string $role): string {
+    return BASE_URL . ($role === 'client' ? '/client/profile.php' : '/platform/profile.php') . '#sozlesmeler';
+}
+
+/** Bu istekte onay bekleyen zorunlu metinler (legal_portal_guard doldurur) */
+function legal_pending_now(): array {
+    return $GLOBALS['legal_pending_now'] ?? [];
+}
+
 /**
- * Portal kullanıcısının onaylaması gereken güncel metin varsa onay sayfasına yönlendirir.
+ * Portal kullanıcısı zorunlu metinlerin güncel sürümünü onaylamadıysa:
+ *  - sayfalar görüntülenebilir, altta "onay bekliyor" uyarısı çıkar;
+ *  - hiçbir işlem (form gönderimi) yapılamaz, Hesap → Sözleşmeler'e yönlendirilir.
+ * Onay yalnızca Hesap sayfasındaki "Sözleşmeler ve onaylar" bölümünden verilir.
  * require_client_login() içinden çağrılır.
  */
 function legal_portal_guard(int $user_id, string $role): void {
-    $page = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-    if (in_array($page, ['accept.php', 'logout.php', '2fa_setup.php'], true)) return;
     try {
         $pending = legal_pending($user_id, $role);
     } catch (Throwable $e) {
         return;
     }
-    if ($pending) {
-        $_SESSION['legal_return'] = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_SERVER['REQUEST_URI'] ?? '') : '';
-        redirect(BASE_URL . '/legal/accept.php');
-    }
+    $GLOBALS['legal_pending_now'] = $pending;
+    $GLOBALS['legal_pending_role'] = $role;
+    if (!$pending) return;
+    $page = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    if ($page === 'accept.php') redirect(legal_settings_url($role));
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || in_array($page, ['logout.php', '2fa_setup.php'], true)) return;
+    // Hesap sayfasında yalnızca sözleşme onayı / açık rıza kaydı yapılabilir
+    if ($page === 'profile.php' && in_array($_POST['action'] ?? '', ['legal_accept', 'legal_consent'], true)) return;
+    set_flash('error', 'İşlem yapabilmek için önce zorunlu sözleşmeleri onaylamanız gerekiyor. Aşağıdaki "Sözleşmeler ve onaylar" bölümünden onaylayabilirsiniz.');
+    redirect(legal_settings_url($role));
+}
+
+/** Onay eksikse tüm portal sayfalarının altında sabit uyarı */
+function legal_pending_banner(): string {
+    $pending = legal_pending_now();
+    if (!$pending) return '';
+    $role = $GLOBALS['legal_pending_role'] ?? 'agency';
+    $names = implode(', ', array_map(fn($s) => LEGAL_DOCS[$s]['short'] ?? $s, $pending));
+    return '<div class="legal-block" role="alert"><div class="legal-block-in"><span><strong>' . count($pending) . ' sözleşme onayınızı bekliyor</strong> (' . e($names) . '). Onaylamadan platformda işlem yapamazsınız.</span>'
+         . '<a class="btn btn-accent btn-sm" href="' . e(legal_settings_url($role)) . '">Sözleşmeleri onayla</a></div></div>';
 }
 
 /** Çerez onayı metin sürümü: kategoriler değişirse artırın, herkese yeniden sorulur */
@@ -385,11 +419,31 @@ function run_cookie_consent_migrations(): void {
 }
 
 /**
- * Profil sayfasındaki "Sözleşmeler ve onaylar" kartının POST işlemi (açık rızayı ver / geri al).
+ * Hesap sayfasındaki "Sözleşmeler ve onaylar" bölümünün işlemleri:
+ *  legal_accept  → işaretlenen zorunlu metinleri onaylar
+ *  legal_consent → açık rızayı verir / geri alır
  * İşlediyse true döner (çağıran yönlendirir).
  */
-function legal_profile_post(int $user_id, ?string $email): bool {
-    if (($_POST['action'] ?? '') !== 'legal_consent') return false;
+function legal_profile_post(int $user_id, ?string $email, string $role = 'agency'): bool {
+    $action = $_POST['action'] ?? '';
+    if ($action === 'legal_accept') {
+        $pending = legal_pending($user_id, $role);
+        $ok = array_values(array_filter($pending, fn($s) => !empty($_POST['doc'][$s])));
+        if ($ok) {
+            legal_record($user_id, $email, $ok, 'profile');
+            log_activity('legal', 'Sözleşmeler onaylandı: ' . implode(', ', $ok), 'user', $user_id, null, $user_id);
+        }
+        $left = array_diff($pending, $ok);
+        if (!$ok) {
+            set_flash('error', 'Onaylamak istediğiniz metinlerin kutusunu işaretleyin.');
+        } elseif ($left) {
+            set_flash('warning', 'Onayınız kaydedildi. ' . count($left) . ' metin daha onayınızı bekliyor; tümü onaylanana kadar işlem yapamazsınız.');
+        } else {
+            set_flash('success', 'Teşekkürler, tüm sözleşmeler onaylandı. Platformu kullanmaya devam edebilirsiniz.');
+        }
+        return true;
+    }
+    if ($action !== 'legal_consent') return false;
     $want = !empty($_POST['acik_riza']);
     if ($want !== legal_has_consent($user_id, 'acik-riza')) {
         legal_record($user_id, $email, ['acik-riza'], 'profile', null, $want ? 'accept' : 'withdraw');
@@ -399,39 +453,65 @@ function legal_profile_post(int $user_id, ?string $email): bool {
     return true;
 }
 
-/** Profil sayfası kartı: onaylanan metinler ve açık rıza anahtarı */
+/** Hesap sayfası "Sözleşmeler ve onaylar" bölümü */
 function legal_profile_card(int $user_id, string $role): string {
-    global $db;
-    $st = $db->prepare("SELECT a.* FROM legal_acceptances a JOIN (SELECT slug, MAX(id) id FROM legal_acceptances WHERE user_id = ? GROUP BY slug) l ON l.id = a.id ORDER BY a.created_at DESC");
-    $st->execute([$user_id]);
-    $rows = $st->fetchAll();
+    $required = legal_required_slugs($role);
+    $pending = legal_pending($user_id, $role);
     $consent = legal_has_consent($user_id, 'acik-riza');
+    $info = array_values(array_diff(['gizlilik', 'cerez', 'mesafeli', 'iptal-iade', 'ticari-ileti', 'iletisim'], $required));
     ob_start(); ?>
-    <form method="POST" action="" class="card" style="margin-top:24px">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="legal_consent">
-        <div class="card-head"><div><p class="card-title">Sözleşmeler ve onaylar</p><p class="card-sub">Onayladığınız metinler ve tarihleri. Metinlerin tamamı: <a class="link" href="<?= e(BASE_URL . '/legal/index.php') ?>" target="_blank" rel="noopener">yasal metinler</a></p></div></div>
-        <div class="divide">
-            <?php foreach ($rows as $r): if (!isset(LEGAL_DOCS[$r['slug']])) continue; ?>
-            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">
-                <div><p class="small" style="font-weight:500"><?= legal_link($r['slug']) ?></p><p class="xsmall text-muted"><?= $r['action'] === 'accept' ? 'Onaylandı' : 'Geri alındı' ?> · sürüm <?= (int)$r['version'] ?> · <?= e(format_date($r['created_at'], true)) ?></p></div>
-                <?= $r['action'] === 'accept' ? ui_badge('Onaylı', 'success') : ui_badge('Geri alındı', 'neutral') ?>
-            </div>
-            <?php endforeach; ?>
-            <div class="card-pad-sm" style="display:flex;justify-content:space-between;gap:16px;align-items:center">
-                <div><p class="small" style="font-weight:500">Açık rıza</p><p class="xsmall text-muted"><?= legal_link('acik-riza', 'Açık Rıza Metni') ?> kapsamındaki işlemler (isteğe bağlı, dilediğiniz zaman geri alabilirsiniz).</p></div>
-                <label class="switch"><input type="checkbox" name="acik_riza" value="1" <?= $consent ? 'checked' : '' ?>><span></span></label>
-            </div>
+    <section class="card" id="sozlesmeler" style="margin-top:24px;scroll-margin-top:80px;<?= $pending ? 'border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)' : '' ?>">
+        <div class="card-head" style="flex-wrap:wrap;gap:8px">
+            <div><p class="card-title">Sözleşmeler ve onaylar</p><p class="card-sub">Hesabınız için kabul edilmesi zorunlu metinler ve onay durumları.</p></div>
+            <?= $pending ? ui_badge(count($pending) . ' onay bekliyor', 'danger', true) : ui_badge('Tümü onaylı', 'success', true) ?>
         </div>
-        <div class="card-foot" style="display:flex;justify-content:flex-end"><button class="btn btn-secondary">Kaydet</button></div>
-    </form>
+        <?php if ($pending): ?>
+        <div class="alert alert-danger" style="margin:14px 16px 0"><i data-lucide="file-warning"></i><div class="small">Aşağıdaki metinleri okuyup onaylamadan platformda işlem (iş girme, iş alma, teslim, ödeme, mesaj vb.) yapamazsınız.</div></div>
+        <?php endif; ?>
+        <form method="POST" action="#sozlesmeler"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="legal_accept">
+            <div class="divide" style="margin-top:<?= $pending ? '12px' : '0' ?>">
+            <?php foreach ($required as $slug): $d = legal_doc($slug); $last = legal_last($user_id, $slug);
+                $is_pending = in_array($slug, $pending, true); $was = $last && $last['action'] === 'accept'; ?>
+                <div class="card-pad-sm" style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+                    <?php if ($is_pending): ?>
+                        <label class="consent-row" style="padding:0;flex:1;min-width:220px;background:none">
+                            <input type="checkbox" name="doc[<?= e($slug) ?>]" value="1">
+                            <span><?= legal_link($slug) ?><?= legal_acc(LEGAL_DOCS[$slug]['title']) ?> <?= $slug === 'kvkk' ? 'okudum, kişisel verilerimin işlenmesi hakkında bilgilendirildim.' : 'okudum, anladım ve kabul ediyorum.' ?>
+                                <br><span class="xsmall text-muted">Sürüm <?= (int)$d['version'] ?> · yürürlük <?= e(format_date($d['published_at'])) ?><?= $was ? ' · önceki sürümü onaylamıştınız' : '' ?></span></span>
+                        </label>
+                        <?= ui_badge($was ? 'Yeni sürüm' : 'Onay bekliyor', 'warning') ?>
+                    <?php else: ?>
+                        <div style="flex:1;min-width:220px"><p class="small" style="font-weight:500"><?= legal_link($slug) ?></p><p class="xsmall text-muted">Onaylandı · sürüm <?= (int)$last['version'] ?> · <?= e(format_date($last['created_at'], true)) ?></p></div>
+                        <?= ui_badge('Onaylı', 'success') ?>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+            </div>
+            <?php if ($pending): ?>
+            <div class="card-foot" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('form').querySelectorAll('input[name^=doc]').forEach(function(c){c.checked=true})">Tümünü işaretle</button>
+                <button class="btn btn-primary">Seçilenleri onayla</button>
+            </div>
+            <?php endif; ?>
+        </form>
+        <form method="POST" action="#sozlesmeler" class="card-foot" style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="legal_consent">
+            <div style="flex:1;min-width:220px"><p class="small" style="font-weight:500">Açık rıza <span class="xsmall text-muted">(isteğe bağlı)</span></p><p class="xsmall text-muted"><?= legal_link('acik-riza', 'Açık Rıza Metni') ?> kapsamındaki işlemler; dilediğiniz zaman geri alabilirsiniz.</p></div>
+            <div style="display:flex;gap:10px;align-items:center"><label class="switch"><input type="checkbox" name="acik_riza" value="1" <?= $consent ? 'checked' : '' ?>><span></span></label><button class="btn btn-secondary btn-sm">Kaydet</button></div>
+        </form>
+        <div class="card-foot xsmall text-muted" style="display:flex;gap:6px 14px;flex-wrap:wrap">
+            <span>Bilgilendirme metinleri:</span>
+            <?php foreach ($info as $slug): ?><?= legal_link($slug, LEGAL_DOCS[$slug]['short']) ?><?php endforeach; ?>
+        </div>
+    </section>
     <?php
     return (string)ob_get_clean();
 }
 
 /** Portal sayfalarının altı: telif + yasal bağlantılar */
 function legal_portal_footer(string $right = ''): string {
-    return '<footer class="portal-foot no-print"><span>' . e(site_footer_text()) . '</span>' . legal_footer_links() . ($right !== '' ? '<span>' . e($right) . '</span>' : '') . '</footer>' . legal_cookie_notice();
+    return legal_pending_banner() . '<footer class="portal-foot no-print"><span>' . e(site_footer_text()) . '</span>' . legal_footer_links() . ($right !== '' ? '<span>' . e($right) . '</span>' : '') . '</footer>' . legal_cookie_notice();
 }
 
 /** Giriş / kayıt ekranlarında kartın altındaki yasal bağlantılar */

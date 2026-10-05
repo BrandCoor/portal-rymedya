@@ -59,11 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $signup_open) {
     } elseif ($password !== $password2) {
         $errors[] = 'Şifreler eşleşmiyor.';
     }
-    if (empty($_POST['terms'])) {
-        $errors[] = 'Kullanım koşullarını ve ' . ($type === 'agency' ? 'Ajans Hizmet Sözleşmesi' : 'Freelancer Hizmet Sağlayıcı Sözleşmesi') . '\'ni kabul etmelisiniz.';
-    }
-    if (empty($_POST['kvkk'])) {
-        $errors[] = 'KVKK aydınlatma metnini okuduğunuzu onaylamalısınız.';
+    // Hesap türünün zorunlu tüm sözleşmeleri tek tek onaylanmalı
+    $missing_docs = array_filter(legal_required_slugs($type), fn($slug) => empty($_POST['doc'][$slug]));
+    if ($missing_docs) {
+        $errors[] = 'Kayıt için şu metinleri onaylamalısınız: ' . implode(', ', array_map(fn($slug) => LEGAL_DOCS[$slug]['title'], $missing_docs)) . '.';
     }
 
     $skills = array_values(array_intersect(array_keys(JOB_CATEGORIES), (array)($_POST['skills'] ?? [])));
@@ -217,8 +216,9 @@ $val = fn($k) => e(is_array($old[$k] ?? null) ? '' : ($old[$k] ?? ''));
 
                 <div class="consent">
                     <p class="consent-head">Sözleşmeler ve izinler</p>
-                    <label class="consent-row"><input type="checkbox" name="terms" value="1" required <?= !empty($old['terms']) ? 'checked' : '' ?>><span><?= legal_link('kullanim-kosullari', 'Kullanım Koşulları ve Üyelik Sözleşmesi') ?>'ni ve <?= $is_agency ? legal_link('ajans-sozlesmesi', 'Ajans Hizmet Sözleşmesi') : legal_link('freelancer-sozlesmesi', 'Freelancer Hizmet Sağlayıcı Sözleşmesi') ?>'ni okudum, kabul ediyorum.<span class="tag req">Zorunlu</span></span></label>
-                    <label class="consent-row"><input type="checkbox" name="kvkk" value="1" required <?= !empty($old['kvkk']) ? 'checked' : '' ?>><span><?= legal_link('kvkk', 'KVKK Aydınlatma Metni') ?>'ni okudum; kişisel verilerimin işlenmesi hakkında bilgilendirildim.<span class="tag req">Zorunlu</span></span></label>
+                    <?php foreach (legal_required_slugs($type) as $slug): ?>
+                    <label class="consent-row"><input type="checkbox" name="doc[<?= e($slug) ?>]" value="1" required <?= !empty($old['doc'][$slug]) ? 'checked' : '' ?>><span><?= legal_link($slug) ?><?= legal_acc(LEGAL_DOCS[$slug]['title']) ?> <?= $slug === 'kvkk' ? 'okudum; kişisel verilerimin işlenmesi hakkında bilgilendirildim.' : 'okudum, anladım ve kabul ediyorum.' ?><span class="tag req">Zorunlu</span></span></label>
+                    <?php endforeach; ?>
                     <label class="consent-row"><input type="checkbox" name="consent" value="1" <?= !empty($old['consent']) ? 'checked' : '' ?>><span><?= legal_link('acik-riza', 'Açık Rıza Metni') ?> kapsamında kişisel verilerimin işlenmesine ve aktarılmasına onay veriyorum.<span class="tag opt">İsteğe bağlı</span></span></label>
                     <label class="consent-row"><input type="checkbox" name="newsletter" value="1" <?= !empty($old['newsletter']) ? 'checked' : '' ?>><span><?= e(site_setting('register_newsletter_text')) ?> (<?= legal_link('ticari-ileti', 'ileti onay metni') ?>)<span class="tag opt">İsteğe bağlı</span></span></label>
                 </div>

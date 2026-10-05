@@ -47,15 +47,11 @@ Teklif ──(müşteri portaldan kabul eder)──► Proje
 | **Ajans & Freelancer Paneli** | `platform/` | Katalogdan iş, iş düzenleme, iş havuzu, teklif, teslim, performans karnesi, kazançlar |
 | Yasal metinler | `legal/`, `modules/legal` | Sözleşmeler, KVKK, politikalar; kayıtta ve kartla ödemede onay, sürümleme, yeniden onay, onay kayıtları (CSV) |
 
-## Kurulum (sıfırdan)
+## Kurulum
 
-1. cPanel → **MySQL Veritabanları**: boş bir veritabanı ve kullanıcı oluşturun, kullanıcıya bu veritabanında **tüm ayrıcalıkları** verin.
-2. Tüm dosyaları sunucudaki klasöre yükleyin (PHP 8.1+, MySQL / MariaDB). `config/db.php` yüklemeyin.
-3. Tarayıcıda `https://alanadiniz/install.php` adresini açın. Sihirbaz sunucu gereksinimlerini kontrol eder; site adresi, veritabanı, şirket ve yönetici bilgilerini alır; `config/db.php` dosyasını (rastgele uygulama anahtarıyla) yazar, temel tabloları kurar ve yönetici hesabını oluşturur. Diğer tüm tablolar ilk açılışta otomatik oluşturulur.
-4. Kurulumdan sonra `install.php` kilitlenir (`config/installed.lock`); güvenlik için dosyayı sunucudan silin.
-5. Cron görevlerini ekleyin (aşağıda) ve Ayarlar ekranından marka, şirket, e-posta ve ödeme bilgilerini doldurun.
-
-Mevcut kurulumlarda yeni özelliklerin ihtiyaç duyduğu tablolar ilk sayfa açılışında **otomatik oluşturulur**; elle SQL çalıştırmanız gerekmez. Sürüm bilgisi `system_settings.schema_version` alanında tutulur.
+1. Dosyaları sunucuya yükleyin (PHP 8.1+, MySQL / MariaDB).
+2. `config/db.example.php` dosyasını `config/db.php` adıyla kopyalayıp site adresini (`BASE_URL`) ve veritabanı bilgilerini girin. `config/db.php` GitHub'a gönderilmez.
+3. Yeni özelliklerin ihtiyaç duyduğu tablolar ilk sayfa açılışında **otomatik oluşturulur**. Elle SQL çalıştırmanız gerekmez. Sürüm bilgisi `system_settings.schema_version` alanında tutulur.
 
 ## Belgeler
 

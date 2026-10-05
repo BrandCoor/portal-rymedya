@@ -168,5 +168,13 @@ function ui_extra_css(): string {
   .option-card:has(.stepper-input) > div:first-child { flex: 1 1 100% !important; }
   .option-card:has(.stepper-input) > div:nth-child(2) { margin-right: auto !important; text-align: left !important; }
 }
+
+/* ---------- Sözleşme onayı bekleniyor (sabit alt uyarı) ---------- */
+.legal-block { position: fixed; left: 0; right: 0; bottom: 0; z-index: 85; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: #151517; color: #F4F4F5; box-shadow: 0 -10px 30px -12px rgba(0,0,0,.4); }
+.legal-block-in { max-width: 1240px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 13px; line-height: 1.45; }
+.legal-block strong { color: #fff; }
+.legal-block .btn { flex-shrink: 0; }
+body:has(.legal-block) { padding-bottom: 72px; }
+@media (max-width: 768px) { .legal-block { bottom: 60px; } .legal-block .btn { width: 100%; justify-content: center; } }
 CSS;
 }

@@ -29,8 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
-    if (legal_profile_post($client_id, $client_user['email'] ?? null)) {
-        redirect(BASE_URL . '/client/profile.php');
+    if (legal_profile_post($client_id, $client_user['email'] ?? null, 'client')) {
+        redirect(BASE_URL . '/client/profile.php#sozlesmeler');
     }
 
     if ($action === 'email_prefs') {
@@ -161,8 +161,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- ANA İÇERİK -->
     <main class="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 space-y-6">
-        
         <?= display_flash() ?>
+        <?php if (legal_pending_now()): ?><?= legal_profile_card($client_id, 'client') ?><?php endif; ?>
 
         <div class="mb-4">
             <h1 class="text-2xl font-black text-slate-900 tracking-tight">Şirket & İletişim Bilgileri</h1>
@@ -312,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label class="flex items-center justify-between gap-4 text-sm"><span>Duyuru ve kampanyalar</span><span class="switch"><input type="checkbox" name="newsletter" value="1" <?= $prefs['newsletter'] ? 'checked' : '' ?>><span></span></span></label>
             <div class="flex justify-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
         </form>
-        <?= legal_profile_card($client_id, 'client') ?>
+        <?php if (!legal_pending_now()): ?><?= legal_profile_card($client_id, 'client') ?><?php endif; ?>
 
     </main>
     <?= legal_portal_footer() ?>

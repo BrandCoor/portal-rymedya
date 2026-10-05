@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = $_POST['action'] ?? '';
 
-    if (legal_profile_post($uid, $_SESSION['client_user']['email'] ?? null)) {
-        redirect(BASE_URL . '/platform/profile.php');
+    if (legal_profile_post($uid, $_SESSION['client_user']['email'] ?? null, $role)) {
+        redirect(BASE_URL . '/platform/profile.php#sozlesmeler');
     }
 
     if ($action === 'email_prefs') {
@@ -93,6 +93,8 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <?php if ($role === 'freelancer'): ?><a href="<?= BASE_URL ?>/platform/performance.php" class="btn btn-secondary"><i data-lucide="gauge"></i>Performans karnesi</a><?php endif; ?>
     </div>
 
+    <?php if (legal_pending_now()): ?><div style="margin:-8px 0 24px"><?= legal_profile_card($uid, $role) ?></div><?php endif; ?>
+
     <form method="POST" action="" class="stack-lg">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="save_profile">
@@ -130,7 +132,7 @@ platform_header('Hesap', $role === 'agency' ? 'profile' : '');
         <div class="card-foot" style="display:flex;justify-content:flex-end"><button class="btn btn-secondary">Tercihleri kaydet</button></div>
     </form>
 
-    <?= legal_profile_card($uid, $role) ?>
+    <?php if (!legal_pending_now()): ?><?= legal_profile_card($uid, $role) ?><?php endif; ?>
 
     <form method="POST" action="" class="card" style="margin-top:24px">
         <?= csrf_field() ?>
