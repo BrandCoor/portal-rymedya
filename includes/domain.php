@@ -21,8 +21,9 @@ function domain_canonical_redirect(): void {
     if ($want === '' || $host === '' || $host === $want) return;
     // Yerel geliştirme ve IP ile erişim yönlendirilmez
     if (in_array($host, ['localhost', '127.0.0.1'], true) || filter_var($host, FILTER_VALIDATE_IP)) return;
-    // Yalnızca aynı ana alan adının alt alan adlarından gelenler (ör. portal.* → platform.*)
-    if (!str_ends_with($host, '.' . implode('.', array_slice(explode('.', $want), 1)))) return;
+    // Yalnızca daha önce sistemin adresi olmuş (eski) alan adlarından gelenler yönlendirilir.
+    // Böylece sunucudaki BASE_URL güncellenmemişse yeni adres eskiye geri gönderilmez.
+    if (!in_array($host, domain_old_hosts(), true)) return;
     $script = (string)($_SERVER['SCRIPT_NAME'] ?? '');
     // Ödeme dönüşü ve arka plan istekleri olduğu yerde işlenir (POST gövdesi kaybolmasın)
     if (str_contains($script, '/ajax/') || str_ends_with($script, 'iyzico_callback.php') || str_contains($script, '/cron/')) return;
@@ -31,6 +32,19 @@ function domain_canonical_redirect(): void {
     $uri = (string)($_SERVER['REQUEST_URI'] ?? '/');
     header('Location: ' . rtrim(BASE_URL, '/') . ($base_path !== '' && str_starts_with($uri, $base_path) ? substr($uri, strlen($base_path)) : $uri), true, 301);
     exit;
+}
+
+/** Sistemin daha önce kullandığı (artık eski olan) alan adları */
+function domain_old_hosts(): array {
+    try {
+        $list = (string)get_setting('base_url_old_hosts', '');
+    } catch (Throwable $e) {
+        return [];
+    }
+    $want = strtolower((string)parse_url(BASE_URL, PHP_URL_HOST));
+    // İlk adres her zaman eski adres sayılır (portal.* → platform.* taşıması)
+    $list .= ',portal.rymedya.com.tr';
+    return array_values(array_filter(array_unique(array_map('trim', explode(',', strtolower($list)))), fn($h) => $h !== '' && $h !== $want));
 }
 
 /**
@@ -56,7 +70,7 @@ function domain_sync_stored_urls(): void {
                 $pairs[] = ['https://' . $oh, $new];
             }
             $targets = [
-                ['system_settings', 'setting_value', "setting_key != 'base_url_last'"],
+                ['system_settings', 'setting_value', "setting_key NOT IN ('base_url_last','base_url_old_hosts')"],
                 ['legal_documents', 'body', '1=1'],
                 ['mail_campaigns', 'body_html', '1=1'],
                 ['mail_queue', 'body_html', "status IN ('pending','failed')"],
@@ -67,6 +81,10 @@ function domain_sync_stored_urls(): void {
                     $db->prepare("UPDATE `{$table}` SET `{$col}` = REPLACE(`{$col}`, ?, ?) WHERE {$where} AND `{$col}` LIKE ?")
                        ->execute([$a, $b, '%' . $a . '%']);
                 }
+            }
+            if ($oh !== '' && $nh !== '' && $oh !== $nh) {
+                $hosts = array_diff(array_unique(array_merge(domain_old_hosts(), [strtolower($oh)])), [strtolower($nh)]);
+                $db->prepare("INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES ('base_url_old_hosts', ?, 'system') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([implode(',', $hosts)]);
             }
             log_activity('system', "Sistem adresi değişti: {$old} → {$new}. Kayıtlı bağlantılar güncellendi.");
         }
