@@ -1265,11 +1265,14 @@ require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/legal.php';
 require_once __DIR__ . '/live.php';
 require_once __DIR__ . '/ui_styles.php';
+require_once __DIR__ . '/domain.php';
 require_once __DIR__ . '/profiles.php';
+domain_canonical_redirect();
 send_security_headers();
 
 // Yeni tablolar/kolonlar gerekiyorsa oluştur
 run_migrations();
+domain_sync_stored_urls();
 
 // POST işleyicilerinde (header.php yüklenmeden önce) kullanılabilmesi için aktif kullanıcı
 $user = current_user();

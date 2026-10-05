@@ -154,6 +154,10 @@ Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her b
 - **Çerez onayı:** ilk ziyarette çerez penceresi açılır ("Tümünü kabul et" / "Yalnızca zorunlu" / "Tercihleri yönet"); seçim 180 gün hatırlanır ve tarih, IP ve tarayıcıyla kaydedilir. Sayfaların altındaki "Çerez tercihleri" bağlantısıyla değiştirilebilir.
 - Metinler genel bir şablondur; yayına almadan önce bir avukata kontrol ettirmeniz önerilir.
 
+## 9.2 Alan adı değişikliği
+
+Sistemin adresi `config/db.php` içindeki `BASE_URL` satırıdır. Adres değiştirildiğinde eski alt alan adına gelen sayfa istekleri aynı yolla yeni adrese kalıcı (301) yönlendirilir; ayarlarda, yasal metinlerde ve e-posta kampanyalarında kayıtlı eski tam adresler bir kez otomatik güncellenir. Ödeme (iyzico) dönüşleri ve arka plan istekleri hangi adresten gelirse orada işlenir. Eski alt alan adı silinmemeli; yönlendirme için aynı klasörü göstermeye devam etmelidir.
+
 ## 10. Yetkiler
 
 | İzin | Ne açar? |

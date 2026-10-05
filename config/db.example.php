@@ -21,7 +21,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Sitenin kök adresi (sonunda / olmadan)
-define('BASE_URL', 'https://portal.rymedya.com.tr');
+define('BASE_URL', 'https://platform.rymedya.com.tr');
 
 // Üretimde hataları ekrana basma, log dosyasına yaz
 ini_set('display_errors', '0');

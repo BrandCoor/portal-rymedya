@@ -2,7 +2,7 @@
 
 Bu portal, RY Medya'nın video prodüksiyon işlerini tek yerden yönetmek için yazıldı. Bir işin tüm adımları sistemde izlenir: fiyat teklifi, çekim planı, set maliyeti, kurgu revizyonları, müşteri onayı, faturalama ve tahsilat. Personel, ekipman ve vergi takibi de aynı sistemde yapılır.
 
-Canlı adres: `https://portal.rymedya.com.tr`.
+Canlı adres: `https://platform.rymedya.com.tr`.
 
 Portalın iki yüzü vardır:
 - **İç ERP:** RY Medya personeli için.
