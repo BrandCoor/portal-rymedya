@@ -108,6 +108,7 @@ $ref = $_GET['d'] ?? date('Y-m-d');
             <input type="date" name="to" value="<?= e($p === 'custom' ? $to : ($to ?? '')) ?>" aria-label="Bitiş">
             <button type="submit">Aralık</button>
             <button type="button" class="primary" onclick="window.print()">Yazdır / PDF</button>
+            <span style="font-size:11px;opacity:.5">v<?= APP_VERSION ?></span>
         </form>
     </div>
 </div>

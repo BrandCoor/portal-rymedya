@@ -89,7 +89,7 @@ $refs = array_values(array_unique(array_filter(array_column($lines, 5))));
 <div class="bar">
     <div class="bar-in">
         <button type="button" onclick="history.length > 1 ? history.back() : window.close()">← Geri</button>
-        <span style="font-size:12px;opacity:.8"><?= e($title) ?> · <?= e($inv['invoice_number']) ?></span>
+        <span style="font-size:12px;opacity:.8"><?= e($title) ?> · <?= e($inv['invoice_number']) ?> <span style="opacity:.6">· v<?= APP_VERSION ?></span></span>
         <button type="button" class="primary" onclick="window.print()">Yazdır / PDF</button>
     </div>
 </div>

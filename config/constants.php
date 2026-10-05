@@ -7,7 +7,7 @@
 
 // Sistem Temel Bilgileri
 define('APP_NAME', 'RY Medya');
-define('APP_VERSION', '2.0.0');
+define('APP_VERSION', '2.1.0');
 
 // Proje Türleri
 const PROJECT_TYPES = [
