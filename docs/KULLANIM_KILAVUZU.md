@@ -62,6 +62,13 @@ Portal erişimini cari kartından **"Erişimi Kapat"** ile durdurabilirsiniz.
   - *Müşteri Ciroları*: Müşteri bazında ciro, tahsilat ve açık bakiye.
   - Her rapor **Excel / CSV** butonuyla indirilebilir.
 
+## 5.1 Proforma fatura ve cari ekstre
+
+- **Proforma fatura** (fatura listesindeki yazdır simgesi) gerçek fatura düzenindedir: düzenleyen şirketin ünvanı, adresi, vergi dairesi/VKN, MERSİS, ticaret sicil ve KEP bilgileri; alıcı bilgileri; belge no, tarih, vade, durum; kalem tablosu (miktar, birim, birim fiyat, KDV oranı ve tutarı); matrah, KDV, tevkifat/stopaj, ödenecek tutar ve tutarın yazıyla gösterimi; banka hesapları, ödeme koşulları, imza alanı ve proforma açıklaması. Platform işinden kesilen faturada iş kalemleri ayrı satırlarda listelenir. Freelancer hakedişleri "Hakediş belgesi" olarak, ödeme yapılacak IBAN'la basılır.
+- Doldurulan bilgiler: Ayarlar → **Şirket ve künye** (ünvan, adres, ilçe/il, vergi, MERSİS, ticaret sicil, KEP), **Banka ve ödeme** (IBAN'lar), **Belgeler** (başlık, ödeme koşulları, proforma açıklaması, imza yazısı, alt not; banka, ikinci banka, tutarın yazıyla gösterimi ve imza alanı açılıp kapatılabilir).
+- **Cari ekstre** haftalık, aylık, yıllık, tüm hareketler veya özel tarih aralığı olarak görüntülenir; ‹ › ile önceki/sonraki döneme geçilir. Dönem öncesi hareketler "devreden bakiye" olarak gelir; dönem borç/alacak toplamları ve dönem sonu bakiyesi (B: borç, A: alacak) gösterilir. Varsayılan dönem, başlık ve mutabakat metni Ayarlar → Belgeler'den belirlenir. Ajans ve müşteri kendi ekstresini portaldan aynı şekilde görür.
+- Her iki belge de "Yazdır / PDF" ile A4 olarak kaydedilir.
+
 ## 6. Ayarlar (Yönetim → Ayarlar)
 
 Tüm değiştirilebilir içerik tek sayfada, bölümler halinde toplanır. Her bölüm ayrı kaydedilir ve **Varsayılana döndür** ile ilk haline alınabilir.

@@ -1266,6 +1266,7 @@ require_once __DIR__ . '/legal.php';
 require_once __DIR__ . '/live.php';
 require_once __DIR__ . '/ui_styles.php';
 require_once __DIR__ . '/domain.php';
+require_once __DIR__ . '/documents.php';
 require_once __DIR__ . '/profiles.php';
 domain_canonical_redirect();
 send_security_headers();
