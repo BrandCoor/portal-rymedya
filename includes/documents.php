@@ -174,7 +174,9 @@ body{background:#E9E8E4;color:var(--ink);font:12px/1.5 "Segoe UI",Roboto,"Helvet
 .bar .primary{background:var(--accent);border-color:var(--accent)}
 .bar .on{background:#fff;color:#151517;border-color:#fff}
 .bar .grp{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.bar input{height:32px;border-radius:8px;border:1px solid #3a3a40;background:#232327;color:#fff;padding:0 8px;font:inherit}
+.bar input,.bar select{height:32px;border-radius:8px;border:1px solid #3a3a40;background:#232327;color:#fff;padding:0 8px;font:inherit}
+.bar input[type=checkbox]{height:auto;width:auto;accent-color:var(--accent)}
+.bar-in+.bar-in{margin-top:8px;padding-top:8px;border-top:1px solid #2a2a2f}
 .page{width:210mm;min-height:297mm;margin:16px auto 40px;background:#fff;padding:14mm 14mm 12mm;box-shadow:0 10px 40px -12px rgba(0,0,0,.25);display:flex;flex-direction:column}
 .grow{flex:1}
 .head{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;align-items:start;padding-bottom:12px;border-bottom:2px solid var(--ink)}
@@ -235,4 +237,91 @@ function doc_company_html(): string {
     return doc_brand_html() . '<div class="co-name">' . e($c['name'] ?: $c['brand']) . '</div>'
         . (site_setting('doc_tagline') !== '' ? '<div class="co-line" style="margin-bottom:4px">' . e(site_setting('doc_tagline')) . '</div>' : '')
         . '<div class="co-line">' . implode('<br>', $lines) . '</div>';
+}
+
+/** Tedarikçi bakış açısıyla mı gösterilmeli (ödeme yaptığımız cari türleri) */
+function contact_is_supplier(array $contact): bool {
+    return in_array($contact['type'] ?? '', ['freelancer', 'equipment_rental', 'studio', 'supplier'], true);
+}
+
+/** Bakiyenin cari türüne göre anlaşılır açıklaması (+ = cari bize borçlu) */
+function contact_balance_text(float $bal, bool $supplier): string {
+    if (abs($bal) < 0.005) return 'Hesap kapalı, borç / alacak yok';
+    if ($bal > 0) return $supplier ? 'Fazla ödeme / avans: cari bize borçlu' : 'Alacağımız: cari bize borçlu';
+    return $supplier ? 'Ödeyeceğimiz: cariye borçluyuz' : 'Cari alacaklı: fazla tahsilat / avans';
+}
+
+/** Ekstre hareket türleri (filtrelerde kullanılır) */
+const LEDGER_KINDS = ['invoice' => 'Faturalar', 'payment' => 'Tahsilat / ödemeler', 'adjustment' => 'Dekontlar'];
+
+/**
+ * Bir carinin tüm hareketleri (fatura, tahsilat/ödeme, dekont), tarih sırasıyla.
+ * Borç (debit) carinin bize borcunu artırır, alacak (credit) azaltır.
+ * Her satırda 'balance' o hareketten sonraki gerçek cari bakiyedir.
+ */
+function contact_ledger(int $contact_id): array {
+    global $db;
+    $out = [];
+    $today = date('Y-m-d');
+    $inv = $db->prepare("SELECT id, invoice_number, issue_date, due_date, invoice_type, grand_total, paid_amount, payment_status, notes, created_at FROM invoices WHERE contact_id = ?");
+    $inv->execute([$contact_id]);
+    foreach ($inv->fetchAll() as $r) {
+        $sales = $r['invoice_type'] === 'sales';
+        $rem = round((float)$r['grand_total'] - (float)$r['paid_amount'], 2);
+        $out[] = [
+            'kind' => 'invoice', 'id' => (int)$r['id'], 'date' => $r['issue_date'], 'sort' => $r['created_at'],
+            'doc' => $r['invoice_number'],
+            'type' => $sales ? 'Satış faturası' : 'Alış faturası / hakediş',
+            'desc' => $r['notes'] ?: 'Fatura kaydı',
+            'debit' => $sales ? (float)$r['grand_total'] : 0.0, 'credit' => $sales ? 0.0 : (float)$r['grand_total'],
+            'status' => $r['payment_status'], 'remaining' => max(0, $rem), 'due' => $r['due_date'],
+            'overdue' => $r['payment_status'] !== 'paid' && !empty($r['due_date']) && $r['due_date'] < $today,
+        ];
+    }
+    $tx = $db->prepare("SELECT t.id, t.transaction_date, t.type, t.category, t.amount, t.description, t.created_at, t.account_id, t.invoice_id, a.account_name, i.invoice_number FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id LEFT JOIN invoices i ON i.id = t.invoice_id WHERE t.contact_id = ?");
+    $tx->execute([$contact_id]);
+    foreach ($tx->fetchAll() as $r) {
+        $in = $r['type'] === 'income';
+        $cash = !empty($r['account_id']) || !empty($r['invoice_id']);
+        $desc = $r['description'] ?: (string)$r['category'];
+        if (!empty($r['invoice_number']) && !str_contains((string)$r['description'], $r['invoice_number'])) {
+            $desc = $r['invoice_number'] . ' faturasına istinaden' . ($r['description'] ? ' · ' . $r['description'] : '');
+        }
+        $out[] = [
+            'kind' => $cash ? 'payment' : 'adjustment', 'id' => (int)$r['id'], 'date' => $r['transaction_date'], 'sort' => $r['created_at'],
+            'doc' => 'DKN-' . $r['id'],
+            'type' => $cash ? ($in ? 'Tahsilat' : 'Ödeme') : ($in ? 'Alacak dekontu' : 'Borç dekontu'),
+            'desc' => $desc, 'account' => $r['account_name'] ?: '',
+            'debit' => $in ? 0.0 : (float)$r['amount'], 'credit' => $in ? (float)$r['amount'] : 0.0,
+            'status' => '', 'remaining' => 0.0, 'due' => null, 'overdue' => false,
+        ];
+    }
+    usort($out, fn($a, $b) => [$a['date'], $a['sort'], $a['kind'], $a['id']] <=> [$b['date'], $b['sort'], $b['kind'], $b['id']]);
+    $run = 0.0;
+    foreach ($out as &$l) {
+        $run = round($run + $l['debit'] - $l['credit'], 2);
+        $l['balance'] = $run;
+    }
+    unset($l);
+    return $out;
+}
+
+/**
+ * Ekstre filtresi: dönem + hareket türü + durum + arama.
+ * Döner: [devreden bakiye, filtrelenmiş satırlar]
+ */
+function ledger_filter(array $ledger, ?string $from, ?string $to, array $kinds = [], string $status = '', string $q = ''): array {
+    $opening = 0.0;
+    $rows = [];
+    $q = mb_strtolower(trim($q));
+    foreach ($ledger as $l) {
+        if ($from !== null && $l['date'] < $from) { $opening = $l['balance']; continue; }
+        if ($to !== null && $l['date'] > $to) continue;
+        if ($kinds && !in_array($l['kind'], $kinds, true)) continue;
+        if ($status === 'open' && !($l['kind'] === 'invoice' && $l['status'] !== 'paid')) continue;
+        if ($status === 'overdue' && !$l['overdue']) continue;
+        if ($q !== '' && !str_contains(mb_strtolower($l['doc'] . ' ' . $l['type'] . ' ' . $l['desc']), $q)) continue;
+        $rows[] = $l;
+    }
+    return [round($opening, 2), $rows];
 }

@@ -35,44 +35,41 @@ if (!$contact) {
 // ---------------- Dönem ----------------
 $p = in_array($_GET['p'] ?? '', ['week', 'month', 'year', 'all', 'custom'], true) ? $_GET['p'] : (site_setting('statement_default_period') ?: 'month');
 [$from, $to, $period_label, $prev, $next] = statement_period($p, $_GET['d'] ?? null, $_GET['from'] ?? null, $_GET['to'] ?? null);
-$self = fn(array $q) => '?' . http_build_query(array_filter(['id' => $is_staff_viewer ? $contact_id : null] + $q, fn($v) => $v !== null && $v !== ''));
+// Ek filtreler: hareket türü, durum, arama
+$kinds = array_values(array_intersect((array)($_GET['k'] ?? []), array_keys(LEDGER_KINDS)));
+if (count($kinds) === count(LEDGER_KINDS)) $kinds = [];
+$fstatus = in_array($_GET['st'] ?? '', ['open', 'overdue'], true) ? $_GET['st'] : '';
+$fq = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 80);
+$filtered = $kinds || $fstatus !== '' || $fq !== '';
+$keep = ['k' => $kinds ?: null, 'st' => $fstatus, 'q' => $fq];
+$self = fn(array $q) => '?' . http_build_query(array_filter(['id' => $is_staff_viewer ? $contact_id : null] + $q + $keep, fn($v) => $v !== null && $v !== '' && $v !== []));
 
 // ---------------- Hareketler ----------------
-$ledger = [];
-$inv = $db->prepare("SELECT id, invoice_number, issue_date, invoice_type, grand_total, notes, created_at FROM invoices WHERE contact_id = ?");
-$inv->execute([$contact_id]);
-foreach ($inv->fetchAll() as $r) {
-    $sales = $r['invoice_type'] === 'sales';
-    $ledger[] = [
-        'date' => $r['issue_date'], 'doc' => $r['invoice_number'], 'sort' => $r['created_at'],
-        'type' => $sales ? 'Satış faturası' : 'Alış faturası / hakediş',
-        'desc' => $r['notes'] ?: 'Fatura kaydı',
-        'debit' => $sales ? (float)$r['grand_total'] : 0.0, 'credit' => $sales ? 0.0 : (float)$r['grand_total'],
-    ];
-}
-$tx = $db->prepare("SELECT id, transaction_date, type, category, amount, description, created_at FROM transactions WHERE contact_id = ?");
-$tx->execute([$contact_id]);
-foreach ($tx->fetchAll() as $r) {
-    $in = $r['type'] === 'income';
-    $ledger[] = [
-        'date' => $r['transaction_date'], 'doc' => 'DKN-' . $r['id'], 'sort' => $r['created_at'],
-        'type' => $in ? 'Tahsilat' : 'Ödeme / borç dekontu',
-        'desc' => $r['description'] ?: (string)$r['category'],
-        'debit' => $in ? 0.0 : (float)$r['amount'], 'credit' => $in ? (float)$r['amount'] : 0.0,
-    ];
-}
-usort($ledger, fn($a, $b) => [$a['date'], $a['sort']] <=> [$b['date'], $b['sort']]);
-
-$opening = 0.0;
-$rows = [];
-foreach ($ledger as $l) {
-    if ($from !== null && $l['date'] < $from) { $opening += $l['debit'] - $l['credit']; continue; }
-    if ($to !== null && $l['date'] > $to) continue;
-    $rows[] = $l;
-}
+$ledger = contact_ledger($contact_id);
+[$opening, $rows] = ledger_filter($ledger, $from, $to, $kinds, $fstatus, $fq);
+[, $all_rows] = ledger_filter($ledger, $from, $to);
 $period_debit = array_sum(array_column($rows, 'debit'));
 $period_credit = array_sum(array_column($rows, 'credit'));
-$closing = $opening + $period_debit - $period_credit;
+// Dönem sonu bakiyesi filtreden bağımsız, gerçek cari bakiyesidir
+$closing = $all_rows ? end($all_rows)['balance'] : $opening;
+
+// ---------------- Excel (CSV) ----------------
+if (($_GET['format'] ?? '') === 'csv') {
+    $fname = 'Cari_Ekstre_' . preg_replace('/[^\p{L}\p{N}]+/u', '_', $contact['company_title']) . '_' . ($from ?? 'tum') . '.csv';
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $fname . '"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    $num = fn(float $v) => number_format($v, 2, ',', '');
+    fputcsv($out, ['Tarih', 'Belge no', 'İşlem', 'Açıklama', 'Borç', 'Alacak', 'Bakiye', 'B/A'], ';');
+    if ($from !== null) fputcsv($out, [$from, '', 'Devreden bakiye', '', '', '', $num(abs($opening)), $opening > 0 ? 'B' : ($opening < 0 ? 'A' : '')], ';');
+    foreach ($rows as $r) {
+        fputcsv($out, [$r['date'], $r['doc'], $r['type'], $r['desc'], $r['debit'] > 0 ? $num($r['debit']) : '', $r['credit'] > 0 ? $num($r['credit']) : '', $num(abs($r['balance'])), $r['balance'] > 0 ? 'B' : ($r['balance'] < 0 ? 'A' : '')], ';');
+    }
+    fputcsv($out, ['', '', 'Dönem toplamı', '', $num($period_debit), $num($period_credit), $num(abs($closing)), $closing > 0 ? 'B' : ($closing < 0 ? 'A' : '')], ';');
+    fclose($out);
+    exit;
+}
 $money = fn($v) => format_money((float)$v);
 $bal_label = fn(float $v) => abs($v) < 0.005 ? '' : ($v > 0 ? ' (B)' : ' (A)');
 $title = site_setting('statement_title') ?: 'CARİ HESAP EKSTRESİ';
@@ -106,11 +103,33 @@ $ref = $_GET['d'] ?? date('Y-m-d');
             <input type="hidden" name="p" value="custom">
             <input type="date" name="from" value="<?= e($p === 'custom' ? $from : ($from ?? '')) ?>" aria-label="Başlangıç">
             <input type="date" name="to" value="<?= e($p === 'custom' ? $to : ($to ?? '')) ?>" aria-label="Bitiş">
+            <?php foreach ($keep as $kk => $kv): foreach ((array)$kv as $vv): if ($vv === null || $vv === '') continue; ?><input type="hidden" name="<?= $kk === 'k' ? 'k[]' : $kk ?>" value="<?= e($vv) ?>"><?php endforeach; endforeach; ?>
             <button type="submit">Aralık</button>
             <button type="button" class="primary" onclick="window.print()">Yazdır / PDF</button>
+            <a href="<?= e($self(['p' => $p, 'd' => $p === 'custom' || $p === 'all' ? null : $ref, 'from' => $p === 'custom' ? $from : null, 'to' => $p === 'custom' ? $to : null, 'format' => 'csv'])) ?>">Excel</a>
             <span style="font-size:11px;opacity:.5">v<?= APP_VERSION ?></span>
         </form>
     </div>
+    <form class="bar-in" method="GET" action="">
+        <?php if ($is_staff_viewer): ?><input type="hidden" name="id" value="<?= (int)$contact_id ?>"><?php endif; ?>
+        <input type="hidden" name="p" value="<?= e($p) ?>">
+        <?php if ($p === 'custom'): ?><input type="hidden" name="from" value="<?= e($from) ?>"><input type="hidden" name="to" value="<?= e($to) ?>"><?php elseif ($p !== 'all'): ?><input type="hidden" name="d" value="<?= e($ref) ?>"><?php endif; ?>
+        <div class="grp">
+            <?php foreach (LEDGER_KINDS as $kk => $kl): ?>
+            <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" name="k[]" value="<?= $kk ?>" <?= !$kinds || in_array($kk, $kinds, true) ? 'checked' : '' ?>> <?= e($kl) ?></label>
+            <?php endforeach; ?>
+        </div>
+        <div class="grp">
+            <select name="st" aria-label="Durum">
+                <option value="">Tüm durumlar</option>
+                <option value="open" <?= $fstatus === 'open' ? 'selected' : '' ?>>Ödenmemiş faturalar</option>
+                <option value="overdue" <?= $fstatus === 'overdue' ? 'selected' : '' ?>>Vadesi geçmiş</option>
+            </select>
+            <input type="search" name="q" value="<?= e($fq) ?>" placeholder="Belge no / açıklama ara" aria-label="Ara">
+            <button type="submit">Filtrele</button>
+            <?php if ($filtered): ?><a href="<?= e('?' . http_build_query(array_filter(['id' => $is_staff_viewer ? $contact_id : null, 'p' => $p, 'd' => $p === 'custom' || $p === 'all' ? null : $ref, 'from' => $p === 'custom' ? $from : null, 'to' => $p === 'custom' ? $to : null]))) ?>">Filtreyi temizle</a><?php endif; ?>
+        </div>
+    </form>
 </div>
 
 <div class="page">
@@ -126,6 +145,7 @@ $ref = $_GET['d'] ?? date('Y-m-d');
                         <tr><td>Düzenleme tarihi</td><td><?= format_date(date('Y-m-d')) ?></td></tr>
                         <tr><td>Cari kodu</td><td class="mono">C-<?= str_pad((string)$contact_id, 5, '0', STR_PAD_LEFT) ?></td></tr>
                         <tr><td>Dönem sonu bakiye</td><td><?= $money(abs($closing)) . $bal_label($closing) ?></td></tr>
+                        <?php if ($filtered): ?><tr><td>Filtre</td><td><?= e(implode(', ', array_filter([$kinds ? implode(' + ', array_map(fn($k) => LEDGER_KINDS[$k], $kinds)) : '', $fstatus === 'open' ? 'Ödenmemiş faturalar' : ($fstatus === 'overdue' ? 'Vadesi geçmiş' : ''), $fq !== '' ? '"' . $fq . '"' : '']))) ?></td></tr><?php endif; ?>
                     </table>
                 </div>
             </div>
@@ -178,11 +198,11 @@ $ref = $_GET['d'] ?? date('Y-m-d');
                 <?php if (!$rows): ?>
                 <tr><td colspan="6" class="c sub" style="padding:18px">Bu dönemde hareket yok.</td></tr>
                 <?php endif; ?>
-                <?php $run = $opening; foreach ($rows as $r): $run += $r['debit'] - $r['credit']; ?>
+                <?php foreach ($rows as $r): $run = $r['balance']; ?>
                 <tr>
                     <td style="white-space:nowrap"><?= format_date($r['date']) ?></td>
                     <td class="mono" style="white-space:nowrap;font-size:10px"><?= e($r['doc']) ?></td>
-                    <td><b><?= e($r['type']) ?></b><div class="sub"><?= e(mb_strimwidth((string)$r['desc'], 0, 140, '…')) ?></div></td>
+                    <td><b><?= e($r['type']) ?></b><?php if ($r['kind'] === 'invoice' && $r['status'] !== 'paid'): ?> <span class="sub">· <?= $r['overdue'] ? 'vadesi geçti' : 'açık' ?>, kalan <?= $money($r['remaining']) ?></span><?php endif; ?><div class="sub"><?= e(mb_strimwidth((string)$r['desc'], 0, 140, '…')) ?></div></td>
                     <td class="r"><?= $r['debit'] > 0 ? $money($r['debit']) : '—' ?></td>
                     <td class="r neg"><?= $r['credit'] > 0 ? $money($r['credit']) : '—' ?></td>
                     <td class="r"><b><?= $money(abs($run)) . $bal_label($run) ?></b></td>
@@ -191,14 +211,14 @@ $ref = $_GET['d'] ?? date('Y-m-d');
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="3" style="border-top:1.5px solid var(--ink);padding:7px 6px"><b>Dönem toplamı</b> <span class="sub">(<?= count($rows) ?> hareket)</span></td>
+                    <td colspan="3" style="border-top:1.5px solid var(--ink);padding:7px 6px"><b><?= $filtered ? 'Filtrelenen hareketler toplamı' : 'Dönem toplamı' ?></b> <span class="sub">(<?= count($rows) ?> hareket)</span></td>
                     <td class="r" style="border-top:1.5px solid var(--ink);padding:7px 6px"><b><?= $money($period_debit) ?></b></td>
                     <td class="r neg" style="border-top:1.5px solid var(--ink);padding:7px 6px"><b><?= $money($period_credit) ?></b></td>
                     <td class="r" style="border-top:1.5px solid var(--ink);padding:7px 6px"><b><?= $money(abs($closing)) . $bal_label($closing) ?></b></td>
                 </tr>
             </tfoot>
         </table></div>
-        <p class="sub" style="margin-top:6px">(B) borç bakiyesi: cari hesap sahibinin <?= e($co['name'] ?: 'şirketimize') ?> borcu · (A) alacak bakiyesi: cari hesap sahibinin alacağı.</p>
+        <p class="sub" style="margin-top:6px"><?php if ($filtered): ?>Bakiye sütunu filtreden bağımsız olarak, ilgili hareketten sonraki gerçek cari bakiyeyi gösterir. <?php endif; ?>(B) borç bakiyesi: cari hesap sahibinin <?= e($co['name'] ?: 'şirketimize') ?> borcu · (A) alacak bakiyesi: cari hesap sahibinin alacağı.</p>
     </div>
 
     <div>
